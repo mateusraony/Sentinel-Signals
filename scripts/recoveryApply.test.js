@@ -37,7 +37,7 @@ import { preloadSeries, clearSeries } from './recoveryMarketDataProvider.js';
 
 market.impl = recoveryMarket;
 import { runDryRun, RECOVERY_TIMEFRAMES } from './recoveryDryRun.mjs';
-import { runApply, formatApplyMarkdown, formatOutOfScopeLine, diffEvents, LOCK_NAMES } from './recoveryApply.mjs';
+import { runApply, formatApplyMarkdown, formatOutOfScopeLine, diffEvents, LOCK_NAMES, createApplyBackend, ApplyAborted } from './recoveryApply.mjs';
 import { findOutOfScopeOpenOps } from './recoveryDryRun.mjs';
 
 const FOUR_H = TIMEFRAME_MS['4h'];
@@ -539,5 +539,115 @@ describe('operações abertas que ficam fora da recuperação', () => {
     expect(out.ok).toBe(true);
     expect(out.summary).toMatch(/ATENÇÃO — 1 operação\(ões\) ABERTA\(S\) ficaram FORA/);
     expect(out.summary).toMatch(/DEADUSDT/);
+  }, 180000);
+});
+
+
+// Achado do Codex no PR #530 (P1): depois do prazo duro o laço do replay continuava vivo (JavaScript
+// não cancela promessa) e podia seguir gravando enquanto o relatório já dizia o contrário.
+describe('prazo duro: nada é gravado depois que o tempo estourou', () => {
+  it('backend de aplicação: depois de abortar, TODA escrita é recusada e a leitura segue', async () => {
+    const calls = [];
+    const api = (n) => ({
+      list: async () => [], get: async () => null,
+      update: async () => { calls.push(`${n}.update`); }, create: async () => { calls.push(`${n}.create`); },
+    });
+    const real = {
+      entities: { TradeOperation: api('op'), SystemLog: api('log'), AssetState: api('state') },
+      tradeOps: {
+        createTradeOpIfNoneActive: async () => { calls.push('create'); return { created: true }; },
+        transitionTradeOp: async () => { calls.push('transition'); return { applied: true }; },
+        clearActiveOp: async () => { calls.push('clear'); },
+      },
+      locks: {}, quota: {},
+    };
+    let aborted = false;
+    const { backend } = createApplyBackend(real, { AssetState: [] }, () => aborted);
+    await backend.entities.TradeOperation.update('x', { a: 1 });
+    await backend.tradeOps.transitionTradeOp('x', 'A', { status: 'B' });
+    expect(calls).toEqual(['op.update', 'transition']);
+
+    aborted = true;
+    await expect(backend.entities.TradeOperation.update('x', { a: 2 })).rejects.toBeInstanceOf(ApplyAborted);
+    await expect(backend.entities.SystemLog.create({ m: 1 })).rejects.toBeInstanceOf(ApplyAborted);
+    await expect(backend.tradeOps.createTradeOpIfNoneActive('a', 'id', {})).rejects.toBeInstanceOf(ApplyAborted);
+    await expect(backend.tradeOps.transitionTradeOp('x', 'A', {})).rejects.toBeInstanceOf(ApplyAborted);
+    await expect(backend.tradeOps.clearActiveOp('a')).rejects.toBeInstanceOf(ApplyAborted);
+    expect(await backend.entities.TradeOperation.list()).toEqual([]); // leitura continua
+    expect(calls).toEqual(['op.update', 'transition']); // nenhuma escrita nova
+  });
+
+  it('ponta a ponta: o ativo em andamento termina o que já estava no ar, mas o 2º ativo, o cursor e as etiquetas NÃO são gravados', async () => {
+    const live = await liveDb(FLIP + FIFTEEN_M, [ASSET, ASSET2]);
+    const approved = await approve(live);
+    const before2 = byId(await live.entities.TradeOperation.list()).filter((o) => o.asset_id === 'asset2');
+    // O cursor do 1º ativo fica preso numa "leitura lenta" que só solta DEPOIS do prazo duro.
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const cursorCalls = [];
+    const tagCalls = [];
+    const realMonitored = live.entities.MonitoredAsset.update;
+    live.entities.MonitoredAsset.update = async (id, patch, ...r) => {
+      if (patch.recovery_replayed_to) { cursorCalls.push(id); if (cursorCalls.length === 1) await gate; }
+      return realMonitored(id, patch, ...r);
+    };
+    const realOp = live.entities.TradeOperation.update;
+    live.entities.TradeOperation.update = async (id, patch, ...r) => {
+      if ('recovery_run_id' in patch) tagCalls.push(id);
+      return realOp(id, patch, ...r);
+    };
+    const { deps: d } = applyDeps(live, approved, { timeoutMs: 300 });
+    const out = await runApply(d);
+    expect(out).toMatchObject({ ok: false, code: 'apply_timeout', wrote: true });
+
+    release(); // a leitura "volta" depois do prazo — o laço do replay acorda
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(cursorCalls).toEqual(['asset1']); // só o que já estava em andamento
+    expect(tagCalls).toEqual([]);
+    const after2 = byId(await live.entities.TradeOperation.list()).filter((o) => o.asset_id === 'asset2');
+    expect(after2).toEqual(before2); // o 2º ativo nunca foi tocado
+    const a2 = (await live.entities.MonitoredAsset.list()).find((a) => a.id === 'asset2');
+    expect(a2.recovery_replayed_to).toBeUndefined();
+  }, 180000);
+
+  it('ativo único: leitura presa na última vela e liberada depois do prazo — o cursor NÃO é gravado', async () => {
+    const tentativa = async (gateAt) => {
+      const live = await liveDb(FLIP + FIFTEEN_M);
+      const approved = await approve(live);
+      let n = 0;
+      let release;
+      const gate = new Promise((r) => { release = r; });
+      for (const m of ['list', 'filter']) {
+        const real = live.entities.TradeOperation[m];
+        live.entities.TradeOperation[m] = async (...a) => {
+          n += 1;
+          if (n === gateAt) await gate;
+          return real(...a);
+        };
+      }
+      const cursorCalls = [];
+      const realM = live.entities.MonitoredAsset.update;
+      live.entities.MonitoredAsset.update = async (id, patch, ...r) => {
+        if (patch.recovery_replayed_to) cursorCalls.push(id);
+        return realM(id, patch, ...r);
+      };
+      return { live, approved, release, cursorCalls, calls: () => n };
+    };
+    // 1ª rodada (sem prender nada): descobre quantas leituras a aplicação faz.
+    const ref = await tentativa(Infinity);
+    await runApply(applyDeps(ref.live, ref.approved).deps);
+    const total = ref.calls();
+    expect(total).toBeGreaterThan(5);
+
+    // 2ª rodada: prende a última leitura DO REPLAY (a de `total` é a conferência pós-gravação, que
+    // vem depois do cursor): depois dela só faltam o cursor e as etiquetas.
+    const run = await tentativa(total - 1);
+    const { deps: d } = applyDeps(run.live, run.approved, { timeoutMs: 300 });
+    const out = await runApply(d);
+    expect(out.code).toBe('apply_timeout');
+    run.release();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(run.cursorCalls).toEqual([]);
   }, 180000);
 });

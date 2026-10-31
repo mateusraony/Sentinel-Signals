@@ -47,7 +47,22 @@ export function diffEvents(diff) {
  * retrato — igual ao teste a seco e à checagem retroativa) e os campos de status do scan no
  * MonitoredAsset (o replay não é um scan ao vivo). O diário registra o que foi gravado.
  */
-export function createApplyBackend(real, snapshot) {
+/** Lançado por qualquer escrita (ou passo de escrita) depois que o prazo duro estourou. */
+export class ApplyAborted extends RecoveryAbort {
+  constructor(what = 'escrita') {
+    super('apply_timeout', `aplicação abortada por tempo — ${what} bloqueada`);
+    this.name = 'ApplyAborted';
+  }
+}
+
+/**
+ * `isAborted`: depois do prazo duro, o `Promise.race` de `runApply` já devolveu o resultado, mas o
+ * laço do replay continua vivo (JavaScript não cancela promessa). Sem esta trava ele podia voltar de
+ * uma leitura pendente e seguir gravando operações/cursor enquanto o relatório dizia "nada foi
+ * gravado" (achado do Codex no PR #530). Toda escrita do backend de aplicação passa por ela.
+ */
+export function createApplyBackend(real, snapshot, isAborted = () => false) {
+  const guard = (what) => { if (isAborted()) throw new ApplyAborted(what); };
   const { backend: mem } = createSnapshotBackend({ AssetState: snapshot.AssetState || [] });
   const journal = [];
   // Tentativas de escrita (antes da chamada): se uma escrita falhar na rede o efeito é ambíguo,
@@ -61,6 +76,7 @@ export function createApplyBackend(real, snapshot) {
     for (const m of WRITE_METHODS) {
       if (typeof api[m] !== 'function') continue;
       wrapped[m] = async (...a) => {
+        guard(`escrita em ${name}`);
         if (name === 'MonitoredAsset' && m === 'update' && Object.keys(a[1] || {}).every((k) => SCAN_STATUS_KEYS.has(k))) {
           return { id: a[0], ...a[1] };
         }
@@ -74,13 +90,15 @@ export function createApplyBackend(real, snapshot) {
   }
   const tradeOps = {
     async createTradeOpIfNoneActive(...a) {
+      guard('criação de operação');
       stats.attempted += 1;
       const out = await real.tradeOps.createTradeOpIfNoneActive(...a);
       if (out?.created) journal.push({ entity: 'TradeOperation', op: 'create', id: a[1] });
       return out;
     },
-    clearActiveOp: (...a) => real.tradeOps.clearActiveOp(...a),
+    clearActiveOp: async (...a) => { guard('limpeza de ativo'); return real.tradeOps.clearActiveOp(...a); },
     async transitionTradeOp(...a) {
+      guard('transição de operação');
       stats.attempted += 1;
       const out = await real.tradeOps.transitionTradeOp(...a);
       if (out?.applied) journal.push({ entity: 'TradeOperation', op: 'transition', id: a[0], to: a[2]?.status ?? null });
@@ -221,7 +239,7 @@ async function applyInner(deps, state) {
     if (fingerprint(await readSnapshot(liveBackend)) !== approved.fingerprints.snapshot) {
       throw new RecoveryAbort('snapshot_changed', 'o banco mudou enquanto a recuperação se preparava (scan ou painel aberto?) — nada foi gravado; rode um novo teste a seco');
     }
-    const apply = createApplyBackend(liveBackend, snapshot);
+    const apply = createApplyBackend(liveBackend, snapshot, () => state.aborted);
     for (const k of Object.keys(entitiesTarget)) delete entitiesTarget[k];
     Object.assign(entitiesTarget, apply.backend);
     // "Gravou" = alguma escrita foi TENTADA (diário do backend) ou o cursor foi escrito. Antes era
@@ -232,8 +250,9 @@ async function applyInner(deps, state) {
     const perAsset = await runRecoveryReplay({
       assets: plan.assets, windows: plan.windows, pineConfig,
       // Prazo: só começa outro ativo se o maior tempo de ativo já medido (x1,5) ainda cabe.
-      shouldStop: () => clock() + longestAssetMs * ASSET_TIME_MARGIN > deadlineMs,
+      shouldStop: () => state.aborted || clock() + longestAssetMs * ASSET_TIME_MARGIN > deadlineMs,
       onAsset: async (asset) => {
+        if (state.aborted) throw new ApplyAborted('renovação de lock');
         assertRealClock('renovar o lock');
         state.inFlight = asset.symbol;
         startedMs = clock();
@@ -243,6 +262,7 @@ async function applyInner(deps, state) {
       },
       // Cursor por ativo: uma nova recuperação começa DEPOIS do que já foi aplicado.
       onAssetDone: async (asset, w) => {
+        if (state.aborted) throw new ApplyAborted('gravação do cursor');
         assertRealClock('gravar o cursor');
         state.cursorWritten = true;
         await liveBackend.entities.MonitoredAsset.update(asset.id, { recovery_replayed_to: iso(w.toMs), recovery_run_id: runId });
@@ -283,6 +303,7 @@ async function applyInner(deps, state) {
     // Banco gravado E conferido; se só a etiqueta falhar, o aviso é outro (os dados estão certos).
     const tagFailures = [];
     for (const t of tags) {
+      if (state.aborted) throw new ApplyAborted('etiquetagem');
       try { await liveBackend.entities.TradeOperation.update(t.id, t.patch); } catch (e) { tagFailures.push(`${t.id}: ${e?.message ?? e}`); }
     }
     if (tagFailures.length) {
@@ -359,12 +380,13 @@ function raceTimeout(promise, ms, makeError) {
  *   da aplicação inteira (parada dura, com mensagem e relatório).
  */
 export async function runApply(deps) {
-  const state = { cursorWritten: false, stats: null, inFlight: null };
+  const state = { cursorWritten: false, stats: null, inFlight: null, aborted: false };
   const clock = deps.clock ?? Date.now;
   const startedMs = clock();
   let outcome;
   try {
     outcome = await raceTimeout(applyInner(deps, state), deps.timeoutMs, () => {
+      state.aborted = true; // a partir daqui nada mais é gravado (ver createApplyBackend)
       const min = Math.round((clock() - startedMs) / 60000);
       const where = state.inFlight ? ` durante o ativo ${state.inFlight}` : '';
       return Object.assign(new Error(`a aplicação passou do tempo máximo (${min} min)${where}`), { code: 'apply_timeout' });

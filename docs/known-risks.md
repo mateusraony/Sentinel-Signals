@@ -34156,6 +34156,17 @@ completa do código) + todas as checagens; a recuperação foi tratada primeiro 
   `wrote` sempre true, etiqueta sem tratamento, divergência de um lado só, Telegram sem corte, API do GitHub ignorada,
   aviso de ativos fora, relatório sem o Backfill) — todas reprovam algum teste; a do prazo duro faz o teste pendurar
   (reprova por tempo). Roteiro atualizado: `docs/claude/recovery-runbook.md`.
+- **Achado do Codex no PR #530 (P1, corrigido):** o prazo duro (`Promise.race`) devolvia o resultado, mas o laço do
+  replay continuava vivo (JavaScript não cancela promessa) e, voltando de uma leitura presa, podia seguir gravando
+  operações/cursor/etiquetas enquanto o relatório dizia "nada foi gravado". **Agora:** ao estourar, `state.aborted`
+  liga e TODA escrita do backend de aplicação (`createApplyBackend(real, snapshot, isAborted)`), a renovação de lock, o
+  cursor, as etiquetas e o início de outro ativo lançam `ApplyAborted` (código `apply_timeout`). O que já estava no ar
+  no instante do prazo pode terminar — por isso `wrote` conta a escrita *tentada*. Provas: o backend recusa toda
+  escrita depois de abortar (leitura segue); ponta a ponta com 2 ativos (cursor do 1º preso → prazo → solta: só o
+  cursor em andamento é gravado, 2º ativo intocado, sem etiquetas); ativo único com a última leitura do replay presa
+  (cursor não gravado). Mutações: guard do backend desligado, etiqueta sem checagem e "abort nunca marcado" reprovam;
+  `shouldStop` sem o abort e cursor sem a checagem NÃO reprovam isoladamente porque são camadas redundantes
+  (o guard do backend e a checagem do `onAsset` cobrem o mesmo caso) — defesa em profundidade, não buraco.
 - **Limites [honesto, só dá para provar rodando de verdade]:** a recuperação contra o **Postgres real** (os testes usam
   o banco simulado com a mesma regra de CAS); a duração real do aplicar (por isso o prazo de 150/170 min); o 1º push do
   `backup-postgres.yml` com o nome novo e do `restore-postgres.yml` com o campo novo (o shell foi testado com os
