@@ -59,7 +59,10 @@ const instant = (kind, date) => {
  *    (ex.: 2027, que o FRED ainda não publicou), fica como está na lista.
  * 3. Evento futuro já publicado que sumiu das fontes → 'a_confirmar' (se a fonte daquele tipo
  *    respondeu); se a fonte falhou, fica como estava (uma queda do FRED não apaga nada).
- * 4. Só de ontem em diante.
+ * 4. FRED sem resposta para um tipo: evento JÁ publicado mantém a situação publicada, mesmo que
+ *    também esteja na lista fixa — a lista só decide evento novo. Sem isso, uma queda do FRED
+ *    depois de uma remarcação publicaria os dois dias como oficiais (achado do Codex no PR #529).
+ * 5. Só de ontem em diante.
  */
 export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, previous = [], nowMs }) {
   const nowIso = new Date(nowMs).toISOString();
@@ -89,6 +92,11 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
   }
 
   const prevById = new Map((Array.isArray(previous) ? previous : []).filter((p) => p && typeof p.id === 'string').map((p) => [p.id, p]));
+  for (const [id, c] of cand) {
+    const p = prevById.get(id);
+    if (!p || !(c.kind in FRED_RELEASES) || fredAnswered.has(c.kind) || !Object.values(STATUS).includes(p.status)) continue;
+    cand.set(id, { ...c, status: p.status, reference: c.reference ?? (typeof p.reference === 'string' ? p.reference : null) });
+  }
   for (const [id, p] of prevById) {
     if (cand.has(id)) continue;
     const m = /^([A-Z]+)-(\d{4}-\d{2}-\d{2})$/.exec(id);

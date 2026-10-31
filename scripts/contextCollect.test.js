@@ -79,6 +79,26 @@ describe('montagem dos eventos', () => {
     expect(fredFora['CPI-2026-12-17'].status).toBe('oficial');
   });
 
+  it('queda do FRED depois de uma remarcação mantém o que foi publicado (achado do Codex no #529)', () => {
+    // 1ª coleta: o FRED move o CPI de 10/12 para 11/12 → 10/12 "a confirmar", 11/12 oficial.
+    const antes = buildEvents({ fredDatesByKind: { ...FRED, CPI: ['2026-11-10', '2026-12-11'] }, nowMs: NOW });
+    expect(byId(antes)['CPI-2026-12-10'].status).toBe('a_confirmar');
+    // 2ª coleta com o FRED fora do ar para o CPI: a lista fixa ainda diz 10/12 "oficial", mas o publicado vale.
+    const depois = byId(buildEvents({ fredDatesByKind: { ...FRED, CPI: null }, previous: antes, nowMs: NOW + 3600000 }));
+    expect(depois['CPI-2026-12-10'].status).toBe('a_confirmar'); // não volta a oficial
+    expect(depois['CPI-2026-12-11'].status).toBe('oficial');
+    expect(depois['CPI-2026-12-10'].lastChangedAt).toBe(byId(antes)['CPI-2026-12-10'].lastChangedAt); // nada mudou
+    // E o contrário: data que o FRED já confirmou não volta a "a confirmar" (o que a lista diz) numa queda.
+    const confirmada = buildEvents({ fredDatesByKind: { ...FRED, CPI: ['2026-11-10', '2026-12-10', '2027-01-13'] }, nowMs: NOW });
+    expect(byId(confirmada)['CPI-2027-01-13'].status).toBe('oficial');
+    const naQueda = byId(buildEvents({ fredDatesByKind: { ...FRED, CPI: null }, previous: confirmada, nowMs: NOW + 3600000 }));
+    expect(naQueda['CPI-2027-01-13'].status).toBe('oficial');
+    // Com o FRED respondendo, ele volta a mandar (o publicado não trava a fonte principal).
+    const voltou = byId(buildEvents({ fredDatesByKind: FRED, previous: antes, nowMs: NOW + 7200000 }));
+    expect(voltou['CPI-2026-12-10'].status).toBe('oficial');
+    expect(voltou['CPI-2026-12-11'].status).toBe('a_confirmar');
+  });
+
   it('rodar de novo sem novidade não muda nada (mesmos eventos, mesma impressão digital)', () => {
     const a = buildEvents({ fredDatesByKind: FRED, nowMs: NOW });
     const b = buildEvents({ fredDatesByKind: FRED, previous: a, nowMs: NOW + 5 * 3600000 });

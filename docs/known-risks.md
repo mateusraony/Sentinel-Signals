@@ -33878,8 +33878,10 @@ baixa", e o que deixaria isso profissional.
   ok/parcial/falhou, quantos eventos, cobertura confirmada até, impressão digital dos eventos).
 - **Regras:** data do FRED → `oficial`; data da lista que o FRED não traz, dentro do período que ele já publicou →
   `a_confirmar` (remarcação; não alerta); além desse período (ex.: 2027) fica como na lista; evento publicado que some
-  da fonte → `a_confirmar`, mas se a fonte daquele tipo falhou fica como estava (queda do FRED não apaga nada); só de
-  ontem em diante. Rodar de novo sem novidade não muda `events.json` (só o `status.json`, pela hora da checagem).
+  da fonte → `a_confirmar`, mas se a fonte daquele tipo falhou fica como estava (queda do FRED não apaga nada); com o
+  FRED sem resposta, evento já publicado mantém a situação publicada mesmo estando na lista fixa — a lista só decide
+  evento novo (achado do Codex no PR #529: senão, uma queda depois de uma remarcação publicaria os dois dias como
+  oficiais); só de ontem em diante. Rodar de novo sem novidade não muda `events.json` (só o `status.json`, pela hora da checagem).
 - **Público e travado:** `assertPublicShape` aceita só a lista fechada de campos e o formato de cada valor (texto livre
   não passa: nada de URL, chave, mensagem de erro, valor de série ou volatilidade). Se recusar, nada é gravado. A
   busca no FRED transforma qualquer falha em "sem resposta", sem mensagem (uma mensagem pode citar a URL com a chave).
