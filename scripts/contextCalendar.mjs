@@ -103,6 +103,7 @@ export function validateCalendar(list) {
   const problems = [];
   if (!Array.isArray(list)) return ['a lista não é um array'];
   const seen = new Set();
+  const seenKindDate = new Set();
   let prevMs = -Infinity;
   for (const e of list) {
     const tag = e?.id || '(sem id)';
@@ -116,6 +117,10 @@ export function validateCalendar(list) {
       problems.push(`${tag}: data inválida (${e?.date})`);
       continue;
     }
+    // Mesmo tipo + mesma data duas vezes (com ids diferentes) viraria um evento só no coletor, sem aviso.
+    const kd = `${e.kind}|${e.date}`;
+    if (seenKindDate.has(kd)) problems.push(`${tag}: ${e.kind} em ${e.date} já existe na lista (tipo + data repetidos)`);
+    else seenKindDate.add(kd);
     const dow = new Date(`${e.date}T00:00:00Z`).getUTCDay();
     if (dow === 0 || dow === 6) problems.push(`${tag}: ${e.date} cai em fim de semana`);
     if (KIND_TIMES[e.kind] && e.time !== KIND_TIMES[e.kind]) problems.push(`${tag}: horário ${e.time} diferente do de ${e.kind} (${KIND_TIMES[e.kind]} em Nova York)`);

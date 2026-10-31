@@ -13,6 +13,13 @@
 
 export const DAYS_PER_MONTH = 30;
 
+/**
+ * Pior caso do coletor de datas (`context-collect.yml`): as 3 coletas do cron-job.org (07h/12h/21h de
+ * Brasília) MAIS a reserva diária do `schedule` do próprio workflow = até 4 por dia. O orçamento
+ * abaixo é o do DESENHO (3/dia, as demais fases); o teste confere que o pior caso de 4/dia também cabe.
+ */
+export const COLLECTOR_WORST_CASE_RUNS_PER_DAY = 4;
+
 /** Desenho aprovado: 3 coletas por dia (07h/12h/21h de Brasília). */
 export const DEFAULT_CONFIG = Object.freeze({
   runsPerDay: 3,

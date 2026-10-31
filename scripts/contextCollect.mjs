@@ -39,6 +39,24 @@ export function parseFredReleaseDates(body) {
   return dates.length ? dates : null;
 }
 
+/**
+ * Do `events.json` anterior, só as linhas bem formadas (mesmo formato que `assertPublicShape` exige).
+ * Linha com situação/referência/data fora do formato é DESCARTADA (vira evento novo) em vez de ser
+ * copiada para a saída: copiada, a trava do conteúdo público recusaria tudo e o coletor travaria
+ * para sempre num arquivo ruim (achado da auditoria de 31/10).
+ */
+export function sanitizePrevious(previous) {
+  if (!Array.isArray(previous)) return [];
+  return previous.filter((p) => {
+    if (!p || typeof p !== 'object' || Array.isArray(p) || typeof p.id !== 'string') return false;
+    const m = /^([A-Z]+)-(\d{4}-\d{2}-\d{2})$/.exec(p.id);
+    if (!m || !Object.prototype.hasOwnProperty.call(KINDS, m[1]) || p.kind !== m[1]) return false;
+    if (!Object.values(STATUS).includes(p.status)) return false;
+    if (!(p.reference === null || /^\d{4}-\d{2}$/.test(String(p.reference)))) return false;
+    return ISO_RE.test(p.startsAtUtc ?? '');
+  });
+}
+
 const instant = (kind, date) => {
   try { return nyToUtc(date, KIND_TIMES[kind]); } catch { return null; }
 };
@@ -54,9 +72,12 @@ const instant = (kind, date) => {
  *
  * Regras:
  * 1. Data do FRED → 'oficial'. Mesma data na lista fixa → herda o mês de referência dela.
- * 2. Data da lista fixa (tipo do FRED) que o FRED NÃO traz, dentro do período que o FRED já
- *    publicou → 'a_confirmar' (remarcação ou divergência; não alerta). Além desse período
- *    (ex.: 2027, que o FRED ainda não publicou), fica como está na lista.
+ * 2. Data da lista fixa (tipo do FRED) que o FRED NÃO traz → 'a_confirmar' (remarcação, antecipação,
+ *    retirada ou divergência; não alerta), QUALQUER que seja a data. Antes só se rebaixava até a
+ *    última data que o FRED publicou: uma antecipação (PCE de 23/12 para 22/12) ou a retirada das
+ *    datas futuras deixava a antiga "oficial" ao lado da nova (achado G1 da auditoria de 31/10).
+ *    Lado seguro: se o FRED vier incompleto, o efeito é "a confirmar" (sem alerta) até ele
+ *    publicar — nunca dois dias oficiais para o mesmo evento.
  * 3. Evento futuro já publicado que sumiu das fontes → 'a_confirmar' (se a fonte daquele tipo
  *    respondeu); se a fonte falhou, fica como estava (uma queda do FRED não apaga nada).
  * 4. FRED sem resposta para um tipo: evento JÁ publicado mantém a situação publicada, mesmo que
@@ -80,18 +101,17 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     if (!Array.isArray(dates) || !dates.length) continue;
     fredAnswered.add(kind);
     const set = new Set(dates);
-    const maxDate = dates[dates.length - 1];
     for (const d of dates) {
       const id = eventId(kind, d);
       const prev = cand.get(id);
       cand.set(id, { kind, date: d, reference: prev?.reference ?? null, status: STATUS.OFICIAL });
     }
     for (const [id, c] of cand) {
-      if (c.kind === kind && !set.has(c.date) && c.date <= maxDate) cand.set(id, { ...c, status: STATUS.A_CONFIRMAR });
+      if (c.kind === kind && !set.has(c.date)) cand.set(id, { ...c, status: STATUS.A_CONFIRMAR });
     }
   }
 
-  const prevById = new Map((Array.isArray(previous) ? previous : []).filter((p) => p && typeof p.id === 'string').map((p) => [p.id, p]));
+  const prevById = new Map(sanitizePrevious(previous).map((p) => [p.id, p]));
   for (const [id, c] of cand) {
     const p = prevById.get(id);
     if (!p || !(c.kind in FRED_RELEASES) || fredAnswered.has(c.kind) || !Object.values(STATUS).includes(p.status)) continue;
@@ -116,7 +136,8 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     const utc = instant(c.kind, c.date);
     if (!utc || utc.ms < cutoffMs) continue;
     const p = prevById.get(id);
-    const changed = !p || p.status !== c.status || p.startsAtUtc !== utc.iso;
+    // Mudou = situação, hora OU mês de referência (antes a referência era ignorada).
+    const changed = !p || p.status !== c.status || p.startsAtUtc !== utc.iso || (p.reference ?? null) !== (c.reference ?? null);
     out.push({
       id,
       kind: c.kind,

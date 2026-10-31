@@ -54,6 +54,13 @@ describe('lista fixa de datas', () => {
 });
 
 describe('validateCalendar reprova defeitos', () => {
+  it('tipo + data repetidos com ids diferentes (viraria um evento só no coletor)', () => {
+    const base = US_RELEASES.find((e) => e.kind === 'CPI');
+    const l = [...US_RELEASES, { ...base, id: 'cpi-duplicado' }].sort((a, b) => a.date.localeCompare(b.date));
+    expect(validateCalendar(l).join('|')).toMatch(/tipo \+ data repetidos/);
+    expect(validateCalendar(US_RELEASES)).toEqual([]); // a lista real não repete
+  });
+
   it('id repetido, fim de semana, hora inexistente, fora de ordem', () => {
     const l = clone();
     l.push({ ...l[0] });
