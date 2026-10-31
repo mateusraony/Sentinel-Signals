@@ -34,7 +34,7 @@ paths:
   `priceCheckActiveOps`/`checkAssetHealthchecks`) num timeout de aplicação
   de 90s + `process.exit()` forçado (`scripts/scanTimeout.mjs`) — sem isso,
   uma cota esgotada fazia o cliente admin do Firestore travar retry-ando por
-  MINUTOS, colidindo com o próximo disparo de ~5min e cascateando em horas
+  MINUTOS, colidindo com o próximo disparo de ~5min (na época; hoje ~15 min) e cascateando em horas
   de execuções canceladas/falhas (known-risks item 142).
 - `backfill.yml` — checagem retroativa ao adicionar/reativar um ativo
   (`npm run backfill-check`, `docs/known-risks.md` item 137). Workflow

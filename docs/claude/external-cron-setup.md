@@ -177,8 +177,8 @@ drift antes da correção.
 **Por que 15 min.** O Neon gratuito dá 100 horas de computação por mês e dorme
 após 5 min sem uso. Com o scan a cada 5 min o banco **nunca dorme** (~180 h/mês) e a
 cota estourou (itens 282/283). Com ~15 min ele dorme entre as passadas (~6 min
-acordado a cada disparo ≈ 65 h/mês, estimativa — o consumo real se mede no painel
-do Neon). O texto acima descreve a história com `*/5`; vale o que está aqui.
+acordado a cada disparo ≈ 79 h/mês — modelo de `scripts/neonComputeBudget.test.js`, teto 85 h; é
+estimativa, o consumo real se mede no painel do Neon). O texto acima descreve a história com `*/5`; vale o que está aqui.
 
 **O que mudou no repositório (item 286):** `schedule:` de reserva do `scan.yml` agora
 a cada 6 h (`7 */6 * * *`); `backfill.yml` a cada 6 h; tolerância de "ativo atrasado"
@@ -196,9 +196,14 @@ stops/alvos da pausa; só a recuperação em modo "replay" os reconstrói com a 
 1. cron-job.org → o job do scan → desligar ("Enabled" → off).
 2. GitHub → *Actions → Scheduled scan →* menu "**...**" → **Disable workflow**
    (desliga também o reserva de 6 em 6 h). Para religar: **Enable workflow**.
-3. Fechar as abas do painel: elas também rodam price-check a cada 2 min
+3. GitHub → *Actions → Backfill check (checagem retroativa de ativo novo/reativado) →* "**...**" →
+   **Disable workflow**. A recuperação **recusa** rodar com ele ligado (ele grava operações
+   retroativas no mesmo banco).
+4. Fechar as abas do painel: elas também rodam price-check a cada 2 min
    (`src/hooks/useAutoScan.js`).
-O backup do Postgres (`backup-postgres.yml`) e o resto continuam ligados.
+Continuam ligados: o backup do Postgres (`backup-postgres.yml`) e o coletor de contexto (não usa o
+banco). **Religar depois da recuperação**, nesta ordem: Scheduled scan → cron-job.org (15 min) →
+Backfill check (`docs/claude/recovery-runbook.md`).
 
 ## Coletor de contexto (Fase 2, 2026-10-31) — 3 jobs a mais no cron-job.org
 
