@@ -36,9 +36,9 @@ breve") — ver `CLAUDE.md`.
   `POST /api/telegram-notify` (não usado pelo frontend hoje).
 - **Scan 24/7**: `.github/workflows/scan.yml` roda `scripts/run-scan.mjs`
   (gratuito, sem navegador aberto), reusando a mesma lógica de
-  `src/lib/scanner.js`. O ritmo de ~5 min vem de um disparo externo
+  `src/lib/scanner.js`. O ritmo de ~15 min vem de um disparo externo
   (cron-job.org → `workflow_dispatch`); o `schedule` do próprio workflow é só
-  reserva horária. Ver a seção "Scan agendado" em `CLAUDE.md`.
+  reserva a cada 6 h. Ver a seção "Scan agendado" em `CLAUDE.md`.
 
 ## Rodando localmente
 

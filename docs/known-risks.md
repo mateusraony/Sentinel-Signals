@@ -33551,6 +33551,14 @@ workflow `restore-postgres.yml` só escreve em `RESTORE_DATABASE_URL`.
 
 ## 284. Auditoria do TXT "Cripto.ico × Sentinel" e plano da camada "Contexto de Mercado" (2026-10-27)
 
+> **[SUPERADO EM PARTE — 31/10/2026]** Este item é o plano de 27/10. Antes de agir sobre ele, leia os addenda do item 285:
+> (1) o **FRED** deixou de ser "não usar": é a fonte principal das **datas** de CPI/Payroll/PPI/PCE (nunca de valores de
+> série, por causa dos termos do FRED — addenda 5 e 9); (2) o **BLS** (`bls.ics`) devolve 403 para o IP do GitHub — as datas
+> vêm do FRED + a lista fixa (`scripts/contextCalendar.mjs`), e a API v2 do BLS (chave grátis) só entra para o número
+> oficial, nas Fases 3–4; (3) um `events.json` único em vez de um arquivo por mês; (4) a **DVOL** da Deribit nunca vai ao
+> repositório público (só na mensagem privada do Telegram, Fase 4); (5) as Fases 1–2 estão implementadas e blindadas
+> (addenda 9 e 10); as Fases 3–6 continuam só planejadas.
+
 **Contexto.** O usuário trouxe um TXT (~2.000 linhas, conversa com outra IA, 20-27/10) que compara o Sentinel
 com o Gênesis Labs (Cripto.ico) e propõe: derivativos, explicações, cenários Plano A/B, TP3 e uma camada de
 contexto (macro, calendário, sentimento, notícias, on-chain, avisos no Telegram). Pediu análise crítica, se é
@@ -33806,8 +33814,9 @@ baixa", e o que deixaria isso profissional.
   BLS `www` segue 403; `api.binance.com` 451 esperado; `data-api.binance.vision` OK; Medo e Ganância 30.
 - **FRED PPI/PCE [fato]:** release 46 = "Producer Price Index", 54 = "Personal Income and Outlays" (nomes batem).
   Próximas datas oficiais: **PPI 13/11 e 15/12; PCE 25/11 e 23/12** (CPI 10/11 e 10/12; Payroll 06/11 e 04/12).
-- **Deribit DVOL [fato]:** `resolution=3600` funciona (a dúvida `resolution` × `vix_resolution` da doc acabou).
-  BTC 38,8 → ±0,41% em 1h, ±0,83% em 4h, ±2,03% em 24h; ETH 53,9 → ±0,58%, ±1,15%, ±2,82%.
+- **Deribit DVOL [fato]:** `resolution=3600` funciona (a dúvida `resolution` × `vix_resolution` da doc acabou). Os
+  valores medidos foram retirados deste arquivo público (decisão C, addendum 7: nada da DVOL vai a lugar público; a
+  sonda também não a imprime mais).
 - **BEA [fato]:** o `.ics` do endereço antigo deu **404** e foi removido; a página do calendário responde e traz
   "Personal Income and Outlays". Pesquisa não achou iCal oficial do BEA (só RSS e e-mail). Não há problema: o FRED já
   dá as datas do PCE.
@@ -33940,6 +33949,11 @@ Pedido do usuário ("confirme se tudo está perfeito… blindado"); revisão ind
 
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
+> **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista
+> "Pendências (código, em ordem)" abaixo foram executados: o replay de recuperação está implementado e blindado no
+> **item 288** (PR-R1…R3 e PR-10). Seguem como estavam, sem andamento confirmado: o medidor de uso do Neon, a
+> continuidade C1/C2 e a hora real ao minuto.
+
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,
 100 horas de computação, autoscaling até 2 CU; oferta paga "Add for $10/month" = 250 h, recusada por exigir
 cartão) e pediu: dados e operações voltarem quando o banco voltar, "fechar toda lacuna" e dar a **hora real**
@@ -34002,7 +34016,7 @@ Drive; (4) PR #513: "corrigir se for importante" → **não é** (ver abaixo); (
 8. **Painel:** `Trades.jsx:478` só lê as 100 operações mais novas (uma ativa antiga some se houver >100 criadas
    depois); `TickerBar.jsx:55-60` mostra fechamento de 1 h velho sem a idade. Não corrigidos.
 
-**Desenho aprovado para a recuperação [plano, nada implementado]:** reaproveitar o motor de "checagem
+**Desenho aprovado para a recuperação [plano, nada implementado — feito no item 288]:** reaproveitar o motor de "checagem
 retroativa" (item 137: `run-backfill-check.mjs`, `backfillMarketDataProvider.js`, `backtestEngine.runBacktest`
 com relógio simulado) como **replay de recuperação** sobre `[último scan bom, agora]`: reexecuta o MESMO motor
 passo a passo, então abre as entradas que faltaram, gerencia as operações já ativas candle a candle (stop, TP,
