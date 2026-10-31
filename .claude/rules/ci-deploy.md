@@ -319,7 +319,8 @@ paths:
     `FRED_API_KEY`, sem ele "PULADO"). A chave vai **só na URL da requisição** — resultado/tabela/JSON mostram o
     molde `<FRED_API_KEY>` (travado por teste em `scripts/contextProbe.test.js`).
     Desde a run 5 (addendum 4) o FRED confirmou 4 datas, que viraram `oficial` na lista fixa (`oficial` exige
-    URL do BLS ou do FRED). O financecalendar é lido só de `events[]` (limite 2.000/dia sem chave).
+    URL do BLS, do FRED, do Fed ou do BEA — addendum 8). O financecalendar é lido só de `events[]` (limite
+    2.000/dia sem chave).
     Desde o addendum 5 (avisos de evento): FRED do PPI (46) e do PCE (54) conferidos pelo nome, demora do FRED
     (só o metadado `last_updated`, nunca valor de série), DVOL da Deribit (sem chave; a janela é montada na hora
     por `urlAt`, a tabela mostra o molde) e BEA (só a página: o `.ics` deu 404) — todos opcionais.
@@ -328,6 +329,8 @@ paths:
     Addendum 7: segredo opcional `BLS_API_KEY` (chave grátis do BLS) para CPI/Payroll/PPI na API v2 (só o período,
     a chave só na URL, sem ela "PULADO"); a DVOL não tem mais o valor impresso (termos da Deribit, logs públicos);
     o financecalendar mostra só os nomes dos campos de um evento.
+    Addendum 8: a lista fixa (`scripts/contextCalendar.mjs`) cobre CPI, Payroll, PPI, PCE e FOMC; a hora de cada
+    tipo é fixa em `KIND_TIMES` (08:30 de Nova York; FOMC 14:00) e a lista é reprovada se uma linha fugir dela.
 
 - `recovery.yml` — disparo **manual** (`workflow_dispatch` só), sem campos: **teste a seco** do replay de
   recuperação depois de queda longa do banco (`docs/known-risks.md` item 288).
