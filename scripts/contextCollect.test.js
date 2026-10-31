@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   FRED_RELEASES, EVENT_KEYS, STATUS_KEYS, parseFredReleaseDates, buildEvents, buildStatus, eventsHash,
-  assertPublicShape, fetchFredDates,
+  assertPublicShape, fetchFredDates, sanitizePrevious,
 } from './contextCollect.mjs';
 import { main, readPrevious } from './context-collect.mjs';
 import { DEFAULT_CONFIG } from './contextBudget.mjs';
@@ -56,9 +56,47 @@ describe('montagem dos eventos', () => {
     const ev = byId(buildEvents({ fredDatesByKind: { ...FRED, CPI: ['2026-11-10', '2026-12-11'] }, nowMs: NOW }));
     expect(ev['CPI-2026-12-11']).toMatchObject({ status: 'oficial', reference: null });
     expect(ev['CPI-2026-12-10'].status).toBe('a_confirmar');
-    // Data da lista ALÉM do que o FRED publicou não é rebaixada (não há o que comparar).
+    // Data da lista que o FRED NÃO traz vira "a confirmar" também ALÉM da última que ele publicou
+    // (antes ficava "oficial": achado G1 da auditoria de 31/10).
     const lista = [{ id: 'x', kind: 'CPI', reference: '2027-01', date: '2027-02-10', time: '08:30', status: 'oficial', fontes: [] }];
-    expect(byId(buildEvents({ fredDatesByKind: FRED, fixedList: lista, nowMs: NOW }))['CPI-2027-02-10'].status).toBe('oficial');
+    expect(byId(buildEvents({ fredDatesByKind: FRED, fixedList: lista, nowMs: NOW }))['CPI-2027-02-10'].status).toBe('a_confirmar');
+  });
+
+  // Achado G1 da auditoria de 31/10: a regra antiga só rebaixava até a última data do FRED, então uma
+  // antecipação ou a retirada das datas futuras deixava DOIS dias "oficiais" para o mesmo evento.
+  const oficiais = (events, kind) => events.filter((e) => e.kind === kind && e.status === 'oficial').map((e) => e.id);
+
+  it('remarcação PARA ANTES (PCE de 23/12 para 22/12): só o dia novo é oficial', () => {
+    const ev = buildEvents({ fredDatesByKind: { ...FRED, PCE: ['2026-11-25', '2026-12-22'] }, nowMs: NOW });
+    expect(byId(ev)['PCE-2026-12-22'].status).toBe('oficial');
+    expect(byId(ev)['PCE-2026-12-23'].status).toBe('a_confirmar');
+    expect(oficiais(ev, 'PCE')).toEqual(['PCE-2026-11-25', 'PCE-2026-12-22']);
+  });
+
+  it('retirada das datas futuras (o FRED responde só com datas passadas): nenhuma data futura do tipo fica oficial', () => {
+    const ev = buildEvents({ fredDatesByKind: { ...FRED, PCE: ['2026-09-30', '2026-10-29'] }, nowMs: NOW });
+    const pce = ev.filter((e) => e.kind === 'PCE');
+    expect(pce.length).toBeGreaterThan(0);
+    expect(oficiais(ev, 'PCE')).toEqual([]);
+    for (const e of pce) expect(e.status).toBe('a_confirmar');
+    // Os outros tipos não são afetados.
+    expect(byId(ev)['CPI-2026-11-10'].status).toBe('oficial');
+  });
+
+  it('adiamento (CPI de 10/12 para 17/12): só o dia novo é oficial', () => {
+    const ev = buildEvents({ fredDatesByKind: { ...FRED, CPI: ['2026-11-10', '2026-12-17'] }, nowMs: NOW });
+    expect(oficiais(ev, 'CPI')).toEqual(['CPI-2026-11-10', 'CPI-2026-12-17']);
+    expect(byId(ev)['CPI-2026-12-10'].status).toBe('a_confirmar');
+  });
+
+  it('nunca há dois oficiais do mesmo mês de referência por tipo (varredura de remarcações)', () => {
+    const casos = [['2026-12-22'], ['2026-12-24'], ['2027-01-05'], ['2026-12-23'], []];
+    for (const extra of casos) {
+      const dates = ['2026-11-25', ...extra];
+      const ev = buildEvents({ fredDatesByKind: { ...FRED, PCE: dates }, nowMs: NOW });
+      const pceOf = oficiais(ev, 'PCE').map((id) => id.slice(4));
+      expect(pceOf.every((d) => dates.includes(d)), `oficiais fora do FRED: ${pceOf} vs ${dates}`).toBe(true);
+    }
   });
 
   it('FRED fora do ar para um tipo: usa a lista fixa e não rebaixa nada', () => {
@@ -97,6 +135,41 @@ describe('montagem dos eventos', () => {
     const voltou = byId(buildEvents({ fredDatesByKind: FRED, previous: antes, nowMs: NOW + 7200000 }));
     expect(voltou['CPI-2026-12-10'].status).toBe('oficial');
     expect(voltou['CPI-2026-12-11'].status).toBe('a_confirmar');
+  });
+
+  it('events.json anterior com linhas malformadas: descarta as ruins, não trava e a saída passa na trava pública', () => {
+    const boa = buildEvents({ fredDatesByKind: FRED, nowMs: NOW })[0];
+    const ruins = [
+      { ...boa, id: 'CPI-2026-11-10', kind: 'CPI', status: 'oficial!!', reference: '2026-10' },
+      { ...boa, id: 'PPI-2026-11-13', kind: 'PPI', reference: '<script>' },
+      { ...boa, id: 'PCE-2026-11-25', kind: 'PCE', startsAtUtc: 'ontem' },
+      { id: 'FOMC-2026-12-09', kind: 'CPI', status: 'oficial', reference: null, startsAtUtc: boa.startsAtUtc }, // tipo não bate com o id
+      null, 42, 'texto', [], { id: 7 },
+    ];
+    expect(sanitizePrevious([boa, ...ruins])).toEqual([boa]);
+    expect(sanitizePrevious('não é lista')).toEqual([]);
+    const ev = buildEvents({ fredDatesByKind: FRED, previous: [boa, ...ruins], nowMs: NOW + 3600000 });
+    const status = buildStatus({ events: ev, fredDatesByKind: FRED, nowMs: NOW + 3600000 });
+    expect(() => assertPublicShape(ev, status)).not.toThrow();
+    // A linha boa é aproveitada (firstSeenAt preservado); as ruins viram eventos novos.
+    expect(byId(ev)[boa.id].firstSeenAt).toBe(boa.firstSeenAt);
+    expect(byId(ev)['PPI-2026-11-13'].firstSeenAt).toBe('2026-10-31T13:00:00.000Z');
+    // E a FRED fora do ar não copia status ruim da coleta anterior.
+    const semFred = buildEvents({ fredDatesByKind: {}, previous: ruins, nowMs: NOW });
+    expect(() => assertPublicShape(semFred, buildStatus({ events: semFred, fredDatesByKind: {}, nowMs: NOW }))).not.toThrow();
+  });
+
+  it('lastChangedAt acompanha a mudança do mês de referência (antes só situação e hora)', () => {
+    const a = buildEvents({ fredDatesByKind: FRED, nowMs: NOW });
+    const alvo = a.find((e) => e.id === 'CPI-2026-11-10');
+    expect(alvo.reference).toBe('2026-10');
+    const previous = a.map((e) => (e.id === alvo.id ? { ...e, reference: '2026-09' } : e));
+    const b = byId(buildEvents({ fredDatesByKind: FRED, previous, nowMs: NOW + 3600000 }));
+    expect(b[alvo.id].reference).toBe('2026-10');
+    expect(b[alvo.id].lastChangedAt).toBe('2026-10-31T13:00:00.000Z');
+    // Sem mudança nenhuma, continua igual.
+    const c = byId(buildEvents({ fredDatesByKind: FRED, previous: a, nowMs: NOW + 3600000 }));
+    expect(c[alvo.id].lastChangedAt).toBe(alvo.lastChangedAt);
   });
 
   it('rodar de novo sem novidade não muda nada (mesmos eventos, mesma impressão digital)', () => {
@@ -197,6 +270,28 @@ describe('o executável (scripts/context-collect.mjs)', () => {
         expect(texto).not.toMatch(/https?:\/\//);
       }
       expect(logs.join('\n')).toMatch(/FRED: \*\*ok\*\*/);
+    } finally {
+      console.log = origLog;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('events.json anterior com linhas ruins NÃO trava o coletor para sempre (grava e sai com 0)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-ruim-'));
+    const boa = buildEvents({ fredDatesByKind: FRED, nowMs: NOW })[0];
+    fs.writeFileSync(path.join(dir, 'events.json'), JSON.stringify([{ ...boa, status: 'texto livre com https://x.y' }, { ...boa, id: 'CPI-2026-11-10', kind: 'CPI', reference: 'x' }]));
+    const origLog = console.log;
+    console.log = () => {};
+    try {
+      const code = await main(['--dir', dir], { FRED_API_KEY: 'k' }, { fetchImpl: async (url) => {
+        const id = Number(new URL(String(url)).searchParams.get('release_id'));
+        const kind = Object.entries(FRED_RELEASES).find(([, v]) => v === id)?.[0];
+        return new Response(fredBody(FRED[kind]), { status: 200 });
+      }, now: () => NOW });
+      expect(code).toBe(0);
+      const gravado = fs.readFileSync(path.join(dir, 'events.json'), 'utf8');
+      expect(gravado).not.toMatch(/texto livre|https:/);
+      expect(() => assertPublicShape(JSON.parse(gravado), JSON.parse(fs.readFileSync(path.join(dir, 'status.json'), 'utf8')))).not.toThrow();
     } finally {
       console.log = origLog;
       fs.rmSync(dir, { recursive: true, force: true });

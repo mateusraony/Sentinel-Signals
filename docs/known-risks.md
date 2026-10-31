@@ -33900,6 +33900,40 @@ baixa", e o que deixaria isso profissional.
   branches, o push falha e o job fica vermelho, sem gravar nada em outro lugar.
 - **Critério da Fase 2 (item 284):** 2 semanas só coletando, ≥95% das 42 coletas, 0 push perdido, 0 acesso ao Neon.
 
+**Addendum 10 (2026-10-31, PR-11) — auditoria do coletor e da trava de isolamento: o que estava errado e foi corrigido.**
+Pedido do usuário ("confirme se tudo está perfeito… blindado"); revisão independente de `contextCollect.mjs`,
+`context-collect.mjs`, `context-collect.yml` e do tripwire.
+- **G1 (grave) — dois dias "oficiais" para o mesmo evento [fato, código antigo].** A regra de remarcação só rebaixava
+  datas da lista fixa até a última data que o FRED publicou. Se o FRED **antecipava** (PCE de 23/12 para 22/12) ou
+  **retirava** as datas futuras (adiamento/paralisação), a data antiga continuava "oficial" ao lado da nova. Hoje nenhuma
+  tela lê isso; nas Fases 3/4 viraria alerta falso. **Agora:** com o FRED respondendo para um tipo, TODA data futura da
+  lista que ele não traz vira `a_confirmar` (regra 2 de `buildEvents`). **Troca assumida:** se o FRED vier incompleto
+  ou atrasado em relação a uma data nova que a lista já tem como oficial (ex.: calendário de 2027 do BLS), o evento fica
+  `a_confirmar` (sem alerta) até o FRED publicar — preferimos perder um alerta por alguns dias a publicar dois dias
+  oficiais. Hoje nenhuma data de 2027 está `oficial` na lista (todas `a_confirmar`), então não há efeito prático agora.
+- **Arquivo anterior malformado travava o coletor para sempre [fato].** Situação/referência vindas do `events.json`
+  anterior eram copiadas sem checar o formato; a trava do conteúdo público recusava tudo e, como o arquivo ruim ficava
+  na branch, toda coleta seguinte falhava igual. **Agora:** `sanitizePrevious` descarta linha fora do formato (vira
+  evento novo). `lastChangedAt` passou a considerar a mudança do mês de referência.
+- **Erro de rede virava "branch não existe" [fato].** `git ls-remote ... >/dev/null 2>&1` num `if`: qualquer falha caía no
+  ramo que cria a branch órfã. **Agora:** só o código 2 do `--exit-code` (branch inexistente) cria; outro código falha o
+  job com a causa. Simulado com um `git` falso nos 3 códigos (0, 2, 128).
+- **Calendário** passou a recusar o mesmo tipo + data duas vezes (com ids diferentes viraria um evento só, sem aviso).
+- **Trava de isolamento (`contextIsolationTripwire.test.js`) tinha brechas [fato]:** `git -C . push` e `git -c x=y push`
+  não eram vistos pelo regex `git\s+push`; segredo em minúsculas (`secrets.database_url`) e formas indiretas
+  (`secrets['X']`, `toJSON(secrets)`) passavam; e nada exigia `permissions:` em cada workflow de contexto (sem o bloco o
+  workflow herda as permissões padrão do repositório). **Agora:** qualquer `git ... push` conta e só a linha permitida
+  passa; nome de segredo comparado sem diferenciar maiúscula; uso indireto de `secrets` reprovado; todo workflow de
+  contexto precisa declarar `permissions:` no topo. Prova com variantes plantadas que **mantêm** o push permitido e somam
+  um segundo por fora (a variante que só trocava o push era pega por outro motivo — "nenhum push" — e escondia o buraco).
+- **Orçamento:** `contextBudget.mjs` contava 3 coletas/dia; com a reserva do `schedule` são até 4. O teste confere que o
+  pior caso (4/dia: 360 min/mês, 480 chamadas/mês ao FRED) também cabe e que o workflow tem mesmo 1 reserva.
+- **Provas [verificado]:** 10 mutações (G1 volta ao limite antigo; previous sem sanitizar; `lastChangedAt` ignorando a
+  referência; sanitizador aceitando referência/situação qualquer; calendário aceitando repetição; tripwire com o regex
+  antigo, segredo só em maiúsculas, sem checar uso indireto, `permissions` sempre ok) — todas reprovam teste.
+- **Fora (decidido não mexer, com motivo):** o e-mail de contato vai no identificador (`User-Agent`) de todas as fontes da
+  sonda — é o e-mail dedicado ao robô, criado para isso; rótulos "erro de rede" × "tempo esgotado" na sonda (só texto).
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,

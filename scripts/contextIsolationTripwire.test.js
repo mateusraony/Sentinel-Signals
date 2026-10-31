@@ -115,18 +115,28 @@ describe('tripwire: o Contexto não toca banco, scanner nem Telegram com banco (
 const COLETOR = '.github/workflows/context-collect.yml';
 const SEGREDOS_DO_COLETOR = new Set(['FRED_API_KEY', 'CONTEXT_CONTACT_EMAIL']);
 
+/** true quando o workflow NÃO tem `permissions:` no nível do arquivo (comentários ignorados). */
+function semPermissoes(yml) {
+  const codigo = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  return !/^permissions:/m.test(codigo);
+}
+
 function problemasDoColetor(yml) {
   const codigo = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
   const p = [];
   if (!/permissions:\s*\n\s*contents:\s*write\s*\n/.test(codigo)) p.push('permissões: esperado só `contents: write`');
   if ((codigo.match(/:\s*write\b/g) || []).length !== 1) p.push('permissões: há escrita além de `contents`');
-  const pushes = codigo.split('\n').filter((l) => /\bgit\s+push\b/.test(l));
+  // Qualquer `git ... push` (inclui `git -C . push` e `git -c x=y push`: antes só `git push` colado era visto).
+  const pushes = codigo.split('\n').filter((l) => /\bgit\b.*\bpush\b/.test(l));
   if (!pushes.length) p.push('nenhum git push (a regra abaixo ficaria vazia)');
   for (const l of pushes) {
     if (!/^\s*git push origin HEAD:refs\/heads\/context-data\s*$/.test(l)) p.push(`push fora do permitido: ${l.trim()}`);
   }
   if (/--force|\s-f\b|\+HEAD|\+refs\//.test(codigo)) p.push('push forçado');
-  for (const [, nome] of codigo.matchAll(/secrets\.([A-Z0-9_]+)/g)) if (!SEGREDOS_DO_COLETOR.has(nome)) p.push(`segredo não permitido: ${nome}`);
+  // Nome de segredo não diferencia maiúscula de minúscula no GitHub: `secrets.database_url` é o DATABASE_URL.
+  for (const [, nome] of codigo.matchAll(/secrets\.([A-Za-z0-9_]+)/g)) if (!SEGREDOS_DO_COLETOR.has(nome.toUpperCase())) p.push(`segredo não permitido: ${nome}`);
+  // Qualquer outro jeito de pegar segredo (secrets['X'], toJSON(secrets), secrets: inherit) passaria batido.
+  if (/\bsecrets\b(?!\.[A-Za-z0-9_])/.test(codigo)) p.push('uso indireto de `secrets` (só secrets.NOME é permitido)');
   if (/TELEGRAM/.test(codigo)) p.push('Telegram (só na Fase 4, com remetente sem banco)');
   if (!/workflow_dispatch/.test(codigo)) p.push('sem disparo manual (o cron-job.org usa workflow_dispatch)');
   if (!/node scripts\/context-collect\.mjs/.test(codigo)) p.push('não roda o coletor');
@@ -147,6 +157,12 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
     }
   });
 
+  it('todo workflow de contexto declara `permissions:` no topo (senão herda as permissões padrão do repositório)', () => {
+    const wfs = arquivosDoContexto().filter((rel) => rel.startsWith('.github/'));
+    expect(wfs.length).toBeGreaterThanOrEqual(2); // não-vacuidade: sonda + coletor
+    for (const rel of wfs) expect(semPermissoes(readFileSync(join(ROOT, rel), 'utf8')), rel).toBe(false);
+  });
+
   it('prova: pega push forçado, outra branch, segredo a mais, Telegram e permissão a mais', () => {
     const real = readFileSync(join(ROOT, COLETOR), 'utf8');
     const push = 'git push origin HEAD:refs/heads/context-data';
@@ -159,8 +175,31 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
       real.replace('contents: write', 'contents: write\n  pull-requests: write'),
       real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ secrets.FRED_API_KEY }}\n          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}'),
       real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ secrets.BLS_API_KEY }}'),
+      // Brechas achadas na auditoria de 31/10 (antes passavam):
+      real.replace(push, 'git -C . push origin HEAD:refs/heads/main'),
+      real.replace(push, 'git -c core.hooksPath=/dev/null push origin HEAD:refs/heads/context-data --tags'),
+      // Mantém o push permitido E soma um 2º por um jeito que o regex antigo (`git push` colado) não via:
+      `${real.replace(push, `${push}\n          git -C . push origin HEAD:refs/heads/main`)}`,
+      `${real.replace(push, `${push}\n          git -c user.name=x push origin HEAD:refs/heads/outra`)}`,
+      real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ secrets.fred_api_key }}\n          X: ${{ secrets.database_url }}'),
+      real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', "FRED_API_KEY: ${{ secrets['DATABASE_URL'] }}"),
+      real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ toJSON(secrets) }}'),
     ];
     for (const yml of plantados) expect(problemasDoColetor(yml).length, yml.slice(-200)).toBeGreaterThan(0);
+  });
+
+  it('prova: não acusa o coletor real nem o nome do segredo em minúscula quando é um permitido', () => {
+    const real = readFileSync(join(ROOT, COLETOR), 'utf8');
+    expect(problemasDoColetor(real.replace('secrets.FRED_API_KEY', 'secrets.fred_api_key'))).toEqual([]);
+  });
+
+  it('prova: pega workflow de contexto sem bloco `permissions:`', () => {
+    const real = readFileSync(join(ROOT, COLETOR), 'utf8');
+    const sonda = readFileSync(join(ROOT, '.github/workflows/context-probe.yml'), 'utf8');
+    expect(semPermissoes(real)).toBe(false);
+    expect(semPermissoes(real.replace(/^permissions:\n  contents: write\n/m, ''))).toBe(true);
+    expect(semPermissoes(sonda.replace(/^permissions:[\s\S]*?\n(?=\S)/m, ''))).toBe(true);
+    expect(semPermissoes('name: x\non: push\njobs:\n  a:\n    permissions:\n      contents: read\n')).toBe(true); // só dentro do job não vale
   });
 });
 

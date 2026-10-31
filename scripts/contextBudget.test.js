@@ -4,9 +4,27 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_CONFIG, estimateBudget, stress, exceedsProviderLimit, formatBudgetTable, DAYS_PER_MONTH,
+  COLLECTOR_WORST_CASE_RUNS_PER_DAY,
 } from './contextBudget.mjs';
 
 const bySource = (est, id) => est.sources.find((s) => s.id === id);
+
+describe('pior caso do coletor (3 do cron-job.org + 1 da reserva do `schedule` = 4/dia)', () => {
+  it('também cabe em todos os tetos (auditoria de 31/10: o orçamento só contava 3/dia)', () => {
+    expect(COLLECTOR_WORST_CASE_RUNS_PER_DAY).toBe(4);
+    const est = estimateBudget({ ...DEFAULT_CONFIG, runsPerDay: COLLECTOR_WORST_CASE_RUNS_PER_DAY });
+    expect(est.ok).toBe(true);
+    expect(est.actions.minutesPerMonth).toBe(360); // 4 x 30 x 3 min, abaixo do teto de 600
+    expect(bySource(est, 'fred-release-dates').callsPerMonth).toBe(480); // 4 tipos x 4 x 30
+  });
+
+  it('a reserva existe de verdade no workflow (senão o número 4 estaria errado)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const yml = readFileSync('.github/workflows/context-collect.yml', 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    expect((yml.match(/^\s+- cron: /gm) || []).length).toBe(1); // 1 reserva diária
+    expect(yml).toMatch(/workflow_dispatch/); // + as 3 do cron-job.org
+  });
+});
 
 describe('orçamento do desenho aprovado (3 coletas/dia)', () => {
   const est = estimateBudget(DEFAULT_CONFIG);

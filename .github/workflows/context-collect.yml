@@ -39,14 +39,23 @@ jobs:
 
       - name: Abrir a branch de dados
         # Existe: abre a última versão. Não existe (1ª vez): cria vazia, sem histórico do código.
+        # `ls-remote --exit-code` devolve 2 quando a branch NÃO existe e outro código quando a consulta
+        # em si falha (rede, permissão): só o 2 autoriza criar a branch. Antes qualquer erro virava
+        # "branch não existe" e o push tentaria criar uma branch nova por cima de uma existente.
         run: |
-          set -euo pipefail
-          if git ls-remote --exit-code --heads origin context-data >/dev/null 2>&1; then
+          set -uo pipefail
+          git ls-remote --exit-code --heads origin context-data >/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
             git fetch --depth=1 origin context-data
             git worktree add data FETCH_HEAD
             git -C data checkout -q -B context-data
-          else
+          elif [ "$rc" -eq 2 ]; then
             git worktree add --orphan -b context-data data
+          else
+            echo "::error::Não consegui consultar o repositório para saber se a branch context-data existe (código $rc). Rode de novo; nada foi alterado."
+            exit 1
           fi
 
       - name: Coletar as datas
