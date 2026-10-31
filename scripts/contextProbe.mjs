@@ -151,6 +151,19 @@ export function collectIsoDates(value, limit = 5000) {
 }
 
 /**
+ * Nomes dos campos do 1º evento (ex.: actual, forecast, previous) — NUNCA os valores. Responde se a
+ * fonte traz "estimado" (consenso) sem copiar o dado dela (item 285, addendum 7). Só nomes curtos
+ * de identificador entram; até 15.
+ */
+export function eventFieldNames(events) {
+  const first = Array.isArray(events) ? events.find((e) => e && typeof e === 'object' && !Array.isArray(e)) : null;
+  if (!first) return 'campos do evento: —';
+  const names = Object.keys(first).filter((k) => /^[A-Za-z_][A-Za-z0-9_]{0,39}$/.test(k)).sort();
+  const shown = names.slice(0, 15);
+  return `campos do evento: ${shown.join(', ') || '—'}${names.length > shown.length ? ` (+${names.length - shown.length})` : ''}`;
+}
+
+/**
  * financecalendar.com (terceiros, sem chave; limite 2.000/dia, zera 00:00 UTC — visto nos
  * cabeçalhos da 1ª execução real). Lê as datas só de `events`.
  * @param {'CPI'|'NFP'} kind
@@ -166,7 +179,7 @@ export function validateFinanceCalendar(kind) {
     const dates = collectIsoDates(events);
     if (!dates.length) return fail('events sem nenhuma data AAAA-MM-DD');
     const janela = j.value.from && j.value.to ? `janela ${String(j.value.from).slice(0, 10)} a ${String(j.value.to).slice(0, 10)}` : 'janela —';
-    return pass(`${events.length} evento(s) de ${j.value.total ?? '?'} (${janela}); ${dates.length} data(s); ${formatComparison(compareWithFixedList(kind, dates))}`);
+    return pass(`${events.length} evento(s) de ${j.value.total ?? '?'} (${janela}); ${dates.length} data(s); ${formatComparison(compareWithFixedList(kind, dates))}; ${eventFieldNames(events)}`);
   };
 }
 
@@ -295,34 +308,36 @@ export function validateBlsApi(seriesId) {
 }
 
 const HOUR_MS = 60 * 60 * 1000;
-const HOURS_PER_YEAR = 365 * 24; // cripto negocia o ano todo
 
 /**
- * Deribit DVOL (volatilidade implícita de 30 dias, anualizada, em %): base do "movimento
- * esperado" do aviso de evento. Faixa de 1 desvio para h horas = DVOL × √(h / 8760).
+ * Deribit DVOL (volatilidade implícita de 30 dias, anualizada, em %). Só confere que a fonte responde
+ * no formato esperado e com valor plausível — **o valor NÃO é impresso**: os termos da Deribit permitem
+ * só uso pessoal e proíbem publicar dado derivado, e os logs e o Job Summary deste repositório são
+ * públicos (item 285, addendum 7). A DVOL só pode ir para a mensagem privada do Telegram (Fase 4).
  * Formato esperado: result.data = [[timestamp, abertura, máxima, mínima, fechamento], ...].
  */
 export function validateDeribitDvol(currency) {
   return ({ body, nowMs }) => {
     const j = tryJson(body);
     if (j.error) return fail('resposta não é JSON');
-    if (j.value?.error) return fail(`erro da Deribit: ${j.value.error.message ?? JSON.stringify(j.value.error)}`);
+    if (j.value?.error) return fail(`erro da Deribit: ${String(j.value.error.message ?? 'sem mensagem').slice(0, 120)}`);
     const rows = j.value?.result?.data;
     if (!Array.isArray(rows) || !rows.length) return fail('sem result.data');
     const last = rows[rows.length - 1];
     const ts = Number(last?.[0]);
     const close = Number(last?.[4]);
     if (!Number.isFinite(ts) || !Number.isFinite(close)) return fail('última linha sem [timestamp, …, fechamento] numéricos');
-    if (close < 5 || close > 400) return fail(`DVOL ${close} fora da faixa plausível (5 a 400)`);
+    if (close < 5 || close > 400) return fail('valor fora da faixa plausível (5 a 400)');
     if (Number.isFinite(nowMs) && nowMs - ts > 3 * HOUR_MS) return fail(`último valor velho (${new Date(ts).toISOString()})`);
-    const band = (h) => (close * Math.sqrt(h / HOURS_PER_YEAR)).toFixed(2);
-    return pass(`DVOL ${currency} ${close.toFixed(1)} (${new Date(ts).toISOString().slice(0, 16)} UTC, ${rows.length} vela(s)); faixa de 1 desvio: ±${band(1)}% em 1h, ±${band(4)}% em 4h, ±${band(24)}% em 24h`);
+    return pass(`DVOL ${currency}: responde, valor plausível (não exibido: termos da Deribit); última vela ${new Date(ts).toISOString().slice(0, 16)} UTC, ${rows.length} vela(s)`);
   };
 }
 
 const FRED_BASE = 'https://api.stlouisfed.org/fred';
 const FRED_KEY_PLACEHOLDER = '<FRED_API_KEY>';
 const DERIBIT_DVOL = 'https://www.deribit.com/api/v2/public/get_volatility_index_data';
+const BLS_V2 = 'https://api.bls.gov/publicAPI/v2/timeseries/data';
+const BLS_KEY_PLACEHOLDER = '<BLS_API_KEY>';
 const dvolUrl = (currency) => (nowMs) => `${DERIBIT_DVOL}?currency=${currency}&resolution=3600&start_timestamp=${nowMs - 6 * HOUR_MS}&end_timestamp=${nowMs}`;
 
 const BLS_HINT = 'a política do BLS pede um contato do robô (segredo CONTEXT_CONTACT_EMAIL)';
@@ -365,8 +380,9 @@ export const SOURCES = Object.freeze([
   { id: 'fred-dates-cpi', name: 'FRED — datas do CPI (oficial)', url: `${FRED_BASE}/release/dates?release_id=10&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredDates('CPI') },
   { id: 'fred-release-nfp', name: 'FRED — release 50 é o Emprego? (confere o nome)', url: `${FRED_BASE}/release?release_id=50&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredRelease('Employment Situation') },
   { id: 'fred-dates-nfp', name: 'FRED — datas do Payroll (oficial)', url: `${FRED_BASE}/release/dates?release_id=50&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredDates('NFP') },
-  // Rodada 8 (30/10, item 285 addendum 5): PPI e PCE também ganham aviso; o "movimento esperado" vem da
-  // Deribit; a demora do FRED decide se o número oficial chega a tempo. Todas opcionais (fora do portão).
+  // Rodada 8 (30/10, item 285 addendum 5): PPI e PCE também ganham aviso; a demora do FRED decide se o
+  // número oficial chega a tempo. A Deribit só é conferida (valor não exibido, addendum 7); o "movimento
+  // esperado" do painel usa a volatilidade da Binance. Todas opcionais (fora do portão).
   { id: 'fred-release-ppi', name: 'FRED — release 46 é o PPI? (confere o nome)', url: `${FRED_BASE}/release?release_id=46&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredRelease('Producer Price Index') },
   { id: 'fred-dates-ppi', name: 'FRED — datas do PPI (oficial)', url: `${FRED_BASE}/release/dates?release_id=46&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredDates('PPI') },
   { id: 'fred-release-pce', name: 'FRED — release 54 é o PCE (Renda e Gastos Pessoais)? (confere o nome)', url: `${FRED_BASE}/release?release_id=54&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredRelease('Personal Income and Outlays') },
@@ -378,11 +394,17 @@ export const SOURCES = Object.freeze([
   { id: 'fred-lag-pce', name: 'FRED — demora no PCE (PCEPI, só metadado)', url: `${FRED_BASE}/series?series_id=PCEPI&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, companion: { url: `${FRED_BASE}/release/dates?release_id=54&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}` }, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PCEPI', 'PCE') },
   // Deribit DVOL (pública, sem chave). A janela depende da hora da execução: `urlAt` monta a URL real;
   // `url` é o molde que aparece na tabela.
-  { id: 'deribit-dvol-btc', name: 'Deribit — DVOL do BTC (movimento esperado)', url: `${DERIBIT_DVOL}?currency=BTC&resolution=3600&start_timestamp=<agora-6h>&end_timestamp=<agora>`, urlAt: dvolUrl('BTC'), required: false, validate: validateDeribitDvol('BTC') },
-  { id: 'deribit-dvol-eth', name: 'Deribit — DVOL do ETH (movimento esperado)', url: `${DERIBIT_DVOL}?currency=ETH&resolution=3600&start_timestamp=<agora-6h>&end_timestamp=<agora>`, urlAt: dvolUrl('ETH'), required: false, validate: validateDeribitDvol('ETH') },
+  { id: 'deribit-dvol-btc', name: 'Deribit — DVOL do BTC (só confere se responde)', url: `${DERIBIT_DVOL}?currency=BTC&resolution=3600&start_timestamp=<agora-6h>&end_timestamp=<agora>`, urlAt: dvolUrl('BTC'), required: false, validate: validateDeribitDvol('BTC') },
+  { id: 'deribit-dvol-eth', name: 'Deribit — DVOL do ETH (só confere se responde)', url: `${DERIBIT_DVOL}?currency=ETH&resolution=3600&start_timestamp=<agora-6h>&end_timestamp=<agora>`, urlAt: dvolUrl('ETH'), required: false, validate: validateDeribitDvol('ETH') },
   // BEA (dono do PCE): o .ics antigo deu 404 na run 7 e não há iCal oficial; fica só a página do calendário (informativa).
   // API pública do BLS (host diferente do www.bls.gov, que dá 403): responde do GitHub? e quanto depois da divulgação o período novo aparece?
   { id: 'bls-api-v1-cpi', name: 'BLS — API pública v1 (CPI, só o período mais recente)', url: 'https://api.bls.gov/publicAPI/v1/timeseries/data/CUSR0000SA0', required: false, blockHint: BLS_HINT, validate: validateBlsApi('CUSR0000SA0') },
+  // API v2 do BLS com a chave grátis (segredo BLS_API_KEY; sem ela, PULADO): limite de 500 consultas/dia por
+  // chave. A chave vai só na requisição (`registrationkey=<BLS_API_KEY>`), como a do FRED. Payroll e PPI
+  // entram porque as divulgações de 06/11 (Payroll) e 13/11 (PPI) também precisam ser medidas.
+  { id: 'bls-api-v2-cpi', name: 'BLS — API v2 com chave (CPI, só o período mais recente)', url: `${BLS_V2}/CUSR0000SA0?registrationkey=${BLS_KEY_PLACEHOLDER}`, required: false, needsEnv: 'BLS_API_KEY', secretInUrl: 'BLS_API_KEY', blockHint: BLS_HINT, validate: validateBlsApi('CUSR0000SA0') },
+  { id: 'bls-api-v2-nfp', name: 'BLS — API v2 com chave (Payroll, só o período mais recente)', url: `${BLS_V2}/CES0000000001?registrationkey=${BLS_KEY_PLACEHOLDER}`, required: false, needsEnv: 'BLS_API_KEY', secretInUrl: 'BLS_API_KEY', blockHint: BLS_HINT, validate: validateBlsApi('CES0000000001') },
+  { id: 'bls-api-v2-ppi', name: 'BLS — API v2 com chave (PPI, só o período mais recente)', url: `${BLS_V2}/WPSFD4?registrationkey=${BLS_KEY_PLACEHOLDER}`, required: false, needsEnv: 'BLS_API_KEY', secretInUrl: 'BLS_API_KEY', blockHint: BLS_HINT, validate: validateBlsApi('WPSFD4') },
   { id: 'bea-schedule-page', name: 'BEA — página do calendário de divulgações', url: 'https://www.bea.gov/news/schedule', required: false, validate: validateHtmlContains('Personal Income and Outlays') },
   { id: 'binance-announcements', name: 'Binance — anúncios (delisting; esperado bloqueio)', url: 'https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&catalogId=161&pageNo=1&pageSize=5', required: false, validate: validateBinanceAnnouncements },
 ]);
