@@ -199,3 +199,19 @@ stops/alvos da pausa; só a recuperação em modo "replay" os reconstrói com a 
 3. Fechar as abas do painel: elas também rodam price-check a cada 2 min
    (`src/hooks/useAutoScan.js`).
 O backup do Postgres (`backup-postgres.yml`) e o resto continuam ligados.
+
+## Coletor de contexto (Fase 2, 2026-10-31) — 3 jobs a mais no cron-job.org
+
+O **Coletor de contexto — datas dos eventos** (`.github/workflows/context-collect.yml`, `docs/known-risks.md`
+item 285, addendum 9) grava as datas de CPI, Payroll, PPI, PCE e FOMC na branch `context-data`. **Não usa o banco**
+(não gasta a cota do Neon) e pode ficar ligado mesmo com o scan pausado.
+
+1. **Primeiro, 1 vez à mão:** GitHub → *Actions → Coletor de contexto — datas dos eventos →* **Run workflow**.
+   Verde + a branch `context-data` aparecendo com `events.json` e `status.json` = funcionou.
+2. **cron-job.org:** criar **3 jobs** iguais ao do scan (mesmo token, mesmos 4 headers, mesmo corpo
+   `{"ref":"main"}`), trocando só:
+   - **URL**: `https://api.github.com/repos/mateusraony/Sentinel-Signals/actions/workflows/context-collect.yml/dispatches`
+   - **Horário** (fuso UTC no cron-job.org): `0 10 * * *`, `0 15 * * *` e `0 0 * * *` — 07h, 12h e 21h de Brasília.
+3. O token do scan já serve (permissão `Actions: Read and write` no repositório; o coletor não precisa de mais nada).
+
+O workflow também tem uma reserva própria 1x/dia (11:41 UTC), só para o caso do cron-job.org falhar.
