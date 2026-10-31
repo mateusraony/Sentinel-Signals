@@ -271,9 +271,10 @@ paths:
     procedência `--target-arm`, Bonferroni m=6) e publica `resumo-targets-test`.
   - **Sem secret.**
 
-- `restore-postgres.yml` — disparo **manual** (`workflow_dispatch`, sem campos): restaura o backup diário
-  mais recente (branch `backups-postgres` do repo privado de backups, via `BACKUP_DEPLOY_KEY`) num banco NOVO
-  (`docs/known-risks.md` itens 282/283).
+- `restore-postgres.yml` — disparo **manual** (`workflow_dispatch`, campo opcional "Arquivo do backup"): restaura um
+  backup (branch `backups-postgres` do repo privado de backups, via `BACKUP_DEPLOY_KEY`) num banco NOVO
+  (`docs/known-risks.md` itens 282/283). Campo vazio = o backup **diário** mais recente; ou o nome exato de um arquivo
+  (`postgres-backup-AAAA-MM-DD[-pre-recuperacao-N].dump`, validado por regex e nunca interpolado no shell).
   - **Destino:** sempre o secret `RESTORE_DATABASE_URL`, nunca o `DATABASE_URL` vivo; recusa rodar se
     forem iguais **e exige o destino vazio (nenhuma tabela com linha, `users`/`scanner_locks` incluídas) antes de
     qualquer escrita**. Não existe opção de apagar nada
@@ -342,7 +343,8 @@ paths:
   - **Conteúdo público travado** por `assertPublicShape` (lista fechada de campos; nada de URL, chave, erro, valor de
     série ou volatilidade) e as regras do workflow por `scripts/contextIsolationTripwire.test.js`.
 
-- `recovery.yml` — disparo **manual** (`workflow_dispatch` só), sem campos: **teste a seco** do replay de
+- `recovery.yml` — disparo **manual** (`workflow_dispatch` só), com 2 campos ("O que fazer" = `teste-a-seco`/`aplicar`
+  e "Só para aplicar: o número do teste a seco…"): **teste a seco** do replay de
   recuperação depois de queda longa do banco (`docs/known-risks.md` item 288).
   - **O que faz:** `npm run recovery -- --mode=dry-run` (`scripts/run-recovery.mjs` → `scripts/recoveryDryRun.mjs`)
     lê o banco, reexecuta o motor vela a vela sobre a pausa numa loja em memória e publica o relatório em
@@ -353,13 +355,17 @@ paths:
     `scripts/recoveryTripwire.test.js`, que monta o pacote e confere o módulo empacotado.
   - **Para sozinho** se "Scheduled scan" ou "Backfill check" estiverem ligados (lê o estado pela API do GitHub,
     `actions: read`), sem StrategyConfig, com vela faltando na Binance ou banco ainda sem cota.
-  - **Modo aplicar** (campo "O que fazer" = `aplicar` + número do teste a seco): job `backup`
-    (chama `backup-postgres.yml` via `workflow_call`) → job `apply` (`scripts/recoveryApply.mjs`): confere
+  - **Modo aplicar** (campo "O que fazer" = `aplicar` + número do teste a seco): job `validar` (o número, só
+    dígitos, **antes** do backup) → job `backup` (chama `backup-postgres.yml` via `workflow_call` com o
+    sufixo `-pre-recuperacao-<número>`: nome próprio, que o backup diário não sobrescreve nem apaga) → job `apply`
+    (`scripts/recoveryApply.mjs`, `timeout-minutes: 190`): confere
     aprovação (número = artefato baixado, ≤ 24 h), workflows pausados, retrato/configuração/velas iguais
     aos do teste a seco e **política estrita** (refaz em memória até agora; evento novo → para sem gravar);
     pega os locks `full-scan`/`price-check`; grava pelo mesmo motor; relê e compara; etiqueta; **1**
-    mensagem no Telegram (`notifyRecoverySummary`, sucesso ou falha). O número digitado só entra por
-    `env:`/`with:` e é validado (só dígitos) — nunca interpolado no shell.
+    mensagem no Telegram (`notifyRecoverySummary`, sucesso ou falha, cortada em ~3.800 caracteres). O número digitado
+    só entra por `env:`/`with:` e é validado (só dígitos) — nunca interpolado no shell. **Tempo:** depois de 150 min
+    não começa outro ativo (resultado "parcial", cursor só dos concluídos); aos 170 min a aplicação para com
+    mensagem e relatório ("tempo esgotado… NÃO rode de novo"). Auditoria de 31/10: `docs/known-risks.md` item 288.
   - Roteiro para o usuário: `docs/claude/recovery-runbook.md`.
 
 - **Orçamento de computação do Neon (item 286, travado por

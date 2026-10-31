@@ -200,14 +200,25 @@ export function runBacktestTo(window) {
  * Para tudo na primeira falha de integridade (falha de busca/erro de scan no meio do replay).
  * `onAsset`/`onAssetDone` rodam FORA do relógio simulado (antes/depois de cada runBacktest) —
  * é onde o modo aplicar renova o lock e grava o cursor do ativo.
- * @param {{ assets: object[], windows: Record<string, object>, pineConfig?: object, onAsset?: Function, onAssetDone?: Function, runBacktestImpl?: Function }} opts
+ * `shouldStop` (opcional) é perguntado entre um ativo e outro; "true" deixa os que faltam como `pending`.
+ * @param {{ assets: object[], windows: Record<string, object>, pineConfig?: object, onAsset?: Function, onAssetDone?: Function, shouldStop?: Function, runBacktestImpl?: Function }} opts
  */
-export async function runRecoveryReplay({ assets, windows, pineConfig = {}, onAsset, onAssetDone, runBacktestImpl = runBacktest }) {
+export async function runRecoveryReplay({ assets, windows, pineConfig = {}, onAsset, onAssetDone, shouldStop, runBacktestImpl = runBacktest }) {
   const results = [];
+  // `shouldStop` (opcional) é perguntado ENTRE um ativo e outro, nunca no meio de um. Quando diz
+  // "pare", os ativos que faltam voltam como `pending` (sem tocar neles) e o laço continua só
+  // para listá-los. Cada ativo concluído já gravou o próprio cursor (onAssetDone), então uma nova
+  // recuperação recomeça só dos pendentes. (PR-10, achado M1 da auditoria de 31/10.)
+  let stopped = false;
   for (const asset of assets) {
     const w = windows?.[asset.id];
     if (!w || w.empty) {
       results.push({ assetId: asset.id, symbol: asset.symbol, skipped: true });
+      continue;
+    }
+    if (!stopped && shouldStop && shouldStop(asset, w)) stopped = true;
+    if (stopped) {
+      results.push({ assetId: asset.id, symbol: asset.symbol, pending: true });
       continue;
     }
     if (onAsset) await onAsset(asset, w);
@@ -329,4 +340,39 @@ export function formatRecoverySummary({ diff, windowFromMs, windowToMs, mode = '
   lines.push(`Operações abertas depois da recuperação (todas, mexidas ou não): ${abertas.length}`);
   lines.push(`Sinais novos: ${diff.signals.created.length}`);
   return lines.join('\n');
+}
+
+/** Limite do Telegram: 4.096 caracteres por mensagem; ficamos abaixo com folga para o cabeçalho. */
+export const TELEGRAM_SUMMARY_MAX = 3800;
+const OMIT_RESERVE = 90; // espaço guardado para cada linha "• … e mais N"
+
+/**
+ * Corta o resumo para caber numa mensagem do Telegram SEM perder as linhas de contagem: só as
+ * linhas de detalhe ("• ...") são omitidas, e cada grupo cortado vira uma linha "e mais N". O texto
+ * completo continua no relatório da execução (Job Summary). (PR-10, achado M3: numa pausa longa a
+ * lista passava de 4.096 caracteres, o envio falhava e o relatório culpava os segredos.)
+ */
+export function clipSummaryForTelegram(text, max = TELEGRAM_SUMMARY_MAX) {
+  const s = String(text ?? '');
+  if (s.length <= max) return s;
+  const lines = s.split('\n');
+  const isDetail = (l) => l.startsWith('• ');
+  let groups = 0;
+  lines.forEach((l, i) => { if (isDetail(l) && !(i > 0 && isDetail(lines[i - 1]))) groups += 1; });
+  const fixed = lines.filter((l) => !isDetail(l)).reduce((n, l) => n + l.length + 1, 0);
+  const budget = max - fixed - groups * OMIT_RESERVE;
+  if (budget < 0) return `${s.slice(0, max - 60)}\n… (cortado — texto completo no relatório da execução)`;
+  const out = [];
+  let spent = 0;
+  for (let i = 0; i < lines.length;) {
+    if (!isDetail(lines[i])) { out.push(lines[i]); i += 1; continue; }
+    let omitted = 0;
+    while (i < lines.length && isDetail(lines[i])) {
+      if (omitted === 0 && spent + lines[i].length + 1 <= budget) { out.push(lines[i]); spent += lines[i].length + 1; } else omitted += 1;
+      i += 1;
+    }
+    if (omitted) out.push(`• … e mais ${omitted} linha(s) — lista completa no relatório da execução`);
+  }
+  const clipped = out.join('\n');
+  return clipped.length <= max ? clipped : `${clipped.slice(0, max - 60)}\n… (cortado — texto completo no relatório da execução)`;
 }

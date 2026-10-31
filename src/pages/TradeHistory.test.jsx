@@ -90,6 +90,38 @@ describe('TradeHistory — "por quê" visível sem precisar expandir', () => {
   });
 });
 
+// Item 288 / auditoria de 31/10: o selo "♻️ Recuperada" nunca era exercitado (a operação de exemplo
+// estava ABERTA e o Histórico só lista fechadas). Este teste prova que ele aparece numa operação
+// fechada vinda da recuperação — e não aparece numa operação normal.
+const OP_RECUPERADA = {
+  id: 'op_rec', asset_id: 'a5', symbol: 'SOLUSDT', side: 'BUY',
+  status: 'STOP_HIT', entry_price: 150, initial_stop: 145,
+  current_stop: 145, tp1: 157.5, tp2: 165, exit_price: 145,
+  stop_hit_at: AGORA, closed_at: AGORA, tp1_hit: false,
+  partial_percent: 50, created_date: AGORA,
+  source: 'recovery', recovery_run_id: '41000000000', recovery_detected_at: AGORA,
+};
+
+describe('TradeHistory — selo "Recuperada" (item 288)', () => {
+  it('operação fechada vinda da recuperação mostra o selo ♻️ Recuperada', async () => {
+    mockBackend([OP_RECUPERADA]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    await screen.findByText('SOL/USDT');
+    screen.getByText(/♻️ Recuperada/);
+  });
+
+  it('operação normal não mostra o selo', async () => {
+    mockBackend([OP_COM_SNAPSHOT]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    await screen.findByText('BTC/USDT');
+    expect(screen.queryByText(/Recuperada/)).toBeNull();
+  });
+});
+
 // Achado da varredura pós-Raio-X (2026-09-27): mesma classe de bug do M-16
 // (docs/known-risks.md) — "0%" por falta de operação CONTADA (nenhum
 // entry_price/initial_stop, outcome UNKNOWN em classifyOutcome) usava a

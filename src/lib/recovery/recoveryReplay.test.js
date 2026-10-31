@@ -41,7 +41,7 @@ import {
   STEP_RF_MS, resolveResumePoint, computeReplayWindow, runRecoveryReplay, buildRecoveryDiff, fingerprint,
   sliceLikeLive, validateSeriesContinuity, assertLiveScanPaused, assertStrategyConfigPresent, assertRealClock,
   buildRecoveryTags, RECOVERY_TAG_KEYS, assertTagPatch, formatRecoverySummary, RecoveryAbort, LIVE_FETCH_LIMITS,
-  runBacktestTo,
+  runBacktestTo, clipSummaryForTelegram, TELEGRAM_SUMMARY_MAX,
 } from './recoveryReplay.js';
 
 const FOUR_H = 4 * 60 * 60 * 1000;
@@ -452,5 +452,93 @@ describe('diferença, etiquetas e resumo', () => {
     expect(text).toMatch(/Operações novas \(deveriam ter aberto na pausa\): 1/);
     expect(text).toMatch(/BTCUSDT SIGNAL_CONFIRMED → STOP_HIT a 95 \(vela de 22\/10 09:00\)/);
     expect(text).toMatch(/Operações abertas depois da recuperação \(todas, mexidas ou não\): 1/);
+  });
+});
+
+
+// PR-10 (auditoria de 31/10) — parada entre ativos e mensagem do Telegram dentro do limite.
+describe('shouldStop — parada limpa ENTRE ativos', () => {
+  const mkAsset = (n) => ({ id: `a${n}`, symbol: `S${n}USDT` });
+  const win = { fromMs: FLIP, toMs: FLIP, stepMs: FIFTEEN_M, ticks: 1, empty: false };
+  const assets = [mkAsset(1), mkAsset(2), mkAsset(3)];
+  const windows = Object.fromEntries(assets.map((a) => [a.id, win]));
+
+  it('depois de pedir para parar, os que faltam voltam como pendentes e NÃO são reprocessados', async () => {
+    const ran = [];
+    const fake = vi.fn(async ({ assets: [a] }) => { ran.push(a.id); return { dataIntegrity: { valid: true } }; });
+    const done = [];
+    let calls = 0;
+    const out = await runRecoveryReplay({
+      assets, windows, runBacktestImpl: fake,
+      shouldStop: () => { calls += 1; return calls >= 2; }, // 1ª pergunta: segue; 2ª: para
+      onAssetDone: async (a) => { done.push(a.id); },
+    });
+    expect(ran).toEqual(['a1']);
+    expect(done).toEqual(['a1']);
+    expect(out.map((r) => [r.assetId, Boolean(r.pending)])).toEqual([['a1', false], ['a2', true], ['a3', true]]);
+  });
+
+  it('é "pegajoso": uma vez que pediu para parar, não volta a rodar o ativo seguinte', async () => {
+    const ran = [];
+    const fake = vi.fn(async ({ assets: [a] }) => { ran.push(a.id); return { dataIntegrity: { valid: true } }; });
+    const answers = [false, true, false]; // a 3ª resposta "false" não pode religar o laço
+    await runRecoveryReplay({ assets, windows, runBacktestImpl: fake, shouldStop: () => answers.shift() ?? false });
+    expect(ran).toEqual(['a1']);
+  });
+
+  it('sem shouldStop o comportamento é o de sempre (todos rodam)', async () => {
+    const ran = [];
+    const fake = vi.fn(async ({ assets: [a] }) => { ran.push(a.id); return { dataIntegrity: { valid: true } }; });
+    const out = await runRecoveryReplay({ assets, windows, runBacktestImpl: fake });
+    expect(ran).toEqual(['a1', 'a2', 'a3']);
+    expect(out.some((r) => r.pending)).toBe(false);
+  });
+});
+
+describe('clipSummaryForTelegram — o resumo cabe no limite de 4.096 caracteres', () => {
+  const cabecalho = ['Recuperação após pausa do banco (APLICADO no banco)', 'Período reprocessado: 19/10 a 01/11 (horário de Brasília)'];
+  const make = (novas, fechadas) => [
+    ...cabecalho,
+    `Operações novas (deveriam ter aberto na pausa): ${novas}`,
+    ...Array.from({ length: novas }, (_, i) => `• SIMBOLO${i}USDT BUY — entrada ${1000 + i} em 20/10/2026 10:15 — agora: STOP_HIT`),
+    `Operações antigas que mudaram de estado: ${fechadas}`,
+    ...Array.from({ length: fechadas }, (_, i) => `• ANTIGA${i}USDT RUNNER_ACTIVE → TP2_HIT a ${2000 + i} (vela de 21/10/2026 04:00)`),
+    'Operações abertas depois da recuperação (todas, mexidas ou não): 7',
+    'Sinais novos: 55',
+  ].join('\n');
+
+  it('texto curto passa intacto', () => {
+    const t = make(2, 2);
+    expect(clipSummaryForTelegram(t)).toBe(t);
+  });
+
+  it('texto longo: ≤ limite, mantém TODAS as linhas de contagem e avisa quantas linhas ficaram de fora', () => {
+    const t = make(60, 60);
+    expect(t.length).toBeGreaterThan(TELEGRAM_SUMMARY_MAX);
+    const c = clipSummaryForTelegram(t);
+    expect(c.length).toBeLessThanOrEqual(TELEGRAM_SUMMARY_MAX);
+    for (const l of cabecalho) expect(c).toContain(l);
+    expect(c).toContain('Operações novas (deveriam ter aberto na pausa): 60');
+    expect(c).toContain('Operações antigas que mudaram de estado: 60');
+    expect(c).toContain('Operações abertas depois da recuperação (todas, mexidas ou não): 7');
+    expect(c).toContain('Sinais novos: 55');
+    expect(c).toMatch(/• … e mais \d+ linha\(s\) — lista completa no relatório da execução/);
+    // As primeiras linhas de detalhe ficam (prefixo), as últimas saem.
+    expect(c).toContain('SIMBOLO0USDT');
+    expect(c).not.toContain('SIMBOLO59USDT');
+  });
+
+  it('o número omitido bate: linhas mantidas + omitidas = total de detalhes', () => {
+    const t = make(80, 0);
+    const c = clipSummaryForTelegram(t);
+    const mantidas = (c.match(/^• SIMBOLO/gm) ?? []).length;
+    const omitidas = Number(/e mais (\d+) linha/.exec(c)[1]);
+    expect(mantidas + omitidas).toBe(80);
+  });
+
+  it('sem linhas de detalhe, só um texto gigante: corta duro sem passar do limite', () => {
+    const c = clipSummaryForTelegram('x'.repeat(9000));
+    expect(c.length).toBeLessThanOrEqual(TELEGRAM_SUMMARY_MAX);
+    expect(c).toMatch(/cortado/);
   });
 });

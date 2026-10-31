@@ -13,6 +13,7 @@ import {
   assertLiveScanPaused, assertStrategyConfigPresent, assertRealClock, runRecoveryReplay, buildRecoveryDiff,
   buildRecoveryTags, formatRecoverySummary, fingerprint,
 } from '../src/lib/recovery/recoveryReplay.js';
+import { isTerminalStatus } from '../src/lib/opTransition.js';
 import { preloadSeries, clearSeries, seriesFingerprint } from './recoveryMarketDataProvider.js';
 
 // Entidades lidas inteiras. SignalEvent: só as mais recentes (a tabela cresce sem parar e o
@@ -74,7 +75,24 @@ export function planRecovery(snapshot, nowMs) {
   const live = Object.values(windows).filter((w) => !w.empty);
   const windowFromMs = live.length ? Math.min(...live.map((w) => w.fromMs)) : nowMs;
   const windowToMs = live.length ? Math.max(...live.map((w) => w.toMs)) : nowMs;
-  return { assets, pendingBackfill, windows, resume, windowFromMs, windowToMs };
+  return { assets, pendingBackfill, windows, resume, windowFromMs, windowToMs, outOfScopeOpen: findOutOfScopeOpenOps(snapshot, assets) };
+}
+
+/**
+ * Operações ABERTAS de ativos que a recuperação não reprocessa (ativo desativado, ou esperando a
+ * checagem retroativa). Elas seguem paradas até alguém cuidar — o ao vivo só olha a última vela.
+ * Antes o plano as omitia em silêncio (achado da auditoria de 31/10).
+ */
+export function findOutOfScopeOpenOps(snapshot, assets) {
+  const inScope = new Set(assets.map((a) => a.id));
+  const byAsset = new Map(snapshot.MonitoredAsset.map((a) => [a.id, a]));
+  return snapshot.TradeOperation
+    .filter((op) => !isTerminalStatus(op.status) && !inScope.has(op.asset_id))
+    .map((op) => {
+      const a = byAsset.get(op.asset_id);
+      const reason = !a ? 'ativo não encontrado' : a.is_active !== true ? 'ativo desativado' : 'checagem retroativa pendente';
+      return { id: op.id, symbol: op.symbol ?? a?.symbol ?? '?', status: op.status, reason };
+    });
 }
 
 /** Baixa e confere TODAS as velas antes do relógio simulado. Vela faltando → para tudo. */
@@ -136,6 +154,7 @@ export async function runDryRun({ liveBackend, workflows, entitiesTarget, getPin
     version: RECOVERY_ARTIFACT_VERSION, ok: true, mode: 'dry-run', runId, nowMs, windowFromMs: plan.windowFromMs, windowToMs: plan.windowToMs,
     assets: sim.perAsset, windows: plan.windows, resume: plan.resume,
     pendingBackfill: plan.pendingBackfill.map((a) => a.symbol),
+    outOfScopeOpen: plan.outOfScopeOpen,
     smcAssets: plan.assets.filter((a) => a.smc_enabled).map((a) => a.symbol),
     warmupShort, diff: sim.diff, tags, fingerprints, journal: sim.journal,
     summary: formatRecoverySummary({ diff: sim.diff, windowFromMs: plan.windowFromMs, windowToMs: plan.windowToMs, mode: 'teste a seco' }),
@@ -167,6 +186,7 @@ export function formatDryRunMarkdown(result) {
   L.push('```');
   const warn = [];
   if (result.pendingBackfill.length) warn.push(`Ficaram de fora (esperando a checagem retroativa): ${result.pendingBackfill.join(', ')}`);
+  if (result.outOfScopeOpen?.length) warn.push(`Operações ABERTAS que a recuperação NÃO reprocessa (continuam paradas até alguém cuidar): ${result.outOfScopeOpen.map((o) => `${o.symbol} ${o.status} (${o.reason})`).join(', ')}`);
   if (result.smcAssets.length) warn.push(`Ativos com a cascata SMC (passo de 5 min): ${result.smcAssets.join(', ')}`);
   if (result.warmupShort.length) warn.push(`Histórico mais curto que o aquecimento pedido (ativo novo na corretora — o ao vivo também teria menos velas): ${result.warmupShort.join(', ')}`);
   if (warn.length) { L.push(''); L.push('**Avisos:**'); for (const w of warn) L.push(`- ${w}`); }

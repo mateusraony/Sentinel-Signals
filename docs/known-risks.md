@@ -34108,5 +34108,56 @@ selo "Recuperada", 1 resumo no Telegram, roteiro).
 - **Roteiro para o usuário:** `docs/claude/recovery-runbook.md`.
 - **Limites [honesto]:** um crash NO MEIO de um ativo deixa esse ativo sem cursor (o cursor é gravado ao fim de
   cada ativo) — o roteiro manda NÃO rodar de novo e restaurar o backup; o timeout do job (170 min) mataria o
-  processo sem a mensagem (os locks vencem sozinhos em 40 min). Não há script de reversão dirigida (só o backup).
+  processo sem a mensagem (os locks vencem sozinhos em 40 min) **[superado no addendum PR-10: agora para entre ativos e, se
+  estourar, manda mensagem e relatório]**. Não há script de reversão dirigida (só o backup).
 
+
+**Addendum (PR-10, 2026-10-31) — auditoria de "o que foi feito" e blindagem do modo aplicar.**
+Pedido do usuário: "confirme se tudo está perfeito… precisa estar blindado". Revisão independente (3 agentes, leitura
+completa do código) + todas as checagens; a recuperação foi tratada primeiro porque o Neon deve voltar em 01/11.
+- **M1 — tempo da aplicação [fato, `run-recovery.mjs` antigo].** O `apply()` usava `withTimeout` sem `catch`: ao
+  estourar os 170 min não saía mensagem nem relatório, e o processo podia morrer no meio de um ativo. **Agora:**
+  (a) aos 150 min **não se começa outro ativo** (`shouldStop` perguntado ENTRE ativos; os que faltam voltam como
+  `pending`; a conferência pós-gravação olha só os concluídos; resultado "APLICADA PARCIALMENTE", 1 mensagem, job
+  vermelho, "NÃO religue o scan"; o cursor `recovery_replayed_to` só dos concluídos faz um novo teste a seco
+  recomeçar do que faltou); (b) aos 170 min a aplicação para com `apply_timeout`: "TEMPO ESGOTADO NO MEIO" (nomeia o
+  ativo, manda NÃO rodar de novo) ou "tempo esgotou ANTES de gravar", sempre com mensagem e relatório; o
+  `withTimeout` de fora (175 min) é só o último recurso e também gera relatório; o envio ao Telegram tem prazo de 60 s.
+- **M2 — backup sobrescrito [fato, `backup-postgres.yml`].** O arquivo tinha só a data no nome: o backup diário do
+  mesmo dia sobrescrevia o da recuperação, e a restauração pegava "o mais recente" (o estado errado para desfazer).
+  **Agora:** `postgres-backup-AAAA-MM-DD-pre-recuperacao-NÚMERO.dump` (sufixo por `with:` → `env:`, conferido por regex),
+  fora da limpeza dos 30 (a limpeza só vê nomes com data pura), um backup por vez (`concurrency` no JOB — no nível do
+  workflow o grupo disputaria com o do chamador); o `restore-postgres.yml` ganhou o campo opcional "Arquivo do backup"
+  (nome exato, regex, nunca no shell; vazio = o diário mais recente, como antes). O número digitado agora é validado
+  por um job `validar` **antes** do backup.
+- **M3 — Telegram [fato].** O resumo listava uma linha por operação sem limite: numa pausa longa passava de 4.096
+  caracteres, o envio falhava e o relatório culpava os segredos. **Agora:** `clipSummaryForTelegram` (≤ 3.800)
+  mantém TODAS as linhas de contagem e corta só os detalhes ("• … e mais N linha(s) — lista completa no relatório da
+  execução"); o relatório da execução mantém o texto inteiro; a linha "NÃO enviada" cita as causas possíveis (segredos,
+  rede, recusa) em vez de só os segredos.
+- **M4 — cascata SMC com scan de 15 min [fato + hipótese].** Fato: o ao vivo avalia a última vela de 5 min fechada a
+  cada scan; com 15 min (item 286) vê 1 de cada 3. A recuperação reprocessa o SMC de 5 em 5 min (`STEP_SMC_MS`, a
+  cadência de antes da pausa). **Decisão: manter o passo de 5 min no replay** e registrar a divergência (o ao vivo é
+  que mudou). Hipótese: efeito pequeno, porque a SMC mede ~0 operações (item 125). Correção futura possível, **fora
+  daqui por tocar o motor**: o ao vivo passar a varrer as 3 velas de 5 min desde o último scan.
+- **Pequenos corrigidos (cada um com teste e prova por mutação):** a 1ª trava ficava presa 40 min se a 2ª desse erro de
+  rede (agora solta todas); falha da API do GitHub virava "desative o scan" (agora `github_api`: "não consegui
+  conferir…"); "parou no meio" aparecia sem escrita nenhuma (agora conta tentativas de escrita do diário + cursor); só a
+  etiqueta falhar tem mensagem própria (`tag_failed`: "GRAVADA e CONFERIDA… NÃO religue o scan"); divergências contadas
+  dos dois lados (operação que existe só no banco real não dava mais "0 operação(ões)"); relatório de sucesso manda
+  religar os **três** (Scheduled scan, cron-job.org, Backfill check) e avisa que as velas entre o fim da aplicação e o
+  1º scan não são reprocessadas; operações **abertas** de ativo desativado/checagem retroativa pendente agora são
+  listadas no teste a seco e na mensagem do aplicar (antes saíam em silêncio).
+- **Painel:** o ♻️ entrou no registro de emojis e no vocabulário; a operação de exemplo "Recuperada" passou a ser uma
+  operação **fechada** em outro ativo (antes estava aberta — o Histórico só lista fechadas, então o selo nunca era
+  exercitado — e ainda era uma 2ª ativa no mesmo ativo); teste novo confere o selo no Histórico (mutação: reabrir a
+  operação reprova o teste).
+- **Provas [verificado]:** 10 mutações do `recoveryApply.mjs` (sem `shouldStop`, conferência sem escopo, trava presa,
+  `wrote` sempre true, etiqueta sem tratamento, divergência de um lado só, Telegram sem corte, API do GitHub ignorada,
+  aviso de ativos fora, relatório sem o Backfill) — todas reprovam algum teste; a do prazo duro faz o teste pendurar
+  (reprova por tempo). Roteiro atualizado: `docs/claude/recovery-runbook.md`.
+- **Limites [honesto, só dá para provar rodando de verdade]:** a recuperação contra o **Postgres real** (os testes usam
+  o banco simulado com a mesma regra de CAS); a duração real do aplicar (por isso o prazo de 150/170 min); o 1º push do
+  `backup-postgres.yml` com o nome novo e do `restore-postgres.yml` com o campo novo (o shell foi testado com os
+  mesmos regex e `bash -n`, mas não num runner). O backup diário está vermelho desde ~19/10 pela cota do Neon — o
+  primeiro backup verde depois da volta é pré-requisito do "aplicar".

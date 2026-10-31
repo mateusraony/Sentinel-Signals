@@ -103,6 +103,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+// Auditoria de 31/10: a operação "Recuperada" do exemplo estava aberta, então o Histórico (que só
+// lista fechadas) nunca exercitava o selo. Com os dados de exemplo ele tem que aparecer.
+describe('smoke — selo "Recuperada" com os dados de exemplo', () => {
+  it('TradeHistory mostra o selo ♻️ Recuperada', async () => {
+    estado.populated = true;
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    const { findByText } = renderPage(<TradeHistory />);
+    expect(await findByText(/♻️ Recuperada/)).toBeTruthy();
+  });
+});
+
 describe.each([
   ['vazio', false],
   ['com dados', true],
