@@ -33830,6 +33830,32 @@ baixa", e o que deixaria isso profissional.
   futura como âncora, nota com `err.message`, 2ª requisição mesmo com a 1ª falha, 2ª requisição sem a chave, BLS
   imprimindo o valor, BLS sem checar o status).
 
+**Addendum 7 (2026-10-31, run 8 + pesquisa) — a demora do FRED confirmada, o BLS abre, e o que pode ou não ser publicado.**
+- **Run 8 (30/10, 11:27 UTC, versão `c11c66b`) [fato]: APROVADO.** Com a âncora nas datas do próprio FRED, a demora
+  saiu medida: **Payroll 55 min, CPI 38, PPI 111, PCE 14** depois das 08:30 de Nova York (uma medição por série; as
+  divulgações de 06/11 e 10/11 confirmam). Conclusão: o FRED **não** entrega o número oficial em 5 minutos.
+- **API do BLS v1 abre do GitHub [fato]:** CPI com período mais recente setembro/2026. É a candidata ao número rápido;
+  falta medir a que horas o período novo aparece. O usuário criou a chave grátis (`BLS_API_KEY`, 31/10): o PR-7 põe
+  CPI (`CUSR0000SA0`), Payroll (`CES0000000001`) e PPI (`WPSFD4`) na v2 (500 consultas/dia por chave), mostrando só o
+  período. A forma "série no endereço + `?registrationkey=`" não aparece na doc do BLS **[não confirmado]**: a primeira
+  execução mostra.
+- **O que pode ser publicado (pesquisa de 30/10; trechos de termos lidos por busca, não é parecer jurídico):**
+  - **BLS:** domínio público, com pedido de citação → o resultado oficial e o valor anterior podem ir para o painel e
+    a branch pública, com "Fonte: BLS".
+  - **FRED:** termos proíbem armazenar/repassar → só consulta na hora e mensagem privada (addendum 5).
+  - **Deribit:** dado de mercado e dado derivado são "personal use only", sem publicar sem autorização escrita → a
+    DVOL **não** vai para o repositório público. A sonda passou a não imprimir o valor (os logs e o Job Summary são
+    públicos; as runs 7 e 8 já tinham impresso — não dá para desfazer). Decisão do usuário (31/10): o "movimento
+    esperado" do painel usa a volatilidade da Binance; a DVOL só na mensagem privada do Telegram (Fase 4).
+  - **"Estimado" (consenso):** em geral é dado pago (Bloomberg/Reuters); Investing/ForexFactory proíbem raspar. A sonda
+    passa a listar **só os nomes dos campos** de um evento do financecalendar.com para saber se ele traz previsão
+    (nenhum valor é copiado). Se trouxer e os termos permitirem com crédito, entra com a fonte citada; senão, o
+    painel mostra "resultado × anterior" e nunca inventa estimativa.
+- **FOMC [fato, via trecho de busca do site do Fed]:** não há reunião em novembro/2026; a próxima decisão é 09/12/2026,
+  14:00 de Nova York. O calendário de 2027 só está confirmado em parte → fica fora da lista até conferir no Fed.
+- **Provas do PR-7:** 6 mutações pegas por teste (DVOL imprimindo o valor, inclusive na falha; campos com valores;
+  campos sem filtro de nome; BLS v2 sem exigir a chave; BLS v2 sem trocar o molde pela chave).
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,

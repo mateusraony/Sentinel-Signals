@@ -8,7 +8,7 @@ import {
   validateIcs, validateFearGreed, validateRss, validateBinanceTicker, validateRawGithubCors,
   validateDefillamaChains, validateHtmlContains, extractRateLimit, contactEmail, buildUserAgent,
   collectIsoDates, validateFinanceCalendar, validateFredRelease, validateFredDates,
-  parseFredTimestamp, fredReleaseInstants, validateFredSeriesMeta, validateDeribitDvol, validateBlsApi,
+  parseFredTimestamp, fredReleaseInstants, validateFredSeriesMeta, validateDeribitDvol, validateBlsApi, eventFieldNames,
 } from './contextProbe.mjs';
 
 const src = (id) => SOURCES.find((s) => s.id === id);
@@ -260,8 +260,10 @@ describe('lista de fontes', () => {
     for (const s of SOURCES) {
       expect(s.url.startsWith('https://')).toBe(true);
       expect(typeof s.validate).toBe('function');
-      // Única exceção: o molde `<NOME>` de uma fonte que declara `secretInUrl` (FRED). Valor literal, nunca.
-      const visible = s.secretInUrl ? s.url.replace(`api_key=<${s.secretInUrl}>`, '') : s.url;
+      // Única exceção: o molde `<NOME>` de uma fonte que declara `secretInUrl` (FRED: api_key=, BLS:
+      // registrationkey=). Valor literal, nunca.
+      const semMolde = (u) => (s.secretInUrl ? u.replace(new RegExp(`(api_key|registrationkey)=<${s.secretInUrl}>`), '') : u);
+      const visible = semMolde(s.url);
       expect(/key|token|secret/i.test(visible), s.id).toBe(false);
       if (s.secretInUrl) {
         expect(s.url).toContain(`<${s.secretInUrl}>`);
@@ -271,8 +273,8 @@ describe('lista de fontes', () => {
         // A 2ª requisição leva a chave do mesmo jeito: só o molde `<NOME>`, e só com `secretInUrl` declarado.
         expect(s.companion.url.startsWith('https://')).toBe(true);
         expect(s.secretInUrl, s.id).toBeTruthy();
-        expect(s.companion.url).toContain(`api_key=<${s.secretInUrl}>`);
-        expect(/key|token|secret/i.test(s.companion.url.replace(`api_key=<${s.secretInUrl}>`, '')), s.id).toBe(false);
+        expect(s.companion.url).toContain(`<${s.secretInUrl}>`);
+        expect(/key|token|secret/i.test(semMolde(s.companion.url)), s.id).toBe(false);
       }
     }
   });
@@ -280,7 +282,8 @@ describe('lista de fontes', () => {
   it('as fontes novas (financecalendar, FRED, Deribit, BEA, BLS API) são opcionais: não mudam o portão da fase', () => {
     const novas = SOURCES.filter((s) => /^(financecalendar|fred|deribit|bea|bls-api)-/.test(s.id));
     expect(novas.map((s) => s.id).sort()).toEqual([
-      'bea-schedule-page', 'bls-api-v1-cpi', 'deribit-dvol-btc', 'deribit-dvol-eth',
+      'bea-schedule-page', 'bls-api-v1-cpi', 'bls-api-v2-cpi', 'bls-api-v2-nfp', 'bls-api-v2-ppi',
+      'deribit-dvol-btc', 'deribit-dvol-eth',
       'financecalendar-cpi', 'financecalendar-nfp',
       'fred-dates-cpi', 'fred-dates-nfp', 'fred-dates-pce', 'fred-dates-ppi',
       'fred-lag-cpi', 'fred-lag-nfp', 'fred-lag-pce', 'fred-lag-ppi',
@@ -343,9 +346,24 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     expect(v.detail).toMatch(/bate: 2026-11-10/);
     expect(v.detail).toMatch(/só na fonte: 2026-12-11/); // divergência real dentro de events aparece
     expect(v.detail.split('só na fonte')[1]).not.toMatch(/2026-11-12/); // `to` não vira data de evento
+    expect(v.detail).toMatch(/campos do evento: date, time$/);
     expect(validateFinanceCalendar('CPI')({ body: HTML_ERROR }).ok).toBe(false);
     expect(validateFinanceCalendar('NFP')({ body: '{"ok":true}' }).detail).toMatch(/sem a lista events/);
     expect(validateFinanceCalendar('NFP')({ body: '{"events":[{"x":1}]}' }).detail).toMatch(/events sem nenhuma data/);
+  });
+
+  it('financecalendar: mostra só os NOMES dos campos (responde se há "estimado"), nunca os valores', () => {
+    const events = [{ date: '2026-11-10', time: '08:30', actual: '0.3%', forecast: '0.2%', previous: '0.4%', title: 'CPI m/m' }];
+    const txt = eventFieldNames(events);
+    expect(txt).toBe('campos do evento: actual, date, forecast, previous, time, title');
+    for (const valor of ['0.3%', '0.2%', '0.4%', 'CPI m/m', '08:30']) expect(txt).not.toContain(valor);
+    // Nome estranho (espaço, símbolo, muito longo) não entra: não vira canal para texto da fonte.
+    expect(eventFieldNames([{ 'campo com espaço': 1, '<script>': 2, ['x'.repeat(41)]: 3, ok: 4 }])).toBe('campos do evento: ok');
+    // No máximo 15 nomes; o resto vira contagem.
+    const muitos = Object.fromEntries(Array.from({ length: 18 }, (_, i) => [`c${String(i).padStart(2, '0')}`, i]));
+    expect(eventFieldNames([muitos])).toMatch(/c14 \(\+3\)$/);
+    expect(eventFieldNames([])).toBe('campos do evento: —');
+    expect(eventFieldNames([['array']])).toBe('campos do evento: —');
   });
 
   it('financecalendar: só a janela (from/to) sem evento na lista → nada de falsa divergência', () => {
@@ -505,17 +523,46 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     expect(src('bls-api-v1-cpi').required).toBe(false);
   });
 
-  it('Deribit DVOL: último fechamento vira a faixa de 1 desvio em 1h/4h/24h', () => {
+  it('BLS v2: sem a chave fica PULADO (nenhuma requisição); com a chave, ela vai só na URL e nunca vaza', async () => {
+    let called = false;
+    const pulado = await probeSource(src('bls-api-v2-nfp'), { fetchImpl: async () => { called = true; return new Response('{}'); }, env: {} });
+    expect(pulado.status).toBe('PULADO');
+    expect(called).toBe(false);
+
+    const KEY = '0123456789abcdef0123456789abcdef';
+    let seenUrl;
+    const ok = JSON.stringify({ status: 'REQUEST_SUCCEEDED', message: [], Results: { series: [{ seriesID: 'CES0000000001', data: [{ year: '2026', period: 'M09', periodName: 'September', latest: 'true', value: '159432' }] }] } });
+    const r = await probeSource(src('bls-api-v2-nfp'), { fetchImpl: async (url) => { seenUrl = url; return new Response(ok, { status: 200 }); }, env: { BLS_API_KEY: KEY } });
+    expect(r.status).toBe('OK');
+    expect(r.detail).toBe('CES0000000001: período mais recente September 2026 (latest)');
+    expect(seenUrl).toBe(`https://api.bls.gov/publicAPI/v2/timeseries/data/CES0000000001?registrationkey=${KEY}`);
+    expect(r.url).toContain('registrationkey=<BLS_API_KEY>');
+    expect(JSON.stringify(r)).not.toContain(KEY);
+    expect(JSON.stringify(r)).not.toContain('159432');
+    expect(formatProbeMarkdown([r], { startedAt: 'x', runner: 'y' })).not.toContain(KEY);
+
+    // Erro de rede que cita a URL (com a chave) é limpo antes de virar resultado.
+    const erro = await probeSource(src('bls-api-v2-cpi'), { fetchImpl: async (url) => { throw new Error(`falha ao abrir ${url}`); }, env: { BLS_API_KEY: KEY } });
+    expect(erro.status).toBe('FALHOU');
+    expect(JSON.stringify(erro)).not.toContain(KEY);
+    // As 3 séries: CPI, Payroll e PPI (as 3 divulgações que o BLS faz e que o aviso precisa medir).
+    expect(['bls-api-v2-cpi', 'bls-api-v2-nfp', 'bls-api-v2-ppi'].map((id) => src(id).url.split('/').pop().split('?')[0])).toEqual(['CUSR0000SA0', 'CES0000000001', 'WPSFD4']);
+  });
+
+  it('Deribit DVOL: confere formato, plausibilidade e idade — e NUNCA imprime o valor (termos da Deribit)', () => {
     const now = Date.parse('2026-10-30T12:10:00Z');
     const row = (ts, c) => [ts, c - 1, c + 1, c - 2, c];
-    const body = JSON.stringify({ result: { data: [row(now - 2 * 3600000, 48), row(now - 600000, 50)], continuation: null } });
+    const body = JSON.stringify({ result: { data: [row(now - 2 * 3600000, 48), row(now - 600000, 50.37)], continuation: null } });
     const v = validateDeribitDvol('BTC')({ body, nowMs: now });
     expect(v.ok).toBe(true);
-    // 50 × √(h/8760): 1h 0,534 · 4h 1,068 · 24h 2,617
-    expect(v.detail).toMatch(/DVOL BTC 50\.0 .*±0\.53% em 1h, ±1\.07% em 4h, ±2\.62% em 24h/);
+    expect(v.detail).toMatch(/DVOL BTC: responde, valor plausível \(não exibido: termos da Deribit\); última vela 2026-10-30T12:00 UTC, 2 vela\(s\)/);
+    // Nem o valor nem nada derivado dele (faixa de 1 desvio) aparece.
+    for (const t of ['50', '48', '0.5', '±']) expect(v.detail).not.toContain(t);
     expect(validateDeribitDvol('BTC')({ body: JSON.stringify({ error: { message: 'Invalid params' } }), nowMs: now }).detail).toMatch(/Invalid params/);
     expect(validateDeribitDvol('BTC')({ body: JSON.stringify({ result: { data: [] } }), nowMs: now }).ok).toBe(false);
-    expect(validateDeribitDvol('BTC')({ body: JSON.stringify({ result: { data: [row(now, 900)] } }), nowMs: now }).ok).toBe(false);
+    const fora = validateDeribitDvol('BTC')({ body: JSON.stringify({ result: { data: [row(now, 900.25)] } }), nowMs: now });
+    expect(fora.ok).toBe(false);
+    expect(fora.detail).not.toContain('900'); // nem na falha
     const velho = JSON.stringify({ result: { data: [row(now - 5 * 3600000, 50)] } });
     expect(validateDeribitDvol('BTC')({ body: velho, nowMs: now }).detail).toMatch(/velho/);
     expect(validateDeribitDvol('BTC')({ body: HTML_ERROR, nowMs: now }).ok).toBe(false);

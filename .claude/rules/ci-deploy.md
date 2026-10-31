@@ -325,6 +325,9 @@ paths:
     por `urlAt`, a tabela mostra o molde) e BEA (só a página: o `.ics` deu 404) — todos opcionais.
     Addendum 6: a demora do FRED usa uma 2ª requisição (`companion`, as datas de divulgação do mesmo release,
     com a mesma chave) e há a fonte `bls-api-v1-cpi` (API pública do BLS, lê só o período mais recente).
+    Addendum 7: segredo opcional `BLS_API_KEY` (chave grátis do BLS) para CPI/Payroll/PPI na API v2 (só o período,
+    a chave só na URL, sem ela "PULADO"); a DVOL não tem mais o valor impresso (termos da Deribit, logs públicos);
+    o financecalendar mostra só os nomes dos campos de um evento.
 
 - `recovery.yml` — disparo **manual** (`workflow_dispatch` só), sem campos: **teste a seco** do replay de
   recuperação depois de queda longa do banco (`docs/known-risks.md` item 288).
