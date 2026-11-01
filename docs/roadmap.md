@@ -17,7 +17,7 @@ O que manda agora é **continuidade do sistema**, depois a camada de contexto.
 | 2 | Modo de observação independente do banco ("completo", decisão 23/10) | Estado fora do banco = **Firebase RTDB** (Drive descartado p/ estado ao vivo). "Só o último dado" foi considerado pouco: desenho em camadas (ver o último dado bom, avisar stop/TP sem banco, reconciliar ao voltar). Nada implementado | itens 283/286 |
 | 3 | PR [#513](https://github.com/mateusraony/Sentinel-Signals/pull/513) — restaurar backup num banco novo (Supabase) + TLS | **Obsoleto**: o PR #514 (mesclado) já trouxe tudo com os 5 achados corrigidos; fechar sem mesclar. O teste de restauração **nunca rodou** (falta o Supabase do usuário) | itens 283/286 |
 | 4 | `system_logs` cresce sem limite (nada apaga) | Aberto, não é a causa de hoje | item 283 |
-| 5 | **Contexto de Mercado** (calendário macro, sentimento, resumos 07h/12h/21h, marcador nas operações, Telegram) | Plano aprovado em 2026-10-27. **Fases 1–2 feitas no código** (sonda das fontes, calendário CPI/Payroll/PPI/PCE/FOMC, coletor das datas na branch pública `context-data`; auditadas e blindadas em 31/10 — PRs #525–#529 e #531). **Falta rodar de verdade:** a sonda (chave do BLS), o coletor 1x à mão e os 3 jobs no cron-job.org; depois 2 semanas só coletando. Fases 3–6 (faixa no painel, resumos, Telegram) ainda não existem | itens 284/285 |
+| 5 | **Contexto de Mercado** (calendário macro, sentimento, resumos 07h/12h/21h, marcador nas operações, Telegram) | Plano aprovado em 2026-10-27. **Fases 1–3 feitas no código** (sonda das fontes, calendário CPI/Payroll/PPI/PCE/FOMC, coletor das datas na branch pública `context-data`, faixa "Agenda de eventos dos EUA" no Dashboard — PRs #525–#529, #531 e a da Fase 3; coletor e sonda auditados e blindados em 31/10). **Falta rodar de verdade:** a sonda (chave do BLS), o coletor 1x à mão e os 3 jobs no cron-job.org; depois 2 semanas só coletando. A faixa mostra "indisponível" até o coletor rodar. Fases 4–6 (resumos, avisos no Telegram, marcador nas operações) ainda não existem | itens 284/285 |
 | 6 | **Recuperação depois da queda** (replay do motor sobre a pausa: entradas que faltaram, saídas com hora real, Time Stop certo, 1 resumo no Telegram) | **Implementada e blindada** (teste a seco, aplicar, selo "Recuperada", resumo único no Telegram — PRs #522–#524 e #530). **Falta rodar de verdade** quando o Neon voltar: backup → teste a seco → aplicar. Backup do Postgres falha desde 19/10 (último bom 18/10) | itens 286/288 |
 
 **Passos manuais que dependem de você** (a regra do projeto é só considerar
@@ -38,7 +38,7 @@ concluído depois que você confirmar):
 **Contexto de Mercado — ordem das fases** (cada uma pequena e desligável; sem
 Neon, sem Cloudflare, nada no motor): 0 documentação (feita em 2026-10-27) →
 1 sondas das fontes + calculadora de orçamento + teste de fuso (**feita; aguardando 3 execuções** e a chave do BLS, item 285) →
-2 coletor sem tela (**escrito e blindado; aguardando a 1ª execução real**, depois **2 semanas só coletando**) → 3 faixa no Dashboard →
+2 coletor sem tela (**escrito e blindado; aguardando a 1ª execução real**, depois **2 semanas só coletando**) → 3 faixa no Dashboard (**feita**; "indisponível" até haver dado) →
 4 resumos + Telegram → 5 marcador nas operações (só se ≤30% das ops) →
 6 opcionais (on-chain, notícias RSS, horário silencioso). Detalhe e critérios:
 item 284.

@@ -112,6 +112,56 @@ describe('tripwire: o Contexto não toca banco, scanner nem Telegram com banco (
   });
 });
 
+// Fase 3 (addendum 11): a faixa de eventos do Dashboard vive em src/ e roda no NAVEGADOR. Ela não pode tocar o banco,
+// o motor, o log (que grava SystemLog no banco) nem o Firebase — é só leitura da branch pública `context-data`.
+const ARQUIVOS_DA_FAIXA = [
+  'src/lib/marketContextBand.js',
+  'src/lib/marketContextSource.js',
+  'src/hooks/useMarketContext.js',
+  'src/components/dashboard/MarketContextBand.jsx',
+];
+const PROIBIDO_NA_FAIXA = [
+  { nome: 'adaptador de entidades (banco)', re: /@\/api\/entities|api\/entities|adminEntities/ },
+  { nome: 'o scanner / motor de trading', re: /\bscanner\b|opTransition|opExitRules|tradeMetrics|signalArbitration|backtestEngine|TradeOperation/ },
+  { nome: 'log que grava no banco', re: /@\/lib\/logger|logInfo|logWarn|logError|logDebug|SystemLog/ },
+  { nome: 'Firebase', re: /firebase/i },
+  { nome: 'o canal de Telegram do navegador', re: /@\/lib\/telegram|notify[A-Z]/ },
+];
+
+function violacoesDaFaixa(rel, texto) {
+  const codigo = texto.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*|\{\/\*)/.test(l)).join('\n');
+  return PROIBIDO_NA_FAIXA.filter(({ re }) => re.test(codigo)).map(({ nome }) => `${rel}: referencia ${nome}`);
+}
+
+describe('tripwire: a faixa de eventos do painel só lê a branch pública (item 285, addendum 11)', () => {
+  it('os arquivos da faixa existem e estão limpos', () => {
+    for (const rel of ARQUIVOS_DA_FAIXA) expect(existsSync(join(ROOT, rel)), rel).toBe(true); // não-vacuidade
+    const achados = ARQUIVOS_DA_FAIXA.flatMap((rel) => violacoesDaFaixa(rel, readFileSync(join(ROOT, rel), 'utf8')));
+    expect(achados).toEqual([]);
+  });
+
+  it('prova: pega banco, motor, log e Firebase plantados na faixa', () => {
+    const plantados = [
+      "import { backend } from '@/api/entities';",
+      "import { scanAsset } from '@/lib/scanner';",
+      "import { logWarn } from '@/lib/logger';",
+      "import { db } from '@/lib/firebaseClient';",
+      "import { notifyNewSignal } from '@/lib/telegram';",
+    ];
+    for (const linha of plantados) expect(violacoesDaFaixa('plantado', linha).length, linha).toBeGreaterThan(0);
+    expect(violacoesDaFaixa('x', "// logWarn grava no banco, por isso não é usado\nconst a = 1;")).toEqual([]);
+  });
+
+  it('o Dashboard é o ÚNICO consumidor da faixa fora dos próprios arquivos dela', () => {
+    const dash = readFileSync(join(ROOT, 'src/pages/Dashboard.jsx'), 'utf8');
+    expect(dash).toMatch(/import MarketContextBand from '@\/components\/dashboard\/MarketContextBand'/);
+    for (const rel of MOTOR) {
+      const texto = lerSeExiste(rel);
+      if (texto !== null) expect(texto, rel).not.toMatch(/MarketContextBand|useMarketContext|marketContext(Band|Source)/);
+    }
+  });
+});
+
 // Fase 2 (addendum 9): o coletor é o ÚNICO workflow de contexto que escreve no repositório, e só na
 // branch pública `context-data`. Sem push forçado, sem outra branch, sem segredo além do FRED e do contato.
 const COLETOR = '.github/workflows/context-collect.yml';

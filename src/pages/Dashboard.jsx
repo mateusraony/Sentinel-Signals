@@ -13,6 +13,7 @@ import SignalAlertBanner from '@/components/dashboard/SignalAlertBanner';
 import PerformanceOverview from '@/components/dashboard/PerformanceOverview';
 import ComparePanel from '@/components/dashboard/ComparePanel';
 import TelegramStatusBanner from '@/components/dashboard/TelegramStatusBanner';
+import MarketContextBand from '@/components/dashboard/MarketContextBand';
 import PerformanceMetricsBar from '@/components/dashboard/PerformanceMetricsBar';
 import VirtualAccountCard from '@/components/dashboard/VirtualAccountCard';
 import LiveConfidenceCard from '@/components/dashboard/LiveConfidenceCard';
@@ -249,6 +250,10 @@ export default function Dashboard() {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-5 mt-4">
+            {/* Agenda de eventos dos EUA (Contexto de Mercado, Fase 3): só informação, falha em silêncio,
+                desligável. O motor de trading nunca importa isto (item 285, addendum 11). */}
+            <MarketContextBand />
+
             {/* AGORA — sinais recém-confirmados + feed persistente (achado
                 A-14 do Raio-X de UI/UX): os dois únicos lugares que
                 respondem "o que aconteceu?" agrupados no topo, não mais
