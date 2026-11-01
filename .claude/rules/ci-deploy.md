@@ -79,7 +79,11 @@ paths:
   Reversível — descomentar o `schedule:` nos dois arquivos religa; nenhuma
   coleção nem código foi apagado.
 - `keep-warm.yml` — ping `/health` a cada 10 min (Render free não hibernar).
-- `backup.yml` — backup diário das coleções de negócio → branch `backups`.
+- `backup.yml` — backup diário das coleções de negócio → branch `backups`. Como os outros dois que leem o secret
+  `BACKUP_DEPLOY_KEY` (`backup-postgres.yml`, `restore-postgres.yml`), grava a chave por
+  `scripts/write-backup-deploy-key.sh`, que confere com `ssh-keygen -y` ANTES de qualquer fetch/push e para com
+  mensagem em português se a chave estiver ilegível (`docs/known-risks.md` item 288, addendum de 01/11/2026; travado
+  por `scripts/writeBackupDeployKey.test.js`). Nunca volte a gravar a chave com `echo`/`printf` direto no workflow.
 - `deploy-firestore.yml` — deploy **manual** de rules/índices.
 - `db-migrate.yml` — disparo **manual** (`workflow_dispatch` só): aplica
   `db/schema.sql` (via `db/migrate.mjs`, idempotente) no projeto Neon real,
@@ -126,7 +130,9 @@ paths:
   inteiro). `schedule` deslocado 14min do `backup.yml` (`cron: "37 3 * * *"`
   vs. `"23 3 * * *"`), mesmo motivo. Restauração via `pg_restore` puro (sem
   script próprio, ao contrário do Firestore) — ver
-  `docs/restore-postgres.md`.
+  `docs/restore-postgres.md`. **Dump conferido (01/11/2026):** `scripts/backup-postgres.mjs` falha se o arquivo sair
+  com menos de `MIN_DUMP_BYTES` (4.096 B; o dump de um banco só com o schema mede 17.085 B) e imprime o tamanho — um
+  dump vazio não vira "backup do dia" (travado por `scripts/backupDumpSize.test.js`).
 - `backfill-rtdb.yml` — disparo **manual** (`workflow_dispatch` só) de
   `scripts/backfill-rtdb.mjs` (`docs/known-risks.md` item 152 addendum):
   copia `assetStates`/`signalEvents`/`tradeOperations` do Firestore pro RTDB

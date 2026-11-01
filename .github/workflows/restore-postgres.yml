@@ -111,8 +111,9 @@ jobs:
           ARQUIVO: ${{ inputs.arquivo }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$BACKUP_DEPLOY_KEY" > ~/.ssh/backup_deploy_key
-          chmod 600 ~/.ssh/backup_deploy_key
+          # Grava a chave e confere que o OpenSSH consegue LER antes do clone (item 288, addendum de
+          # 01/11/2026): secret ilegível ("error in libcrypto") falha aqui, em português.
+          bash scripts/write-backup-deploy-key.sh ~/.ssh/backup_deploy_key
           # Chaves públicas do GitHub fixadas, não escaneadas (mesma justificativa de backup-postgres.yml).
           cat <<'KNOWN_HOSTS' >> ~/.ssh/known_hosts
           github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl

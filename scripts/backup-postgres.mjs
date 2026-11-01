@@ -42,8 +42,33 @@
 // tamanho do backup virar problema real (ainda não rodou nenhuma vez em
 // produção pra ter esse dado).
 import { spawnSync } from 'node:child_process';
+import { statSync } from 'node:fs';
 
 export const EXCLUDED_TABLES = ['users', 'scanner_locks'];
+
+// Piso de sanidade do arquivo gerado (docs/known-risks.md item 288, addendum de 01/11/2026). Um dump
+// vazio ou cortado seria publicado como "backup do dia" e só apareceria no dia de restaurar. MEDIDO em
+// 01/11/2026: o dump (mesmas opções) de um banco com SÓ o db/schema.sql, sem nenhuma linha, tem 17.085
+// bytes; o cabeçalho sozinho tem menos de 1 KB. 4.096 fica bem abaixo do menor dump válido do projeto
+// e acima de qualquer arquivo vazio/truncado. Não tenta provar que os DADOS estão completos — isso o
+// pg_dump já garante pelo código de saída (conferido abaixo).
+export const MIN_DUMP_BYTES = 4096;
+
+export function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Puro (testável sem pg_dump): lança se o tamanho não é um número de bytes plausível para um dump.
+export function assertDumpSize(bytes, outPath = 'o arquivo do dump') {
+  if (!Number.isFinite(bytes) || bytes < MIN_DUMP_BYTES) {
+    throw new Error(
+      `${outPath} saiu com ${Number.isFinite(bytes) ? formatBytes(bytes) : 'tamanho desconhecido'} ` +
+      `(mínimo esperado ${formatBytes(MIN_DUMP_BYTES)}): parece vazio ou cortado. Nada foi publicado.`,
+    );
+  }
+}
 
 export function buildPgDumpArgs(databaseUrl, outPath) {
   return [
@@ -72,7 +97,9 @@ async function main() {
   if (result.status !== 0) {
     throw new Error(`pg_dump saiu com código ${result.status}`);
   }
-  console.log(`[backup-postgres] salvo em ${outPath}`);
+  const bytes = statSync(outPath).size;
+  assertDumpSize(bytes, outPath);
+  console.log(`[backup-postgres] salvo em ${outPath} (${formatBytes(bytes)})`);
 }
 
 const isMainModule = import.meta.url === `file://${process.argv[1]}`;

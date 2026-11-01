@@ -58,6 +58,20 @@ Os nomes abaixo são os que aparecem na aba **Actions** do GitHub.
 
 ## Se der errado
 
+- **O backup (Daily Postgres backup, Daily Firestore backup ou o backup do "aplicar") fica vermelho com
+  "O secret BACKUP_DEPLOY_KEY está ilegível" — ou, nas versões antigas, "error in libcrypto" / "Permission
+  denied (publickey)":** o banco está bem; o que quebrou foi a chave que envia o backup ao repositório privado.
+  Sem um backup verde não se aplica a recuperação. Conserto (uns 10 minutos, é só recriar a chave):
+  1. No seu computador (PowerShell no Windows, Terminal no Mac), rode
+     `ssh-keygen -t ed25519 -C "sentinel-backup" -f sentinel-backup-key` e aperte Enter duas vezes quando pedir
+     a senha (**sem senha**). Saem dois arquivos: `sentinel-backup-key` (privada) e `sentinel-backup-key.pub` (pública).
+  2. GitHub → repositório **sentinel-signals-backups** → **Settings** → **Deploy keys** → **Add deploy key** → cole o
+     conteúdo do arquivo `.pub`, marque **Allow write access** e salve (a chave antiga pode ser apagada dali).
+  3. GitHub → repositório **Sentinel-Signals** → **Settings** → **Secrets and variables** → **Actions** →
+     **BACKUP_DEPLOY_KEY** → **Update** → cole o conteúdo **inteiro** do arquivo privado, da linha
+     `-----BEGIN OPENSSH PRIVATE KEY-----` até `-----END OPENSSH PRIVATE KEY-----`, com as quebras de linha → **Update secret**.
+  4. Rode **Daily Postgres backup** e **Daily Firestore backup**: os dois precisam ficar verdes. Depois apague os
+     dois arquivos da chave do seu computador.
 - **"NÃO aplicada — nada foi gravado"**: corrija o motivo escrito na mensagem e volte ao passo 3.
   Se o motivo for "não consegui conferir se o Scheduled scan e o Backfill check estão desativados" é a
   API do GitHub que falhou (não o scan ligado): rode de novo.

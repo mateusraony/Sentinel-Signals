@@ -34299,3 +34299,46 @@ completa do código) + todas as checagens; a recuperação foi tratada primeiro 
   `backup-postgres.yml` com o nome novo e do `restore-postgres.yml` com o campo novo (o shell foi testado com os
   mesmos regex e `bash -n`, mas não num runner). O backup diário está vermelho desde ~19/10 pela cota do Neon — o
   primeiro backup verde depois da volta é pré-requisito do "aplicar".
+
+**Addendum 01/11/2026 — o backup voltou a falhar com o Neon de volta: a chave SSH do backup estava ilegível (PR-13).**
+
+- **Fato [logs].** Com o Neon de volta, o **Daily Postgres backup** (execução 41307295685, job 124850195413) fez o
+  `pg_dump` normalmente (`salvo em /tmp/postgres-backup-2026-11-01.dump`) e falhou só no envio para o repositório
+  privado de backups: `Load key "/home/runner/.ssh/backup_deploy_key": error in libcrypto` e depois
+  `Permission denied (publickey)`. O **Daily Firestore backup** (`backup.yml`, mesmo secret, arquivo não tocado) deu
+  certo em 30/10 10:15Z (job 124007922041) e falhou igual em 31/10 09:49Z (job 124505280704) e em 01/11 (job
+  124824062221). Logo, **não foi código novo**.
+- **Fato [logs].** As duas execuções (30/10 verde, 31/10 vermelha) rodaram na MESMA imagem do runner (`ubuntu-26.04`,
+  versão 20261025.179.1, git 2.56.0): a hipótese "o OpenSSH do runner mudou" está **descartada**. O que mudou foi o
+  valor do secret `BACKUP_DEPLOY_KEY`. **[Hipótese]** foi editado/colado de novo (um secret não pode ser lido de volta;
+  só o usuário sabe). O conserto é recriar a chave (roteiro em `docs/claude/recovery-runbook.md`, "Se der errado").
+- **Fato [reproduzido com o `ssh-keygen` 9.6 real].** "error in libcrypto" é o que o OpenSSH diz para chave colada
+  numa linha só, com fim de linha do Windows (CRLF), com espaço no fim das linhas, com linha em branco ANTES da
+  chave, sem a linha END, a chave PÚBLICA no lugar da privada e o secret vazio; chave com senha dá "incorrect
+  passphrase". Linhas em branco DEPOIS da chave são aceitas. O erro dizia "Permission denied", o que desviava a
+  atenção para a deploy key do repositório, que nunca foi o problema.
+- **Mudança.** (1) `scripts/write-backup-deploy-key.sh`, usado pelos 3 workflows que leem o secret (`backup.yml`,
+  `backup-postgres.yml`, `restore-postgres.yml`), grava a chave com modo 600, normaliza o que costuma acontecer ao colar
+  (CRLF, espaço no fim, linha em branco no começo) e **confere com `ssh-keygen -y` antes de qualquer fetch/push**: se
+  a chave não presta, o passo para na hora com uma mensagem em português (o conteúdo da chave nunca é impresso). (2)
+  `scripts/backup-postgres.mjs` passou a conferir o tamanho do dump: abaixo de 4.096 bytes (`MIN_DUMP_BYTES`) o job
+  falha com "parece vazio ou cortado. Nada foi publicado" e o tamanho entra no log. **Medido:** o dump (mesmas
+  opções) de um banco só com `db/schema.sql`, sem nenhuma linha, tem 17.085 bytes — o piso fica bem abaixo do menor
+  dump válido e acima de qualquer arquivo vazio/truncado. Não prova que os DADOS estão completos (isso continua sendo o
+  código de saída do `pg_dump`). Antes não havia nenhuma conferência: um dump de 0 bytes seria publicado como
+  "backup do dia".
+- **Provas [verificado].** `scripts/writeBackupDeployKey.test.js` roda o script de verdade (bash + `ssh-keygen`
+  reais, como o runner): 5 defeitos que ele conserta, 4 que recusa (uma linha só, tudo junto, END cortada, lixo), chave
+  pública, chave com senha, secret ausente/vazio, o conteúdo da chave nunca no log, falha sob `bash -e` interrompe o
+  passo, e 2 mutações (sem a conferência a chave quebrada passa; sem a limpeza do fim das linhas o CRLF falha). Os 3
+  workflows são travados por texto (chamam o script; voltar a gravar a chave com `echo`/`printf` é acusado, com
+  variantes plantadas que precisam diferir do original). `scripts/backupDumpSize.test.js` roda o `backup-postgres.mjs`
+  de verdade com um `pg_dump` falso (dump normal passa e mostra o tamanho; vazio, cortado e saída ≠ 0 falham) e uma
+  mutação (sem a chamada o dump vazio passa). Além disso, o passo de publicação do `backup-postgres.yml` foi extraído do
+  YAML e rodado sob `bash -e` com a chave quebrada de 31/10: para na conferência, antes do `git remote add`, sem deixar
+  arquivo de chave.
+- **Limites [honesto].** Não alcançamos o GitHub daqui: o caminho feliz completo (fetch + push no repositório privado)
+  só roda de verdade no próximo disparo. O `git fetch … || true` dos dois backups continua engolindo falha de rede do
+  fetch (com chave boa e rede ruim cria branch órfã e o push é recusado por non-fast-forward — nunca sobrescreve, mas a
+  mensagem é confusa); deixado como está, fora do escopo. Os testes do script precisam de `ssh-keygen` (o runner do
+  GitHub tem; sem ele esses testes são pulados e os de texto dos workflows seguem rodando).
