@@ -33991,6 +33991,37 @@ esperar); os **avisos do Telegram (Fase 4) continuam esperando** a coleta provar
     erro, caixa que ainda renderiza o filho, sem dedupe, dedupe quebrado).
 - **Fora desta fase (de propósito):** "movimento esperado" com a volatilidade da Binance (decisão B) — Fase 3b.
 
+**Addendum 12 (2026-11-01, Fase 4a) — Telegram do Contexto sem banco, só manual.**
+Pedido do usuário: começar a Fase 4 depois de confirmar a Fase 3 (PR-A, addendum 11). Decisão do usuário (01/11): o aviso
+**antes** do evento diz **só o evento** (hora e situação), **sem listar operações abertas** — isso exigiria ler o banco (a trava de
+isolamento proíbe e custaria ~1 h/mês de Neon); as operações em risco passam a ser assunto do **painel** (Fase 3b).
+- **O que foi feito [fato]:** `scripts/contextTelegram.mjs` (remetente sem banco: 1 POST, prazo de 15 s, sem credencial não chama
+  a rede, texto > 4.096 é **recusado** e não cortado — cortar no meio de uma tag HTML faria o Telegram recusar tudo);
+  `scripts/contextMessages.mjs` (mensagens puras: `teste`, `agenda`, `pre-evento`; texto neutro — sem previsão, probabilidade,
+  compra ou venda; reaproveita a hora/contagem/rótulos da faixa do painel); `scripts/context-notify.mjs` (CLI: simulação por
+  padrão); `.github/workflows/context-notify.yml` (manual, sem `schedule`).
+- **Segurança:** o resultado de falha é um CÓDIGO (`sem_credenciais`, `http_401`, `rede`, `prazo`…), nunca o texto do erro — uma
+  mensagem de erro de rede cita a URL com o token. Os segredos só chegam ao passo quando "Enviar de verdade?" está marcado;
+  os checkouts usam `persist-credentials: false`; `contents: read`; nenhum `DATABASE_URL`. Categorias ligadas por uma variável de
+  repositório (`CONTEXT_TELEGRAM_CATEGORIES`, padrão vazio = tudo desligado; `teste` é sempre permitida porque é o botão manual).
+- **Trava de isolamento ajustada DE PROPÓSITO** (como o próprio `contextIsolationTripwire.test.js` previa): só `context-notify.yml`
+  pode usar os 2 segredos do Telegram; só `contextTelegram.mjs` os lê; coletor e sonda continuam sem Telegram; banco, Firebase,
+  motor e `adminTelegram` continuam proibidos em todo o contexto. 11 variantes plantadas (3º segredo, `DATABASE_URL`, `schedule`,
+  escrita, `git push`, segredo fora da condição de envio, `toJSON(secrets)`, checkout com token, envio ligado por padrão, variável
+  a mais, aviso removido) reprovam — e o teste confere que cada variante **alterou** o arquivo (uma primeira versão da variante
+  "escrita" trocava o `contents: read` de um COMENTÁRIO e passava sem provar nada).
+- **Emoji:** um novo, 🗓️ = "agenda de eventos" (`emojiRegistry.js` + `docs/notification-vocabulary.md`).
+- **Provas [verificado]:** 8 testes do remetente (fetch falso: POST certo, sem credencial, texto vazio/longo, HTTP 4xx/5xx, rede com
+  URL no erro, prazo, **token nunca no resultado nem no relatório**), 9 das mensagens, 10 do CLI, 4 do tripwire. 13 mutações
+  reprovam teste (inclui "erro devolve a mensagem" = vazamento do token, "simulação envia", "categoria sempre ligada", segredo sem a
+  condição de envio, envio ligado por padrão, workflow com escrita).
+- **Não verificado [honesto]:** o envio **real** a partir do runner do GitHub (precisa dos segredos e do chat do usuário): é o que o
+  botão manual prova. Fica pedido ao usuário: rodar "Aviso do Contexto no Telegram" com "Enviar de verdade?" desmarcado (vê o texto) e
+  depois marcado (chega no celular).
+- **Fora desta fase (de propósito, cada um pede plano próprio):** avisos automáticos (antes/depois do evento — gatilho a cada ~5 min
+  numa janela fixa, onde guardar "já avisei", número oficial pela API do BLS e as medições de 06/11 e 10/11), resumos 07h/12h/21h e a
+  Fase 3b (movimento esperado e operações em risco no painel).
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 > **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista

@@ -73,6 +73,12 @@ significado, sempre acompanhado de texto.
 | ✏️ | Encerrada à mão pelo painel (edição, Encerrar, Invalidar) — fora da medição do motor | banner do TradeCard, selo do Histórico |
 | ♻️ | Recuperada após pausa do banco — operação reconstruída pelo replay de recuperação (item 288), fora da medição do motor | selo do Histórico, banner do TradeCard, aviso do Telegram e a mensagem única da recuperação |
 
+### Contexto de Mercado (item 285, Fase 4a)
+
+| Emoji | Significado único | Onde |
+|---|---|---|
+| 🗓️ | Agenda de eventos macro dos EUA (CPI, Payroll, PPI, PCE, FOMC) — só informação, não altera sinais nem operações | mensagens do `context-notify.yml` (`scripts/contextMessages.mjs`): teste, agenda e aviso antes do evento |
+
 ### Registro "1 emoji = 1 significado" (item 280, PR-E2/E3)
 
 Fonte única: `src/lib/emojiRegistry.js` (`EMOJI_REGISTRY`, glifo → significado).

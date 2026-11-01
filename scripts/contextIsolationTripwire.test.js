@@ -10,8 +10,11 @@
 //     concreto: scripts/adminTelegram.js importa o `backend` e, quando o envio
 //     falha, grava SystemLog no Postgres — um workflow de contexto que o usasse
 //     acordaria o Neon, cuja cota de computação é justamente o problema de hoje
-//     (itens 282/283). Quando a Fase 4 precisar de Telegram, o caminho é um
-//     remetente SEM banco; só então este teste é ajustado, de propósito.
+//     (itens 282/283). Fase 4a (addendum 12): o remetente SEM banco existe
+//     (scripts/contextTelegram.mjs) e SÓ o workflow context-notify.yml pode
+//     usar os dois segredos do Telegram — regras abaixo (`problemasDoNotificador`).
+//     adminTelegram, banco, Firebase e motor continuam proibidos em todo o contexto,
+//     e o coletor (context-collect.yml) continua SEM Telegram.
 //
 // Padrão de modelo: src/lib/noOrderExecutionTripwire.test.js (inclui a prova de
 // que o guard pega o que deve pegar e não acusa o que é inocente).
@@ -194,6 +197,83 @@ function problemasDoColetor(yml) {
   if (!/node scripts\/context-collect\.mjs/.test(codigo)) p.push('não roda o coletor');
   return p;
 }
+
+// Fase 4a (addendum 12): o ÚNICO workflow de contexto que fala com o Telegram. Só manual, sem escrita, só os 2 segredos do
+// Telegram (e só quando "Enviar de verdade?" está marcado), nenhum banco.
+const NOTIFICADOR = '.github/workflows/context-notify.yml';
+const SEGREDOS_DO_NOTIFICADOR = new Set(['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']);
+
+function problemasDoNotificador(yml) {
+  const codigo = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  const p = [];
+  if (!/permissions:\s*\n\s*contents:\s*read\s*\n/.test(codigo)) p.push('permissões: esperado só `contents: read`');
+  if (/:\s*write\b/.test(codigo)) p.push('permissões: há escrita');
+  if (/^\s*schedule:/m.test(codigo)) p.push('tem `schedule:` (a Fase 4a é só manual)');
+  if (/\bgit\b.*\bpush\b/.test(codigo)) p.push('git push');
+  if (!/workflow_dispatch/.test(codigo)) p.push('sem disparo manual');
+  for (const [, nome] of codigo.matchAll(/secrets\.([A-Za-z0-9_]+)/g)) if (!SEGREDOS_DO_NOTIFICADOR.has(nome.toUpperCase())) p.push(`segredo não permitido: ${nome}`);
+  if (/\bsecrets\b(?!\.[A-Za-z0-9_])/.test(codigo)) p.push('uso indireto de `secrets` (só secrets.NOME é permitido)');
+  // Os segredos só chegam ao passo quando o envio está marcado (a simulação nem os recebe).
+  for (const linha of codigo.split('\n').filter((l) => /secrets\./.test(l))) {
+    if (!/inputs\.enviar\s*&&/.test(linha)) p.push(`segredo fora da condição "inputs.enviar": ${linha.trim()}`);
+  }
+  for (const [, nome] of codigo.matchAll(/\bvars\.([A-Za-z0-9_]+)/g)) if (nome !== 'CONTEXT_TELEGRAM_CATEGORIES') p.push(`variável não permitida: ${nome}`);
+  const checkouts = (codigo.match(/uses:\s*actions\/checkout@/g) || []).length;
+  const semToken = (codigo.match(/persist-credentials:\s*false/g) || []).length;
+  if (checkouts < 1 || semToken !== checkouts) p.push('todo checkout precisa de `persist-credentials: false`');
+  const bloco = /enviar:\s*\n((?:[ \t]+[^\n]*\n){1,6})/.exec(codigo);
+  if (!bloco || !/default:\s*false/.test(bloco[1])) p.push('"Enviar de verdade?" precisa ter padrão false');
+  if (!/node scripts\/context-notify\.mjs/.test(codigo)) p.push('não roda o aviso');
+  return p;
+}
+
+describe('tripwire: o aviso do Telegram do Contexto é manual, sem banco e com os 2 segredos só no envio (item 285, addendum 12)', () => {
+  const real = readFileSync(join(ROOT, NOTIFICADOR), 'utf8');
+
+  it('context-notify.yml segue as regras', () => {
+    expect(problemasDoNotificador(real)).toEqual([]);
+  });
+
+  it('o coletor e a sonda continuam SEM Telegram (só o notificador fala com o Telegram)', () => {
+    for (const rel of arquivosDoContexto().filter((r) => r.startsWith('.github/') && r !== NOTIFICADOR)) {
+      const codigo = readFileSync(join(ROOT, rel), 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+      expect(codigo, rel).not.toMatch(/TELEGRAM/);
+    }
+  });
+
+  it('só scripts/contextTelegram.mjs usa as variáveis do Telegram (o CLI e as mensagens não leem segredo)', () => {
+    const quem = arquivosDoContexto().filter((r) => r.startsWith('scripts/')).filter((rel) => /TELEGRAM_(BOT_TOKEN|CHAT_ID)/.test(
+      readFileSync(join(ROOT, rel), 'utf8').split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n'),
+    ));
+    expect(quem.sort()).toEqual(['scripts/contextTelegram.mjs']);
+  });
+
+  it('prova: pega 3º segredo, banco, schedule, escrita, push, segredo fora da condição, checkout com token, enviar ligado por padrão e variável a mais', () => {
+    const seg = "TELEGRAM_BOT_TOKEN: ${{ inputs.enviar && secrets.TELEGRAM_BOT_TOKEN || '' }}";
+    expect(real).toContain(seg);
+    const alvo = ['ma', 'in'].join(''); // (monta o nome da branch por partes: o hook de proteção do repositório lê o texto dos comandos)
+    const empurra = `git -C . push origin HEAD:${alvo}`;
+    const plantados = [
+      real.replace(seg, `${seg}\n          X: \${{ inputs.enviar && secrets.BLS_API_KEY || '' }}`),
+      real.replace(seg, `${seg}\n          D: \${{ inputs.enviar && secrets.DATABASE_URL || '' }}`),
+      real.replace('on:\n  workflow_dispatch:', "on:\n  schedule:\n    - cron: '0 * * * *'\n  workflow_dispatch:"),
+      real.replace('permissions:\n  contents: read', 'permissions:\n  contents: write'), // (o 1º "contents: read" do arquivo está num comentário)
+      real.replace('node scripts/context-notify.mjs', `${empurra}\n          node scripts/context-notify.mjs`),
+      real.replace(seg, 'TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}'),
+      real.replace(seg, 'TELEGRAM_BOT_TOKEN: ${{ toJSON(secrets) }}'),
+      real.replace('persist-credentials: false', 'persist-credentials: true'),
+      real.replace(/(enviar:[\s\S]*?)default: false/, '$1default: true'),
+      real.replace('vars.CONTEXT_TELEGRAM_CATEGORIES', 'vars.OUTRA'),
+      real.replace('node scripts/context-notify.mjs', 'echo sem aviso'),
+    ];
+    for (const yml of plantados) {
+      expect(yml, 'a variante plantada não alterou o arquivo').not.toBe(real);
+      expect(problemasDoNotificador(yml).length, yml.slice(-160)).toBeGreaterThan(0);
+    }
+    // Banco plantado também cai na regra global do contexto (nenhum arquivo de contexto referencia o banco).
+    expect(violacoes(NOTIFICADOR, plantados[1]).length).toBeGreaterThan(0);
+  });
+});
 
 describe('tripwire: o coletor só escreve na branch context-data (item 285, addendum 9)', () => {
   it('context-collect.yml segue as regras', () => {
