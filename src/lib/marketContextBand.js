@@ -40,12 +40,16 @@ const isoMs = (v) => (typeof v === 'string' && ISO_RE.test(v) ? Date.parse(v) : 
 export function parseEvents(json) {
   if (!Array.isArray(json)) throw new Error('events.json não é uma lista');
   const out = [];
+  const seen = new Set();
   for (const e of json) {
     if (!e || typeof e !== 'object' || typeof e.id !== 'string') continue;
+    // Id repetido (arquivo público, vem da rede): vale o primeiro — senão a tela teria `key` duplicada no React.
+    if (seen.has(e.id)) continue;
     if (!Object.prototype.hasOwnProperty.call(EVENT_LABELS, e.kind)) continue;
     if (!Object.prototype.hasOwnProperty.call(STATUS_LABELS, e.status)) continue;
     const startMs = isoMs(e.startsAtUtc);
     if (!Number.isFinite(startMs)) continue;
+    seen.add(e.id);
     out.push({ id: e.id, kind: e.kind, status: e.status, startsAtUtc: e.startsAtUtc, startMs });
   }
   return out;

@@ -88,6 +88,24 @@ describe('MarketContextBand', () => {
     await screen.findByText('Nenhum evento à frente na agenda.');
   });
 
+  it('erro de renderização da faixa NÃO derruba o resto da tela (caixa de erro local, sem log)', async () => {
+    // Um evento que estoura quando o componente o lê (simula um bug de renderização na faixa).
+    fetchMock.mockResolvedValue({ checkedAtMs: NOW, events: [{ id: 'x', get startMs() { throw new Error('boom'); } }] });
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {}); // o React registra o erro capturado
+    const calar = (e) => e.preventDefault(); // o jsdom também reimprime o erro como "não capturado"
+    window.addEventListener('error', calar);
+    try {
+      renderPage(<div><MarketContextBand /><p>irmão continua na tela</p></div>);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      await new Promise((r) => setTimeout(r, 30));
+      expect(screen.getByText('irmão continua na tela')).toBeTruthy();
+      expect(screen.queryByRole('region', { name: 'Agenda de eventos dos EUA' })).toBeNull();
+    } finally {
+      window.removeEventListener('error', calar);
+      spy.mockRestore();
+    }
+  });
+
   it('ocultar: some, lembra a escolha e não faz requisição; mostrar volta', async () => {
     fetchMock.mockResolvedValue({ checkedAtMs: NOW, events: [ev('a', 'CPI', inH(5))] });
     const { unmount } = renderPage(<MarketContextBand />);
