@@ -135,8 +135,10 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
 
           mkdir -p ~/.ssh
-          echo "$BACKUP_DEPLOY_KEY" > ~/.ssh/backup_deploy_key
-          chmod 600 ~/.ssh/backup_deploy_key
+          # Grava a chave e confere que o OpenSSH consegue LER antes de qualquer fetch/push (item 288,
+          # addendum de 01/11/2026): secret ilegível ("error in libcrypto") falha aqui, em português,
+          # e não como "Permission denied" só no último passo.
+          bash scripts/write-backup-deploy-key.sh ~/.ssh/backup_deploy_key
           # Pinned, not scanned — mesma justificativa de backup.yml (chaves
           # públicas do GitHub, não confiadas via TOFU em runtime).
           cat <<'KNOWN_HOSTS' >> ~/.ssh/known_hosts
