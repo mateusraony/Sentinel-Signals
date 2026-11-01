@@ -83,6 +83,10 @@ export const EMOJI_REGISTRY = Object.freeze({
     files: ['src/lib/operationProvenance.js'],
   }),
   '✏️': entry('Encerrada à mão pelo painel — fora da medição do motor'),
+  '🗓️': entry('Agenda de eventos macro dos EUA (Contexto de Mercado) — só informação', {
+    context: /agenda|evento|aviso/i,
+    files: ['scripts/contextMessages.mjs'],
+  }),
   '♻️': entry('Recuperada após pausa do banco — reconstruída pelo replay, fora da medição do motor', { context: /recuper/i }),
   '⭐': entry('Prioridade alta', { context: /⭐ ?(alta|prioridade:? ?alta)(?![\wà-ú])/i }),
   '👍': entry('O que ajuda o aviso', { context: /ajuda/i }),

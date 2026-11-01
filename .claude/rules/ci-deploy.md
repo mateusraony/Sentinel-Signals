@@ -343,6 +343,19 @@ paths:
   - **Conteúdo público travado** por `assertPublicShape` (lista fechada de campos; nada de URL, chave, erro, valor de
     série ou volatilidade) e as regras do workflow por `scripts/contextIsolationTripwire.test.js`.
 
+- `context-notify.yml` — **aviso do Contexto no Telegram** (Fase 4a, `docs/known-risks.md` item 285, addendum 12).
+  Disparo **manual** (`workflow_dispatch` só, **sem `schedule`**): campos "Categoria" (`teste`, `agenda`, `pre-evento`) e
+  "Enviar de verdade?" (padrão **não**: só mostra a mensagem no relatório).
+  - **Sem banco:** `contents: read`, nenhum `DATABASE_URL` (não acorda o Neon). Remetente próprio sem banco
+    (`scripts/contextTelegram.mjs`) — o canal do Sentinel (`adminTelegram.js`) grava log no Postgres e continua proibido
+    no Contexto. O coletor e a sonda seguem **sem** Telegram.
+  - **Segredos:** só `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, e só chegam ao passo quando "Enviar de verdade?" está
+    marcado (a simulação nem os recebe). O resultado de uma falha é só um código (`rede`, `http_401`…): nunca a URL, que tem o token.
+  - **Categorias:** `teste` sempre permitida; `agenda` e `pre-evento` só se estiverem na variável de repositório
+    `CONTEXT_TELEGRAM_CATEGORIES` (Settings → Secrets and variables → Actions → Variables). Padrão vazio = tudo desligado.
+  - **Travado por** `scripts/contextIsolationTripwire.test.js` (`problemasDoNotificador`, com variantes plantadas) e pelos
+    testes `contextTelegram`/`contextMessages`/`contextNotify`.
+
 - `recovery.yml` — disparo **manual** (`workflow_dispatch` só), com 2 campos ("O que fazer" = `teste-a-seco`/`aplicar`
   e "Só para aplicar: o número do teste a seco…"): **teste a seco** do replay de
   recuperação depois de queda longa do banco (`docs/known-risks.md` item 288).

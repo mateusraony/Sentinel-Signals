@@ -1,0 +1,68 @@
+name: Aviso do Contexto no Telegram (Sentinel Signals)
+
+# docs/known-risks.md item 285, addendum 12 — Fase 4a. Prova, num botão MANUAL e sem risco, que o caminho
+# GitHub → Telegram do Contexto de Mercado funciona SEM tocar o banco (não acorda o Neon). Nada é enviado sozinho:
+# sem `schedule`. Os avisos automáticos (antes/depois do evento, resumos) são fases seguintes, com plano próprio.
+#
+# Segurança: `contents: read`; os dois segredos do Telegram só chegam ao passo quando "Enviar de verdade?" está marcado
+# (simulação nem recebe os segredos); os checkouts não deixam o token do GitHub no disco; nenhum DATABASE_URL.
+# As regras estão travadas por scripts/contextIsolationTripwire.test.js.
+#
+# Ligar uma categoria (menos "teste"): Settings → Secrets and variables → Actions → aba Variables → variável de
+# repositório CONTEXT_TELEGRAM_CATEGORIES com o valor `agenda`, `pre-evento` ou os dois separados por vírgula.
+
+on:
+  workflow_dispatch:
+    inputs:
+      categoria:
+        description: "Categoria do aviso: teste (mensagem de teste), agenda (próximos eventos) ou pre-evento (o próximo evento com data firme)"
+        type: choice
+        options:
+          - teste
+          - agenda
+          - pre-evento
+        default: teste
+      enviar:
+        description: "Enviar de verdade? Desmarcado = só mostra a mensagem no relatório e não manda nada"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: context-notify
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # A agenda (events.json) que o coletor publica na branch pública `context-data`.
+      - uses: actions/checkout@v5
+        with:
+          ref: context-data
+          path: data
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Montar e (se marcado) enviar o aviso
+        env:
+          CATEGORIA: ${{ inputs.categoria }}
+          ENVIAR: ${{ inputs.enviar }}
+          CATEGORIAS_LIGADAS: ${{ vars.CONTEXT_TELEGRAM_CATEGORIES }}
+          TELEGRAM_BOT_TOKEN: ${{ inputs.enviar && secrets.TELEGRAM_BOT_TOKEN || '' }}
+          TELEGRAM_CHAT_ID: ${{ inputs.enviar && secrets.TELEGRAM_CHAT_ID || '' }}
+        run: |
+          set -o pipefail
+          ARGS=(--categoria "$CATEGORIA" --dir data --categorias-ligadas "$CATEGORIAS_LIGADAS")
+          if [ "$ENVIAR" = "true" ]; then ARGS+=(--enviar); fi
+          node scripts/context-notify.mjs "${ARGS[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
