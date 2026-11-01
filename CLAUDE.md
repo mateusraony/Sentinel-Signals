@@ -79,8 +79,8 @@ Revertidas/pausadas de propósito a pedido do usuário (ver `docs/known-risks.md
 Outras decisões permanentes: **não** reintroduzir Base44; **não** usar Vercel/
 Netlify (manter GitHub + Render + Firebase); **não** habilitar trading real;
 **não** alterar algo funcional sem necessidade demonstrada.
-**Contexto de Mercado (itens 284/285):** Fases 1–2 feitas (sonda + coletor de datas, branch pública
-`context-data`); 3–6 pendentes. Só informativa — nunca toca motor/score; sem Cloudflare, sem Neon.
+**Contexto de Mercado (itens 284/285):** Fases 1–3 feitas (sonda, coletor de datas na branch pública
+`context-data`, faixa de eventos no Dashboard); 4–6 pendentes. Só informativa — nunca toca motor/score; sem Neon.
 
 ## Scan agendado (GitHub Actions) — roda sem navegador
 

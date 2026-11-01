@@ -33947,6 +33947,37 @@ Pedido do usuário ("confirme se tudo está perfeito… blindado"); revisão ind
 - **Fora (decidido não mexer, com motivo):** o e-mail de contato vai no identificador (`User-Agent`) de todas as fontes da
   sonda — é o e-mail dedicado ao robô, criado para isso; rótulos "erro de rede" × "tempo esgotado" na sonda (só texto).
 
+**Addendum 11 (2026-11-01, Fase 3) — a faixa "Agenda de eventos dos EUA" no Dashboard.**
+Decisão do usuário (01/11): construir a Fase 3 já, sem esperar as 2 semanas de coleta (o desenho de 27/10 previa
+esperar); os **avisos do Telegram (Fase 4) continuam esperando** a coleta provar o coletor.
+- **O que é [fato]:** `src/components/dashboard/MarketContextBand.jsx` (no topo da aba "Visão Geral" do Dashboard) lê, no
+  navegador, `events.json` e `status.json` da branch pública `context-data`
+  (`https://raw.githubusercontent.com/mateusraony/Sentinel-Signals/context-data/…`, CORS `*`, cache ~5 min — provado
+  pela sonda `raw-github-cors`) e mostra os próximos 4 eventos (CPI, Payroll, PPI, PCE, FOMC): hora de Brasília
+  (convertida de UTC, inclusive na virada do horário de verão dos EUA), contagem regressiva e a situação
+  (oficial / confirmada / data a confirmar — esta apagada e sem contagem). Evento que saiu há ≤ 30 min fica como
+  "acabou de sair".
+- **4 estados:** atualizado; **desatualizado** (última checagem do coletor há > 36 h ou sem hora — avisa a idade);
+  **indisponível** (sem dado/rede/branch ainda inexistente — uma linha calma dizendo que nada é afetado);
+  **desligado** (botão "Ocultar", escolha por navegador em `localStorage`, tudo em `try/catch`; desligado não faz requisição).
+- **Arquivos:** `src/lib/marketContextBand.js` (lógica pura), `src/lib/marketContextSource.js` (a única função com rede, sem
+  cabeçalho extra = sem preflight de CORS), `src/hooks/useMarketContext.js` (react-query, relê a cada 10 min, falha em
+  silêncio), o componente e os testes. **Sem log de propósito:** `logWarn` grava `SystemLog` no banco, e "a branch ainda
+  não existe" é esperado antes da 1ª coleta.
+- **Isolamento [travado por teste]:** o motor não importa nada daqui (`MOTOR` + regex `marketContext*`/`useMarketContext`
+  em `contextIsolationTripwire.test.js`); os 4 arquivos da faixa não podem referenciar banco, motor, log, Firebase nem
+  Telegram (teste novo, com variantes plantadas). Nenhuma mudança em `TradeOperation`/Neon. Texto neutro: sem
+  "probabilidade", "vai subir/cair", compra/venda (teste confere o texto renderizado).
+- **Provas [verificado]:** 17 testes da lógica pura, 5 da leitura de rede, 3 do hook, 8 do componente (4 estados, texto
+  neutro, a confirmar sem contagem, ocultar persistindo e sem requisição), 2 smokes do Dashboard (com dados e vazio) e
+  3 do tripwire. 10 mutações reprovam teste (passado voltando, sem estado desatualizado, `localStorage` sem `try/catch`,
+  situação qualquer aceita, fuso fixo, cabeçalho extra, `status.json` ruim derrubando tudo, desligado ainda buscando,
+  "a confirmar" com contagem, "indisponível" sumindo).
+- **Não verificado [honesto]:** a tela **não foi vista num navegador** (o Dashboard exige o backend e a autenticação);
+  vale olhar no painel depois do deploy. Também só se confirma com dado real depois que o coletor rodar (antes disso a
+  faixa mostra "indisponível").
+- **Fora desta fase (de propósito):** "movimento esperado" com a volatilidade da Binance (decisão B) — Fase 3b.
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 > **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista

@@ -55,6 +55,8 @@ vi.mock('@/lib/AuthContext', () => ({
   AuthProvider: ({ children }) => children,
   useAuth: () => ({ user: { uid: 'teste' }, role: 'admin', loading: false }),
 }));
+// Contexto de Mercado (Fase 3): a faixa de eventos não pode bater na rede nos testes do Dashboard.
+vi.mock('@/lib/marketContextSource', () => ({ fetchMarketContext: async () => { throw new Error('sem rede nos testes'); } }));
 vi.mock('@/lib/marketDataProvider', () => ({
   fetchCandles: async () => [],
   fetchCurrentPrice: async () => null,

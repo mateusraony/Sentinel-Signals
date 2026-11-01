@@ -64,6 +64,22 @@ vi.mock('@/lib/marketDataProvider', () => ({
   EXECUTOR: 'browser',
 }));
 
+// Contexto de Mercado, Fase 3 (faixa de eventos do Dashboard): nenhuma página pode depender do GitHub para renderizar.
+// Vazio = sem dado ("indisponível"); com dados = dois eventos à frente.
+vi.mock('@/lib/marketContextSource', () => ({
+  fetchMarketContext: async () => {
+    if (!estado.populated) throw new Error('sem dado nos testes');
+    const em = (h) => Date.now() + h * 3600000;
+    return {
+      checkedAtMs: Date.now(),
+      events: [
+        { id: 'CPI-x', kind: 'CPI', status: 'oficial', startsAtUtc: new Date(em(30)).toISOString(), startMs: em(30) },
+        { id: 'NFP-y', kind: 'NFP', status: 'a_confirmar', startsAtUtc: new Date(em(80)).toISOString(), startMs: em(80) },
+      ],
+    };
+  },
+}));
+
 const PAGINAS = [
   ['Dashboard', () => import('./Dashboard.jsx')],
   ['Trades', () => import('./Trades.jsx')],
@@ -111,6 +127,26 @@ describe('smoke — selo "Recuperada" com os dados de exemplo', () => {
     const { default: TradeHistory } = await import('./TradeHistory.jsx');
     const { findByText } = renderPage(<TradeHistory />);
     expect(await findByText(/♻️ Recuperada/)).toBeTruthy();
+  });
+});
+
+// Fase 3: a faixa de eventos tem que ser EXERCITADA nas duas variantes (a vazia sozinha não prova que o caminho com dados
+// renderiza — mesma lição do item 157).
+describe('smoke — faixa de eventos do Dashboard (Contexto de Mercado, Fase 3)', () => {
+  it('com dados: mostra os eventos à frente', async () => {
+    estado.populated = true;
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    const { findByText, getByText } = renderPage(<Dashboard />);
+    expect(await findByText('Agenda de eventos dos EUA')).toBeTruthy();
+    expect(await findByText('CPI')).toBeTruthy();
+    expect(getByText('(data a confirmar)')).toBeTruthy();
+  });
+
+  it('vazio: a faixa mostra "indisponível" e o resto do Dashboard continua', async () => {
+    estado.populated = false;
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    const { findByText } = renderPage(<Dashboard />);
+    expect(await findByText(/Agenda indisponível no momento/)).toBeTruthy();
   });
 });
 
