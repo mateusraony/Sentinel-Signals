@@ -33904,9 +33904,10 @@ baixa", e o que deixaria isso profissional.
 - **Provas:** 8 mutações pegas por teste (remarcação sem rebaixar a data antiga; evento sumido continuando a alertar;
   queda do FRED rebaixando tudo; rebaixar além do período publicado; trava aceitando campo extra; falha virando mensagem
   com a chave; evento passado publicado; push de reescrita no workflow).
-- **Não verificado [honesto]:** criar a branch órfã e dar push com o token do próprio workflow não está na
-  documentação do GitHub (prática comum); a 1ª execução manual prova. Se uma regra do repositório restringir
-  branches, o push falha e o job fica vermelho, sem gravar nada em outro lugar.
+- **[Verificado em 31/10/2026 16:19Z — 1ª execução real]:** criar a branch órfã e dar push com o token do próprio workflow
+  **funcionou**: a branch `context-data` tem 1 commit (`Coleta de contexto 2026-10-31T16:19Z`, sem histórico do código) com só
+  `events.json` e `status.json`; 11 eventos, `fred: ok`, cobertura até 23/12. Antes disso era "não verificado" (a prática é
+  comum, mas não está na documentação do GitHub).
 - **Critério da Fase 2 (item 284):** 2 semanas só coletando, ≥95% das 42 coletas, 0 push perdido, 0 acesso ao Neon.
 
 **Addendum 10 (2026-10-31, PR-11) — auditoria do coletor e da trava de isolamento: o que estava errado e foi corrigido.**
@@ -33974,8 +33975,20 @@ esperar); os **avisos do Telegram (Fase 4) continuam esperando** a coleta provar
   situação qualquer aceita, fuso fixo, cabeçalho extra, `status.json` ruim derrubando tudo, desligado ainda buscando,
   "a confirmar" com contagem, "indisponível" sumindo).
 - **Não verificado [honesto]:** a tela **não foi vista num navegador** (o Dashboard exige o backend e a autenticação);
-  vale olhar no painel depois do deploy. Também só se confirma com dado real depois que o coletor rodar (antes disso a
-  faixa mostra "indisponível").
+  vale olhar no painel depois do deploy (inclusive o "pulo" de layout de ~0,3 s quando a faixa carrega).
+- **Auditoria da Fase 3 com dado real (01/11/2026) — PR-A:**
+  - **Verificado [fato]:** `raw.githubusercontent.com/…/context-data/events.json` responde **HTTP 200** com
+    `access-control-allow-origin: *` e `cache-control: max-age=300`; o repositório é público (`visibility: public`); a lógica
+    da faixa leu os arquivos reais — **11 de 11** linhas válidas, ids únicos, estado "atualizado" e horários certos (Payroll
+    sex 06/11 10:30 Brasília, CPI ter 10/11 10:30, PPI 13/11, PCE 25/11; FOMC 09/12 = 16:00 Brasília).
+  - **Sem coleta nova** a faixa vira "desatualizada" 36 h depois da última checagem (02/11 ~04:20 UTC); a reserva diária do
+    coletor (11:41 UTC) e os 3 jobs do cron-job.org (pendentes, do usuário) evitam isso.
+  - **Furo 1 corrigido:** os únicos `ErrorBoundary` do app são de página (`AppLayout`, `App`); um erro de renderização da
+    faixa derrubaria o **Dashboard inteiro** (contra a regra de ouro "o contexto pode parar; o Sentinel não pode depender
+    dele"). Agora a faixa tem uma **caixa de erro local e silenciosa** (some; não chama `logError`, que grava no banco).
+  - **Furo 2 corrigido:** `parseEvents` aceitava ids repetidos → `key` duplicada no React. Agora vale o primeiro.
+  - **Provas:** teste do erro de renderização (o resto da tela segue) e do id repetido; 4 mutações reprovam (sem a caixa de
+    erro, caixa que ainda renderiza o filho, sem dedupe, dedupe quebrado).
 - **Fora desta fase (de propósito):** "movimento esperado" com a volatilidade da Binance (decisão B) — Fase 3b.
 
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)

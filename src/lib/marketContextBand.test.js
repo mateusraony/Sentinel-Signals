@@ -30,6 +30,18 @@ describe('parseEvents — o JSON vem da rede e pode vir ruim', () => {
     expect(out.map((e) => e.id)).toEqual(['D']);
   });
 
+  it('id repetido: vale o primeiro (senão a tela teria key duplicada)', () => {
+    const out = parseEvents([
+      ev('CPI-x', 'CPI', '2026-11-10T13:30:00.000Z'),
+      ev('CPI-x', 'CPI', '2026-11-11T13:30:00.000Z', 'a_confirmar'),
+      ev('NFP-y', 'NFP', '2026-11-06T13:30:00.000Z'),
+    ]);
+    expect(out.map((e) => e.id)).toEqual(['CPI-x', 'NFP-y']);
+    expect(out[0].startsAtUtc).toBe('2026-11-10T13:30:00.000Z');
+    // Uma linha inválida NÃO reserva o id (a seguinte, válida, ainda entra).
+    expect(parseEvents([ev('Z', 'XYZ', '2026-11-10T13:30:00.000Z'), ev('Z', 'CPI', '2026-11-10T13:30:00.000Z')]).map((e) => e.id)).toEqual(['Z']);
+  });
+
   it('lança só quando o corpo nem é uma lista (vira "indisponível")', () => {
     expect(() => parseEvents({ eventos: [] })).toThrow();
     expect(() => parseEvents(null)).toThrow();

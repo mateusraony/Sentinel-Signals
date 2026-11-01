@@ -10,11 +10,44 @@ import {
 const BOX = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' };
 
 /**
+ * Caixa de erro LOCAL da faixa. Os únicos ErrorBoundary do app são de página (AppLayout/App): sem esta, um erro de
+ * renderização da faixa derrubaria o Dashboard INTEIRO — contra a regra de ouro do Contexto ("o contexto pode parar; o
+ * Sentinel não pode depender dele", item 285). Silenciosa de propósito: não chama `logError` (grava SystemLog no banco);
+ * se a faixa quebrar, ela some e o resto da tela segue.
+ */
+class BandBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { crashed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { crashed: true };
+  }
+
+  componentDidCatch() {
+    // Sem log, de propósito (ver o comentário da classe).
+  }
+
+  render() {
+    return this.state.crashed ? null : this.props.children;
+  }
+}
+
+/**
  * Faixa "Agenda de eventos dos EUA" (Contexto de Mercado, Fase 3 — docs/known-risks.md item 285, addendum 11).
  * Só informação: não altera sinal, stop, alvo, score nem operação, e o motor nunca importa este componente.
  * 4 estados: atualizado, desatualizado, indisponível e desligado (chave por navegador). Falha em silêncio.
  */
 export default function MarketContextBand() {
+  return (
+    <BandBoundary>
+      <MarketContextBandInner />
+    </BandBoundary>
+  );
+}
+
+function MarketContextBandInner() {
   const [enabled, setEnabled] = useState(() => isBandEnabled());
   const now = useNow(60 * 1000);
   const { events, checkedAtMs, isLoading } = useMarketContext({ enabled });
