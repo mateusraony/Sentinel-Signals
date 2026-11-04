@@ -376,6 +376,25 @@ describe('janela, velas e travas', () => {
     expect(validateSeriesContinuity(ok, 1000, { fromMs: -5000, toMs: 10_000 }).warmupShort).toBe(true);
   });
 
+  // Alarme falso real do teste a seco de 04/11/2026 (execução 41757426751): o início do aquecimento cai no
+  // grid de 15 min (xx:15) e a 1ª vela baixada de 1h/4h/1d abre na hora cheia SEGUINTE — por definição
+  // `openTime > fromMs`, então TODO ativo (BTC e ETH incluídos) saía "histórico mais curto… ativo novo".
+  it('validateSeriesContinuity: início do aquecimento fora do alinhamento da vela NÃO é histórico curto', () => {
+    const H = 3_600_000;
+    const mk = (firstOpen, n = 10) => Array.from({ length: n }, (_, i) => mkCandle(1, 1, 1, 1, firstOpen + i * H, firstOpen + (i + 1) * H));
+    const fromMs = 100 * H + 15 * 60_000; // xx:15 (grid de 15 min), como o início real do aquecimento
+    const toMs = 110 * H;
+    // 1ª vela = a hora cheia seguinte ao início pedido: aquecimento COMPLETO (o ao vivo teria as mesmas velas).
+    expect(validateSeriesContinuity(mk(101 * H), H, { fromMs, toMs }).warmupShort).toBe(false);
+    // Falta de verdade: a 1ª vela vem uma hora depois da primeira possível.
+    expect(validateSeriesContinuity(mk(102 * H), H, { fromMs, toMs }).warmupShort).toBe(true);
+    // Início já alinhado (15m/5m no grid): continua exigindo a vela exata.
+    expect(validateSeriesContinuity(mk(100 * H), H, { fromMs: 100 * H, toMs }).warmupShort).toBe(false);
+    expect(validateSeriesContinuity(mk(101 * H), H, { fromMs: 100 * H, toMs }).warmupShort).toBe(true);
+    // Série que começa ANTES do pedido nunca é curta.
+    expect(validateSeriesContinuity(mk(99 * H), H, { fromMs, toMs }).warmupShort).toBe(false);
+  });
+
   it('assertLiveScanPaused: scan e checagem retroativa precisam estar desativados', () => {
     const off = [
       { path: '.github/workflows/scan.yml', state: 'disabled_manually' },

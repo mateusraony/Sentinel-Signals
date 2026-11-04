@@ -186,7 +186,11 @@ a cada 6 h (`7 */6 * * *`); `backfill.yml` a cada 6 h; tolerância de "ativo atr
 textos da tela derivam de `SCAN_CADENCE_MIN` (`src/lib/pollingIntervals.js`).
 
 **O que continua FORA do repositório (você configura):**
-1. **cron-job.org**: intervalo `*/15`.
+1. **cron-job.org**: intervalo `*/15` (**a cada 15 minutos**). **Confira pelos horários dos runs**
+   do *Scheduled scan* na aba Actions: o espaço entre um e outro tem que ser de 15 min (por exemplo
+   :10, :25, :40, :55). Em 04/11/2026 estavam a cada **10 min** (:10, :20, :30…) — o modelo do projeto
+   dá 111 h/mês nesse ritmo contra as 100 h grátis do Neon (79 h a 15 min). Nenhuma trava do repositório
+   enxerga o intervalo real do cron-job.org; só os horários dos runs mostram.
 2. **healthchecks.io** (watchdog `HEALTHCHECKS_PING_URL`, item 12): período **15 min**
    e carência **20–30 min** (com 5/30 min ele alertaria "sem scan" falsamente).
 

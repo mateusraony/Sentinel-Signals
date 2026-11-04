@@ -160,7 +160,11 @@ export function validateSeriesContinuity(series, intervalMs, { fromMs, toMs }) {
   const lastEnd = series[series.length - 1].openTime + intervalMs;
   const needEnd = Math.floor(toMs / intervalMs) * intervalMs;
   if (lastEnd < needEnd) problems.push(`série termina em ${new Date(lastEnd).toISOString()}, antes de ${new Date(needEnd).toISOString()}`);
-  return { problems, warmupShort: series[0].openTime > fromMs };
+  // A 1ª vela possível é a primeira cujo início cai em `fromMs` ou depois, ALINHADA à vela do timeframe. `fromMs` vem do
+  // grid de 15 min (xx:15); em 1h/4h/1d a 1ª vela baixada abre na hora cheia seguinte, então comparar direto com `fromMs`
+  // marcava todo ativo como "histórico curto" (alarme falso de 04/11/2026, docs/known-risks.md item 288, addendum 3).
+  const firstPossibleOpen = Math.ceil(fromMs / intervalMs) * intervalMs;
+  return { problems, warmupShort: series[0].openTime > firstPossibleOpen };
 }
 
 const DISABLED_STATES = new Set(['disabled_manually', 'disabled_inactivity']);
