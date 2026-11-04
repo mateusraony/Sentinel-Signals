@@ -386,7 +386,9 @@ paths:
     sufixo `-pre-recuperacao-<número>`: nome próprio, que o backup diário não sobrescreve nem apaga) → job `apply`
     (`scripts/recoveryApply.mjs`, `timeout-minutes: 190`): confere
     aprovação (número = artefato baixado, ≤ 24 h), workflows pausados, retrato/configuração/velas iguais
-    aos do teste a seco e **política estrita** (refaz em memória até agora; evento novo → para sem gravar);
+    aos do teste a seco e **política estrita** (refaz em memória até agora; evento novo → para sem gravar;
+    **"evento" inclui sinal novo**, então na prática o aplicar tem que vir na MESMA hora cheia do teste a seco —
+    24 h é só o teto formal; ver `docs/known-risks.md` item 288, addendum de 04/11, `tail_changed`);
     pega os locks `full-scan`/`price-check`; grava pelo mesmo motor; relê e compara; etiqueta; **1**
     mensagem no Telegram (`notifyRecoverySummary`, sucesso ou falha, cortada em ~3.800 caracteres). O número digitado
     só entra por `env:`/`with:` e é validado (só dígitos) — nunca interpolado no shell. **Tempo:** depois de 150 min
