@@ -58,6 +58,9 @@ Os nomes abaixo são os que aparecem na aba **Actions** do GitHub.
 
 ## Se der errado
 
+- **Aviso no Telegram "⚠️ Backup diário … FALHOU":** desde 04/11 o backup **agendado** que falha manda esse aviso
+  (disparo manual não manda: você vê na tela). Abra o link da mensagem e leia o erro em vermelho; se ele falar de
+  `BACKUP_DEPLOY_KEY`, siga o próximo item.
 - **O backup (Daily Postgres backup, Daily Firestore backup ou o backup do "aplicar") fica vermelho com
   "O secret BACKUP_DEPLOY_KEY está ilegível" — ou, nas versões antigas, "error in libcrypto" / "Permission
   denied (publickey)":** o banco está bem; o que quebrou foi a chave que envia o backup ao repositório privado.

@@ -84,6 +84,13 @@ paths:
   `scripts/write-backup-deploy-key.sh`, que confere com `ssh-keygen -y` ANTES de qualquer fetch/push e para com
   mensagem em português se a chave estiver ilegível (`docs/known-risks.md` item 288, addendum de 01/11/2026; travado
   por `scripts/writeBackupDeployKey.test.js`). Nunca volte a gravar a chave com `echo`/`printf` direto no workflow.
+  **Aviso de falha (04/11/2026):** o job `avisar-falha` (último job; `needs: backup`) manda uma mensagem no Telegram
+  quando o backup **agendado** falha ou é cancelado (`github.event_name == 'schedule'`: disparo manual você vê na tela).
+  Usa `scripts/telegram-workflow-alert.sh` (melhor esforço: sempre sai com 0; texto puro; o token só existe na URL do
+  curl e o stderr do curl é descartado) e SÓ os 2 segredos do Telegram — nada de banco nem da chave do backup. Mesmo
+  job em `backup-postgres.yml`. Travado por `scripts/backupFailureAlert.test.js` (script rodado de verdade com `curl`
+  falso, 3 mutações e 9 variantes plantadas por workflow). Backup que **nem chega a rodar** (o GitHub desliga o
+  `schedule:` após ~60 dias sem push, ou atrasa horas) não gera aviso: este job só vê falha de execução que começou.
 - `deploy-firestore.yml` — deploy **manual** de rules/índices.
 - `db-migrate.yml` — disparo **manual** (`workflow_dispatch` só): aplica
   `db/schema.sql` (via `db/migrate.mjs`, idempotente) no projeto Neon real,

@@ -34342,3 +34342,32 @@ completa do código) + todas as checagens; a recuperação foi tratada primeiro 
   fetch (com chave boa e rede ruim cria branch órfã e o push é recusado por non-fast-forward — nunca sobrescreve, mas a
   mensagem é confusa); deixado como está, fora do escopo. Os testes do script precisam de `ssh-keygen` (o runner do
   GitHub tem; sem ele esses testes são pulados e os de texto dos workflows seguem rodando).
+
+**Addendum 04/11/2026 — o PR #536 provado no runner de verdade, aviso de falha do backup no Telegram e um alarme falso do relatório (PR-14).**
+
+- **Fato [logs reais].** Em 02/11 (15:07 e 15:08 UTC), com o secret ainda quebrado, os dois backups pararam no passo da
+  chave com a mensagem nova em português, sem tentar enviar nada (execuções 41468439444 e 41468603379). Em 04/11 (01:48
+  e 01:50 UTC), com o secret consertado pelo usuário, os dois ficaram verdes: o Postgres gerou 2,0 MB (a conferência de
+  tamanho funcionou no runner) e publicou em `backups-postgres` (`7a37702..3cef802`), apagando o arquivo de 19/09 (a limpeza dos 30 mais recentes).
+  Isto fecha o "limite" do addendum anterior (caminho feliz só no próximo disparo): o envio ao repositório privado foi
+  provado. O backup **agendado** só será provado no próximo disparo (os de 02 e 03/11 rodaram com o secret ainda quebrado).
+- **Fato [medido na API].** Os backups agendados NÃO rodam no horário do `cron:` (03:23 e 03:37 UTC): começaram em 31/10
+  09:48, 01/11 10:38, 02/11 11:27 e 03/11 11:03 UTC (Firestore), um atraso de ~6 a 8 h. É o comportamento já registrado nos
+  itens 18/134/142 (`schedule:` do GitHub é melhor esforço e sofre sob volume de execuções do repositório). Para um
+  backup diário isso é aceitável; não foi mexido.
+- **Fato + doc do GitHub [não medido aqui].** O repositório é público (verificado em 01/11), e pela documentação do GitHub
+  os minutos do Actions em runner padrão são gratuitos em repositório público; o recurso escasso do projeto é a
+  computação do Neon (item 286), não o Actions. Execuções por dia hoje: scan ~96 (cron-job.org, 15 min), keep-warm ~144
+  (`*/10`), backfill 4, coletor do Contexto 3 a 4, backups 2, health-audit 2, relatório diário 1. O custo real do volume de execuções é o
+  atraso/despriorização dos `schedule:` acima (hipótese já registrada, sem prova).
+- **Mudança.** `avisar-falha` em `backup.yml` e `backup-postgres.yml` (ver `.claude/rules/ci-deploy.md`): Telegram quando o
+  backup **agendado** falha. Antes, o backup ficou vermelho de 31/10 a 03/11 sem que ninguém soubesse. Limite: backup que
+  nem chega a rodar não avisa.
+- **Achado [fato + hipótese] — corrigir depois, não bloqueia nada.** O teste a seco de 04/11 (execução 41757426751) traz o
+  aviso "Histórico mais curto que o aquecimento pedido (ativo novo na corretora…)" para **todos** os 10 ativos (BTC e
+  ETH incluídos) e **só** para 1d/4h/1h, nunca 15m/5m. **Fato:** `validateSeriesContinuity`
+  (`src/lib/recovery/recoveryReplay.js`) marca `warmupShort` quando `series[0].openTime > fromMs`, e `fromMs` do
+  aquecimento = início do replay (alinhado a 15 min) − (limite+50) velas; para 1h/4h/1d ele nunca cai no começo de uma
+  vela, então a 1ª vela baixada sempre abre depois dele. **Hipótese (coerente com o padrão 1d/4h/1h sem 15m/5m, não
+  testada com dado):** é falso positivo de alinhamento, não "ativo novo"; a série tem pelo menos (limite+49) velas antes
+  do início, o suficiente. Correção proposta: comparar com `fromMs` arredondado para cima ao início da vela do timeframe.
