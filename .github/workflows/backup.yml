@@ -96,3 +96,26 @@ jobs:
           git diff --cached --quiet || git commit -m "Remove backups antigos (mantém últimos 30)"
 
           git push backup-repo backups
+
+  # Aviso no Telegram quando o backup AGENDADO falha (item 288, addendum de 04/11/2026): o backup
+  # ficou vermelho de 31/10 a 03/11 sem que ninguém soubesse. Só no disparo agendado (disparo manual
+  # você está vendo na tela). Melhor esforço: o script nunca derruba o job. Só os 2 segredos do
+  # Telegram (os mesmos do scan/CI): nada de banco nem da chave do backup.
+  avisar-falha:
+    needs: backup
+    if: ${{ always() && github.event_name == 'schedule' && (needs.backup.result == 'failure' || needs.backup.result == 'cancelled') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Avisar no Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_TITLE: "Backup diário do Firestore FALHOU"
+          ALERT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ALERT_HINT: "Enquanto estiver vermelho não há cópia nova no repositório de backups. Abra o link e leia a mensagem em vermelho. Se ela falar de BACKUP_DEPLOY_KEY, o passo a passo está em docs/claude/recovery-runbook.md (Se der errado)."
+        run: bash scripts/telegram-workflow-alert.sh
