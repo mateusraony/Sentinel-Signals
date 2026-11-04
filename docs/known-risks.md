@@ -34395,3 +34395,36 @@ completa do código) + todas as checagens; a recuperação foi tratada primeiro 
   isolado (sem operação nova nem mudança de estado) não pare o aplicar. Custo: o aplicar gravaria sinais que o relatório
   não mostrou (só registro informativo; operações e estados continuariam travados). Exigiria mexer em `diffEvents` com
   teste e mutação.
+
+**Addendum 04/11/2026 (3) — recuperação APLICADA, scan religado, intervalo de 10 min (não 15) e o alarme falso do relatório corrigido (PR-D).**
+
+- **Fato [arquivo `recovery-apply.json` do aplicar, anexado pelo usuário].** Aplicar 41837524327, aprovado pelo teste a seco 41837003063,
+  "agora" = 04/11 13:23:57Z. Teste a seco e aplicar na **mesma hora cheia** → passou (a regra dos minutos :03–:40 do addendum 2 funcionou;
+  a hipótese continua só com 1 caso). `ok`, sem parcial, sem pendência, sem erro, Telegram enviado. **10 operações criadas** + **2 antigas**
+  (ARB 19/10, ZRO 20/10) levadas a `STOP_HIT`, **0 abertas depois**, **915 sinais**, 35 tarefas de verificação criadas e 35 atualizadas.
+  O diário de escritas (7.208 tentativas) só tem `create`/`createUnique`/`transition`/`update`: **nenhum delete**. As 12 etiquetas
+  (10 com `source: recovery` + 2 das operações antigas) são gravadas fora do diário (`recoveryApply.mjs:307`) e `tag_failed` não ocorreu.
+- **Fato.** `diff.signals.removed = 915` (igual a `created`) são os 915 sinais mais antigos (06/08 a 19/08) saindo da janela dos 5.000 mais
+  recentes do retrato quando entram 915 novos. Não é apagamento (sem delete no diário). A gravação só é dada como boa depois de reler o
+  banco e bater com a simulação (`verify_mismatch`, `recoveryApply.mjs:296-300`); o job `apply` só roda depois do `backup` (`needs`). Não
+  abri o arquivo `postgres-backup-2026-11-04-pre-recuperacao-41837003063.dump` no repositório privado.
+- **Fato [logs do `scan.yml`] — o religar.** 1º scan (41874881898, 17:10Z): job verde, mas `0 ativo(s)`, "2 consulta(s), 10 linha(s)" e passo
+  de 6 s. Pelo código, "0 ativos" com 10 linhas lidas só combina com **passada pulada**: `scanAllAssets` devolve `{ total: 0, skipped: true }`
+  quando o lock `full-scan` está ocupado (`scanner.js:4865-4871`) e, sem `assets`, `checkAssetHealthchecks` cai em
+  `MonitoredAsset.filter({ is_active: true })` (`run-scan.mjs:125`) — as 10 linhas. **A hipótese "lock ocupado" não se confirmou**: o
+  usuário não achou a mensagem no Logs do painel. **Causa desconhecida**, passada isolada. Passadas de 17:20Z e 18:30Z: `10 ativo(s),
+  0 falha(s)`, 69 consultas/56 linhas/~37 KB, 15 a 18 s.
+- **Achado — o cron-job.org estava a cada 10 min, não 15 [fato].** Os runs saem às 17:10, 17:20, 17:30 … 18:30Z. Já em 29/10 (19:00 a
+  19:30Z) o espaçamento era de 10 min, então o "`*/15` desde 29/10" nunca valeu na prática (hipótese: o job ficou em 10 min). Modelo do
+  projeto (`scripts/neonComputeBudget.mjs`, computação do Neon, 100 h grátis): 5 min = 180 h/mês; **10 min = 111,4 h**; 15 min = 79,4 h;
+  20 min = 58,9 h; 30 min = 43,5 h. A 10 min o banco acabaria por volta do dia 27. **Ação do usuário:** job do scan no cron-job.org para
+  "a cada 15 minutos"; conferir pelos horários (`docs/claude/external-cron-setup.md`). A trava de CI (`SCAN_CADENCE_MIN` = 15, < 85 h) só
+  enxerga o código, não o cron-job.org: nada no sistema detecta o intervalo real. **Proposta [não implementada, decisão do usuário]:** o
+  scan avisar no Telegram quando o intervalo entre as últimas passadas for menor que ~12 min.
+- **Corrigido neste PR.** O alarme falso "histórico mais curto… ativo novo na corretora" do teste a seco (addendum 1 de 04/11):
+  `validateSeriesContinuity` (`src/lib/recovery/recoveryReplay.js`) comparava a 1ª vela com `fromMs` (grid de 15 min) em vez da 1ª vela
+  possível alinhada ao timeframe; agora compara com `Math.ceil(fromMs / intervalMs) * intervalMs`. O teste novo reproduz o caso (falhava
+  antes), cobre série realmente curta, início alinhado e série que começa antes, e a mutação "voltar à comparação antiga" o reprova. O
+  próximo teste a seco real deve vir sem esse aviso; o aviso continua para falta real de velas no começo.
+- **Limites [honesto].** Causa do "0 ativos" do 1º scan; conteúdo do backup pré-recuperação; o selo ♻️ no painel (conferência visual do
+  usuário); a taxa de sinais por hora e a regra :03–:40 têm 1 caso confirmado.
