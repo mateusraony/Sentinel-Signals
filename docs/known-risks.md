@@ -34371,3 +34371,27 @@ completa do código) + todas as checagens; a recuperação foi tratada primeiro 
   vela, então a 1ª vela baixada sempre abre depois dele. **Hipótese (coerente com o padrão 1d/4h/1h sem 15m/5m, não
   testada com dado):** é falso positivo de alinhamento, não "ativo novo"; a série tem pelo menos (limite+49) velas antes
   do início, o suficiente. Correção proposta: comparar com `fromMs` arredondado para cima ao início da vela do timeframe.
+
+**Addendum 04/11/2026 (2) — a 1ª tentativa de aplicar parou em `tail_changed` (nada gravado): a janela real é a hora cheia, não 24 h.**
+
+- **Fato [mensagem do Telegram colada pelo usuário].** O "aplicar" do número 41757426751 foi disparado ~11 h depois do teste a
+  seco (01:58 UTC) e respondeu "Recuperação NÃO aplicada — nada foi gravado", código `tail_changed`. A lista "Novo" tem
+  **40 sinais** (1h e 4h, velas fechadas de 01:59Z a 12:59Z) e "Não aconteceu mais: —": **nenhuma operação nova e nenhuma
+  mudança de estado**. As 10 operações novas e as 2 antigas do relatório não mudaram.
+- **Fato [código].** `diffEvents` (`scripts/recoveryApply.mjs:36-43`) conta operação nova, mudança de estado **e sinal novo**,
+  e o aplicar compara a simulação até "agora" com a lista aprovada (`:222-230`) — a política estrita de 29/10, decisão do
+  usuário. Funcionou como desenhada: parou antes de pegar locks e antes de gravar.
+- **Fato [mesma mensagem].** Saiu sinal novo em **cada um dos 12 fechamentos de vela de 1h** depois do teste a seco (≈3,3 por
+  fechamento), e o PAXGUSDT 1h `rsi_overbought` SELL reapareceu em 8 fechamentos seguidos (05:59Z a 12:59Z): enquanto essa
+  condição durar, toda hora tem sinal novo.
+- **Erro do roteiro (meu), não do código.** O roteiro dizia "o teste a seco só vale por 24 h". Esse é o teto formal
+  (`MAX_APPROVAL_AGE_MS`), mas o aplicar só passa se NÃO entrar sinal novo desde o corte do teste a seco; na prática a janela é a
+  **mesma hora cheia**. Corrigido em `docs/claude/recovery-runbook.md` (passos 3 e 5 e bullet `tail_changed`) e em
+  `.claude/rules/ci-deploy.md`: teste a seco entre os minutos :03 e :40 de uma hora e aplicar em seguida.
+- **Hipótese [não testada].** A faixa :03–:40 vem de: vela de 1h fecha em :00 (o teste a seco a partir de :03 já a inclui) e o
+  "agora" do aplicar é calculado quando o job `apply` começa, ~2 a 3 min depois do clique (o backup roda antes), então um
+  disparo até ~:40 ainda cai na mesma hora. Só se confirma na próxima tentativa.
+- **Opção [não implementada, decisão do usuário].** Se a hora cheia falhar de novo: relaxar a política para que sinal novo
+  isolado (sem operação nova nem mudança de estado) não pare o aplicar. Custo: o aplicar gravaria sinais que o relatório
+  não mostrou (só registro informativo; operações e estados continuariam travados). Exigiria mexer em `diffEvents` com
+  teste e mutação.

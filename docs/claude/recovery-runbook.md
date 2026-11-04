@@ -28,7 +28,9 @@ Os nomes abaixo são os que aparecem na aba **Actions** do GitHub.
    o banco voltou (e você já ganhou um backup novo). Vermelho com "exceeded the quota" = ainda não.
 3. **Teste a seco:** **Recuperação após pausa do banco** → **Run workflow** → campo **"O que
    fazer"** = `teste-a-seco` → **Run workflow**. Ele só lê o banco; não grava nada e não manda
-   Telegram.
+   Telegram. **Faça os passos 3 a 5 dentro da MESMA hora cheia:** comece o teste a seco entre os minutos
+   **:03 e :40** de uma hora (o relógio de Brasília tem os mesmos minutos que o UTC) e aplique logo que ele
+   terminar (veja o porquê no passo 5).
 4. **Leia o relatório** (clique na execução → **Summary**). Confira:
    - a tabela de ativos e o período reprocessado;
    - "Operações novas (deveriam ter aberto na pausa)";
@@ -43,7 +45,12 @@ Os nomes abaixo são os que aparecem na aba **Actions** do GitHub.
    - Depois ele confere que **nada mudou** desde o teste a seco. Se mudou — ou se aconteceu uma
      operação nova ou um fechamento que o teste a seco não mostrou —, ele **para sem gravar** e
      pede um teste a seco novo: volte ao passo 3.
-   - O teste a seco só vale por 24 h.
+   - **A janela de verdade é a mesma hora cheia, não 24 h.** O número vale 24 h no papel, mas o aplicar refaz a
+     simulação até "agora" e exige os **mesmos eventos** do teste a seco, **sinais novos incluídos**. A cada virada
+     de hora (minuto :00) quase sempre sai um sinal novo de 1h em algum ativo, então um teste a seco da hora
+     anterior faz o aplicar parar sozinho (`tail_changed`, sem gravar nada — foi o que aconteceu em 04/11, com 40
+     sinais novos em 12 horas). O "agora" do aplicar é calculado quando o job `apply` começa, ~2 a 3 minutos depois do
+     clique (o backup roda antes), por isso a regra dos minutos **:03 a :40** do passo 3.
    - **Se o tempo estiver acabando** (a aplicação para de começar ativos novos 150 min depois de iniciar),
      ela termina o ativo em andamento, confere, e avisa **"APLICADA PARCIALMENTE"** com a lista dos
      ativos que faltam. Nesse caso **não religue o scan**: volte ao passo 3 (um novo teste a seco recomeça só
@@ -75,6 +82,10 @@ Os nomes abaixo são os que aparecem na aba **Actions** do GitHub.
      `-----BEGIN OPENSSH PRIVATE KEY-----` até `-----END OPENSSH PRIVATE KEY-----`, com as quebras de linha → **Update secret**.
   4. Rode **Daily Postgres backup** e **Daily Firestore backup**: os dois precisam ficar verdes. Depois apague os
      dois arquivos da chave do seu computador.
+- **"NÃO aplicada — aconteceu algo que o teste a seco não mostrou" (código `tail_changed`):** nada foi gravado. Olhe a
+  lista "Novo": se for só **sinal novo** (`sinal novo ARBUSDT_1h_…`), foi a virada de hora — rode um teste a seco
+  novo e aplique na mesma hora cheia (passo 3). Se aparecer **operação nova** ou **mudança de estado**, é o mercado
+  que andou: leia o relatório do teste a seco novo antes de aplicar.
 - **"NÃO aplicada — nada foi gravado"**: corrija o motivo escrito na mensagem e volte ao passo 3.
   Se o motivo for "não consegui conferir se o Scheduled scan e o Backfill check estão desativados" é a
   API do GitHub que falhou (não o scan ligado): rode de novo.
