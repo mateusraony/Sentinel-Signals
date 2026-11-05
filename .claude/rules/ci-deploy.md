@@ -36,6 +36,9 @@ paths:
   uma cota esgotada fazia o cliente admin do Firestore travar retry-ando por
   MINUTOS, colidindo com o próximo disparo de ~5min (na época; hoje ~15 min) e cascateando em horas
   de execuções canceladas/falhas (known-risks item 142).
+  **Resumo por scan (item 289):** cada passada imprime `[scan] resumo: lock=… ativos_ok=… sinais_novos=… ops{…} funil{…} price_check=…`
+  (`scripts/scanSummary.mjs`). **Só contagens e códigos** — o repo é PÚBLICO, o log é legível sem login. `lock=ocupado` = passada que saiu sem escanear
+  (outra execução, p.ex. o navegador, segurava o lock).
 - `backfill.yml` — checagem retroativa ao adicionar/reativar um ativo
   (`npm run backfill-check`, `docs/known-risks.md` item 137). Workflow
   SEPARADO de `scan.yml` de propósito, com `concurrency: group:

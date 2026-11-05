@@ -11,6 +11,7 @@ import {
 } from './adminTelegram.js';
 import { withTimeout, forceExit } from './scanTimeout.mjs';
 import { classifyFailure, isFirestoreQuotaExhausted, isDatabaseQuotaExhausted } from './failureClassification.mjs';
+import { instrumentTradeOps, summarizeScanPass, formatScanSummary } from './scanSummary.mjs';
 import { pathToFileURL } from 'node:url';
 
 // docs/known-risks.md item 142/191 — uma passada limpa termina em ~15-18s.
@@ -168,7 +169,13 @@ async function pingHealthcheck(suffix = '') {
 async function main() {
   const started = Date.now();
 
-  const { total, results, assets } = await withTimeout(scanAllAssets(), SCAN_STEP_TIMEOUT_MS, 'scanAllAssets');
+  // Resumo por scan (pedido do usuário, 05/11/2026): conta o que o scanner grava em `TradeOperation` nesta passada
+  // SEM tocar `src/lib/scanner.js` — só observa o retorno de `backend.tradeOps` (scripts/scanSummary.mjs).
+  // Instalado aqui dentro (não no carregamento do módulo): `run-scan.test.mjs` importa este arquivo com `backend = {}`.
+  const opsTracker = instrumentTradeOps(backend.tradeOps);
+
+  const scanResult = await withTimeout(scanAllAssets(), SCAN_STEP_TIMEOUT_MS, 'scanAllAssets');
+  const { total, results, assets } = scanResult;
   const failed = results.filter((r) => !r.success);
   console.log(`[scan] scanAllAssets: ${total} ativo(s), ${failed.length} falha(s)`);
   failed.forEach((r) => console.error(`[scan]   ${r.symbol}: ${r.error}`));
@@ -177,7 +184,8 @@ async function main() {
   const dbQuotaFailure = failed.find((r) => isDatabaseQuotaExhausted(r.error));
   if (dbQuotaFailure) await alertOnFailure(dbQuotaFailure.error);
 
-  const { errors: priceCheckErrors } = await withTimeout(priceCheckActiveOps(), SCAN_STEP_TIMEOUT_MS, 'priceCheckActiveOps');
+  const priceCheckResult = await withTimeout(priceCheckActiveOps(), SCAN_STEP_TIMEOUT_MS, 'priceCheckActiveOps');
+  const { errors: priceCheckErrors } = priceCheckResult;
   console.log('[scan] priceCheckActiveOps done');
   const priceCheckQuotaFailure = priceCheckErrors.find((e) => isFirestoreQuotaExhausted(e.error));
   if (priceCheckQuotaFailure) await alertOnFailure(priceCheckQuotaFailure.error);
@@ -191,6 +199,13 @@ async function main() {
     await alertOnFailure(err?.message);
   }
 
+  // Uma linha só, SÓ contagens e códigos (o repositório é público: este log é legível sem login — ver o cabeçalho de
+  // scripts/scanSummary.mjs). Nunca fatal: formatar o resumo não pode mudar o código de saída do scan.
+  try {
+    console.log(formatScanSummary(summarizeScanPass({ scanResult, priceCheckResult, ops: opsTracker.snapshot() })));
+  } catch (err) {
+    console.warn('[scan] resumo indisponível (não crítico):', err?.message);
+  }
   console.log(`[scan] finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   // Item 282: quanto o scan leu do banco nesta passada (ordem de grandeza da
   // transferência de rede do Neon). `backend.usage` só existe no adaptador Postgres.
