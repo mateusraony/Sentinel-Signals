@@ -6,13 +6,17 @@ import {
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { useNow } from '@/hooks/useNow';
 import {
-  BAND_STATES, EVENT_META, IMPACT_LABELS, MAX_EVENTS_SHOWN,
-  bandState, upcomingEvents, splitFeatured, groupEventsByDay, eventUrgency, approachFraction,
+  BAND_STATES, CATEGORY_META, EVENT_META, IMPACT_LABELS, MAX_EVENTS_SHOWN,
+  bandState, upcomingEvents, splitFeatured, groupEventsByDay, eventUrgency, approachFraction, eventValueSlots,
   formatCountdown, formatCountdownBare, formatEventWhen, formatEventClock, formatAge, isBandEnabled, setBandEnabled,
 } from '@/lib/marketContextBand';
 
 const BOX = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' };
 const SOFT = { background: 'rgba(255,255,255,0.025)' };
+
+// Cor pelo TIPO da notícia (emprego / inflação / juros) — nunca "bom" ou "ruim". Escolhidas fora da paleta de urgência
+// (ciano / amarelo / laranja / verde), para uma cor não ser confundida com a outra; o rótulo em texto vai sempre junto.
+const CATEGORY_COLORS = { emprego: '#60a5fa', inflacao: '#c084fc', juros: '#f472b6' };
 
 // Cor pela urgência (paleta do Dashboard): longe = ciano; nas próximas 24 h = amarelo; em até 1 h ou recém-saído = laranja.
 const TONES = {
@@ -61,9 +65,10 @@ class BandBoundary extends React.Component {
  * redesenhado em 04/11/2026). Só informação: não altera sinal, stop, alvo, score nem operação, e o motor nunca importa
  * este componente. 4 estados: atualizado, desatualizado, indisponível e desligado (chave por navegador). Falha em silêncio.
  *
- * Desenho: um cartão para o PRÓXIMO evento (contagem regressiva grande, importância, barra de aproximação) e, abaixo, os
- * seguintes agrupados por dia de Brasília (Hoje / Amanhã / SEX 13). Os números oficiais (Anterior/Atual) entram no cartão
- * quando a coleta existir; hoje a agenda traz só data, hora e situação.
+ * Desenho: um cartão para o PRÓXIMO evento (contagem regressiva grande, importância, barra de aproximação) e, abaixo, uma
+ * COLUNA por dia com evento (Hoje / Amanhã / SEX 13), lado a lado. A cor identifica o TIPO da notícia (emprego / inflação /
+ * juros), nunca "bom/ruim"; a urgência fica no fundo e na contagem. Os números oficiais (Anterior/Atual) aparecem só quando o
+ * evento os traz; hoje a agenda pública tem só data, hora e situação.
  */
 export default function MarketContextBand() {
   return (
@@ -101,6 +106,43 @@ function StatusChip({ status }) {
   );
 }
 
+/** Etiqueta do tipo de notícia: ícone + rótulo na cor da categoria (cor + texto, nunca só cor). */
+function CategoryTag({ category, Icon }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-10px font-mono font-bold uppercase tracking-wider"
+      style={{ color: CATEGORY_COLORS[category] }}>
+      <Icon className="w-3 h-3" aria-hidden="true" />
+      {CATEGORY_META[category].label}
+    </span>
+  );
+}
+
+/**
+ * Números oficiais (Anterior / Atual), só quando o evento os traz — hoje o arquivo público não tem esse campo, então nada
+ * aparece (sem "—" permanente). Não existe "Projeção": sem fonte gratuita e licenciada, o painel não inventa número.
+ */
+function ValueSlots({ e, compact = false }) {
+  // Compacto (cartão da coluna): só o que já tem número. O "Atual: aguardando" fica só no cartão do próximo evento —
+  // repetido em cada coluna seria ruído.
+  const slots = eventValueSlots(e).filter((s) => !compact || s.text !== null);
+  if (slots.length === 0) return null;
+  return (
+    <div className={compact ? 'flex flex-col gap-1' : 'flex flex-wrap items-end gap-x-3 gap-y-1'}>
+      <dl className={compact ? 'flex gap-3' : 'flex gap-2'}>
+        {slots.map((s) => (
+          <div key={s.key} className={compact ? '' : 'rounded-lg px-3 py-1.5'} style={compact ? undefined : SOFT}>
+            <dt className="text-10px font-mono uppercase tracking-wider text-muted-foreground">{s.label}</dt>
+            <dd className={compact ? 'text-11px font-mono font-bold text-foreground tabular-nums' : 'text-base font-bold font-mono text-foreground tabular-nums'}>
+              {s.text ?? <span className="text-10px font-normal text-muted-foreground">aguardando</span>}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {e.values?.source && <span className="text-10px font-mono text-muted-foreground">Fonte: {e.values.source}</span>}
+    </div>
+  );
+}
+
 /** Cartão grande do próximo evento com data firme. */
 function NextEventCard({ e, now }) {
   const meta = EVENT_META[e.kind];
@@ -115,16 +157,18 @@ function NextEventCard({ e, now }) {
       className="rounded-xl p-3 sm:p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
       style={{ background: tone.bg, border: `1px solid ${tone.border}` }}>
       <div className="flex items-start gap-3 min-w-0">
+        {/* O ícone fica na cor da CATEGORIA (emprego/inflação/juros); a URGÊNCIA fica no fundo, na contagem e no ponto. */}
         <span className="w-10 h-10 sm:w-11 sm:h-11 rounded-lg flex items-center justify-center shrink-0"
-          style={{ background: 'rgba(255,255,255,0.06)', color: tone.color }}>
+          style={{ background: 'rgba(255,255,255,0.06)', color: CATEGORY_COLORS[meta.category] }}>
           <Icon className="w-5 h-5" aria-hidden="true" />
         </span>
-        <div className="min-w-0 space-y-1">
+        <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="inline-flex items-center gap-1.5 text-10px font-mono uppercase tracking-wider font-bold" style={{ color: tone.color }}>
               {hot && <span className="w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none" style={{ background: tone.color }} aria-hidden="true" />}
               {tone.head}
             </span>
+            <CategoryTag category={meta.category} Icon={Icon} />
             <ImpactDots impact={meta.impact} />
           </div>
           <h3 className="text-base sm:text-lg font-bold text-foreground leading-tight tracking-tight">
@@ -135,6 +179,7 @@ function NextEventCard({ e, now }) {
             <time dateTime={e.startsAtUtc} className="text-foreground">{formatEventWhen(e.startsAtUtc)}</time>
             <StatusChip status={e.status} />
           </p>
+          <ValueSlots e={e} />
         </div>
       </div>
       <div className="sm:w-44 shrink-0 sm:text-right">
@@ -151,32 +196,30 @@ function NextEventCard({ e, now }) {
   );
 }
 
-function TimelineRow({ e, now }) {
+/** Cartão de um evento dentro da coluna do dia: tipo (cor + texto), nome, importância, números (se houver) e hora/contagem. */
+function EventTile({ e, now }) {
   const meta = EVENT_META[e.kind];
   const Icon = KIND_ICONS[e.kind];
   const pending = e.status === 'a_confirmar';
   const tone = TONES[eventUrgency(e, now)];
   return (
-    <li className="flex-1 flex items-center gap-2.5 rounded-lg px-2.5 py-2" style={{ ...SOFT, opacity: pending ? 0.75 : 1 }}>
-      {/* No celular o ícone sai da linha (o nome já diz o tipo): o espaço vai para o título não quebrar em 3 linhas. */}
-      <Icon className="hidden sm:block w-4 h-4 shrink-0" style={{ color: tone.color }} aria-hidden="true" />
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-foreground leading-tight">
-          {meta.title}
-          <span className="ml-1.5 text-10px font-mono font-normal text-muted-foreground">({meta.short})</span>
-        </p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-          <ImpactDots impact={meta.impact} />
-          {/* "Data oficial" é o normal: só aparece no cartão do próximo evento. Na lista só a exceção (confirmada / a confirmar). */}
-          {e.status !== 'oficial' && <StatusChip status={e.status} />}
-        </div>
-      </div>
-      <div className="text-right shrink-0">
-        <time dateTime={e.startsAtUtc} className="block text-xs font-mono font-bold text-foreground tabular-nums">
+    <li className="relative overflow-hidden rounded-lg p-2.5 pt-3 flex flex-col gap-1.5" style={{ ...SOFT, opacity: pending ? 0.75 : 1 }}>
+      <span className="absolute inset-x-0 top-0 h-0.5" style={{ background: CATEGORY_COLORS[meta.category] }} aria-hidden="true" />
+      <CategoryTag category={meta.category} Icon={Icon} />
+      <p className="text-xs font-semibold text-foreground leading-tight">
+        {meta.title}
+        <span className="ml-1.5 text-10px font-mono font-normal text-muted-foreground">({meta.short})</span>
+      </p>
+      <ImpactDots impact={meta.impact} />
+      <ValueSlots e={e} compact />
+      {/* "Data oficial" é o normal: só aparece no cartão do próximo evento. Aqui só a exceção (confirmada / a confirmar). */}
+      {e.status !== 'oficial' && <StatusChip status={e.status} />}
+      <div className="mt-auto pt-1.5 flex items-baseline justify-between gap-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <time dateTime={e.startsAtUtc} className="text-xs font-mono font-bold text-foreground tabular-nums">
           {formatEventClock(e.startsAtUtc)}
         </time>
         {!pending && (
-          <span className="block text-10px font-mono" style={{ color: tone.color }}>
+          <span className="text-10px font-mono" style={{ color: tone.color }}>
             {e.phase === 'agora' ? 'acabou de sair' : formatCountdown(e.startMs - now)}
           </span>
         )}
@@ -185,22 +228,19 @@ function TimelineRow({ e, now }) {
   );
 }
 
-/** Um dia da linha do tempo: bloco de calendário à esquerda (SEX / 13/11 / em 9 dias) e os eventos do dia à direita. */
-function DayGroup({ g, now }) {
+/** Coluna de um dia: cabeçalho (SEX 13/11 · em 8 dias) e, embaixo, os eventos daquele dia. */
+function DayColumn({ g, now }) {
   const today = g.diff === 0;
   return (
-    <div className="flex items-stretch gap-2 sm:gap-3">
-      <div className="w-[4.25rem] sm:w-[4.75rem] shrink-0 text-center rounded-lg py-1.5 flex flex-col justify-center"
-        style={{ background: today ? 'rgba(255,209,102,0.10)' : 'rgba(255,255,255,0.04)', border: `1px solid ${today ? 'rgba(255,209,102,0.3)' : 'rgba(255,255,255,0.06)'}` }}>
-        <p className="text-10px font-mono font-bold tracking-wider" style={{ color: today ? '#ffd166' : 'rgba(255,255,255,0.55)' }}>{g.weekday}</p>
-        <p className="leading-tight">
-          <span className="text-lg font-bold text-foreground tabular-nums">{g.day}</span>
-          <span className="text-10px font-mono text-muted-foreground">/{g.month}</span>
-        </p>
-        <p className="text-10px font-mono leading-tight whitespace-nowrap" style={{ color: today ? '#ffd166' : 'rgba(255,255,255,0.45)' }}>{g.relative}</p>
+    <div className="flex flex-col gap-1.5 min-w-0 sm:snap-start">
+      <div className="flex items-baseline gap-1.5 px-0.5">
+        <span className="text-10px font-mono font-bold tracking-wider" style={{ color: today ? '#ffd166' : 'rgba(255,255,255,0.55)' }}>{g.weekday}</span>
+        <span className="text-lg font-bold text-foreground tabular-nums leading-none">{g.day}</span>
+        <span className="text-10px font-mono text-muted-foreground">/{g.month}</span>
+        <span className="ml-auto text-10px font-mono whitespace-nowrap" style={{ color: today ? '#ffd166' : 'rgba(255,255,255,0.45)' }}>{g.relative}</span>
       </div>
-      <ul className="flex-1 min-w-0 flex flex-col gap-1.5">
-        {g.items.map((e) => <TimelineRow key={e.id} e={e} now={now} />)}
+      <ul className="flex flex-col gap-1.5 flex-1">
+        {g.items.map((e) => <EventTile key={e.id} e={e} now={now} />)}
       </ul>
     </div>
   );
@@ -278,9 +318,12 @@ function MarketContextBandInner() {
           {featured && <NextEventCard e={featured} now={now} />}
           {groups.length > 0 && (
             <div className="space-y-2">
-              {featured && <h3 className="text-10px font-mono uppercase tracking-wider text-muted-foreground">Depois</h3>}
-              <div className="space-y-2.5">
-                {groups.map((g) => <DayGroup key={g.key} g={g} now={now} />)}
+              {featured && <h3 className="text-10px font-mono uppercase tracking-wider text-muted-foreground">Nos próximos dias</h3>}
+              {/* Uma coluna por dia COM evento, lado a lado (rola para o lado se não couber); no celular as colunas empilham.
+                  Dias sem evento não ganham coluna: a agenda real tem ~2 eventos por semana, e 5 colunas vazias seriam só ruído. */}
+              <div role="region" aria-label="Próximos dias com evento" tabIndex={0}
+                className="grid gap-3 sm:grid-flow-col sm:auto-cols-[minmax(11rem,1fr)] sm:overflow-x-auto sm:snap-x sm:pb-1 rounded-lg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                {groups.map((g) => <DayColumn key={g.key} g={g} now={now} />)}
               </div>
             </div>
           )}

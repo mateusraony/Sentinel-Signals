@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   STALE_AFTER_MS, JUST_RELEASED_MS, MAX_EVENTS_SHOWN, APPROACH_HORIZON_MS, BAND_STATES, EVENT_LABELS, EVENT_META, IMPACT_LABELS,
+  CATEGORY_META, parseEventValues, eventValueSlots,
   parseEvents, parseCheckedAt, upcomingEvents, bandState, formatCountdown, formatCountdownBare, formatEventWhen, formatAge,
   isBandEnabled, setBandEnabled,
   brtDayKey, brtDayDiff, relativeDayLabel, formatEventClock, groupEventsByDay, splitFeatured, eventUrgency, approachFraction,
@@ -291,5 +292,63 @@ describe('eventUrgency e approachFraction', () => {
     expect(approachFraction(-5)).toBe(1);
     expect(approachFraction(APPROACH_HORIZON_MS * 3)).toBe(0);
     expect(approachFraction(NaN)).toBe(0);
+  });
+});
+
+describe('categoria do evento — a cor identifica o TIPO da notícia, nunca "bom/ruim"', () => {
+  it('todo tipo do coletor tem uma categoria que existe, com rótulo em texto', () => {
+    for (const kind of Object.keys(EVENT_LABELS)) {
+      const cat = EVENT_META[kind].category;
+      expect(Object.keys(CATEGORY_META)).toContain(cat);
+      expect(CATEGORY_META[cat].label.length).toBeGreaterThan(2);
+    }
+  });
+  it('emprego = Payroll; juros = FOMC; inflação = CPI, PPI e PCE', () => {
+    expect(EVENT_META.NFP.category).toBe('emprego');
+    expect(EVENT_META.FOMC.category).toBe('juros');
+    expect(['CPI', 'PPI', 'PCE'].map((k) => EVENT_META[k].category)).toEqual(['inflacao', 'inflacao', 'inflacao']);
+  });
+  it('rótulos neutros: nenhum fala de alta, baixa, bom ou ruim', () => {
+    const texto = Object.values(CATEGORY_META).map((c) => c.label).join(' ');
+    expect(texto).not.toMatch(/alta|baixa|bom|ruim|compra|venda|probabilidade/i);
+  });
+});
+
+describe('números oficiais do evento (Anterior / Atual) — o arquivo vem da rede', () => {
+  it('parseEventValues aceita textos curtos e a fonte; descarta o resto', () => {
+    expect(parseEventValues({ previous: '151 mil', actual: '175 mil', source: 'BLS' })).toEqual({ previous: '151 mil', actual: '175 mil', source: 'BLS' });
+    expect(parseEventValues({ previous: '3,2%' })).toEqual({ previous: '3,2%', actual: null, source: null });
+  });
+  it('sem nenhum número válido = null (a tela não desenha espaço vazio)', () => {
+    for (const v of [null, undefined, 7, 'texto', [], {}, { previous: 12 }, { previous: '' }, { previous: '   ' }, { source: 'BLS' }]) {
+      expect(parseEventValues(v)).toBeNull();
+    }
+  });
+  it('texto longo demais ou com caractere de controle não passa (nada vindo da rede vira marcação)', () => {
+    expect(parseEventValues({ previous: 'x'.repeat(25) })).toBeNull();
+    expect(parseEventValues({ previous: 'x'.repeat(24) })?.previous).toBe('x'.repeat(24));
+    expect(parseEventValues({ previous: '1\u0000 mil\u001b' })?.previous).toBe('1 mil');
+  });
+  it('parseEvents leva os números adiante só quando são válidos; evento sem números continua igual', () => {
+    const out = parseEvents([
+      { ...ev('NFP-x', 'NFP', '2026-11-06T13:30:00.000Z'), values: { previous: '151 mil', source: 'BLS' } },
+      { ...ev('CPI-x', 'CPI', '2026-11-10T13:30:00.000Z'), values: { previous: { x: 1 } } },
+      ev('PPI-x', 'PPI', '2026-11-13T13:30:00.000Z'),
+    ]);
+    expect(out[0].values).toEqual({ previous: '151 mil', actual: null, source: 'BLS' });
+    expect('values' in out[1]).toBe(false);
+    expect('values' in out[2]).toBe(false);
+  });
+  it('eventValueSlots: Anterior e Atual; "Atual" sem número = aguardando (text null); nunca Projeção', () => {
+    expect(eventValueSlots({})).toEqual([]);
+    expect(eventValueSlots({ values: { previous: null, actual: null, source: 'BLS' } })).toEqual([]);
+    expect(eventValueSlots({ values: { previous: '151 mil', actual: null } })).toEqual([
+      { key: 'previous', label: 'Anterior', text: '151 mil' },
+      { key: 'actual', label: 'Atual', text: null },
+    ]);
+    expect(eventValueSlots({ values: { previous: '151 mil', actual: '175 mil' } }).map((x) => x.text)).toEqual(['151 mil', '175 mil']);
+    expect(eventValueSlots({ values: { previous: null, actual: '175 mil' } }).map((x) => x.key)).toEqual(['actual']);
+    const todos = ['', '151 mil'].flatMap((t) => eventValueSlots({ values: { previous: t || null, actual: '1' } }).map((x) => x.label));
+    expect(todos.join(' ')).not.toMatch(/proje/i);
   });
 });

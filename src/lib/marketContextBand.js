@@ -23,11 +23,20 @@ export const EVENT_LABELS = Object.freeze({ CPI: 'CPI', NFP: 'Payroll', PPI: 'PP
  * nem de tamanho de movimento. Texto neutro de propósito (nada de "vai subir/cair" nem probabilidade).
  */
 export const EVENT_META = Object.freeze({
-  NFP: { title: 'Emprego dos EUA', short: 'Payroll', impact: 3 },
-  CPI: { title: 'Inflação ao consumidor', short: 'CPI', impact: 3 },
-  FOMC: { title: 'Decisão de juros do Fed', short: 'FOMC', impact: 3 },
-  PPI: { title: 'Inflação ao produtor', short: 'PPI', impact: 2 },
-  PCE: { title: 'Gastos e inflação do consumo', short: 'PCE', impact: 2 },
+  NFP: { title: 'Emprego dos EUA', short: 'Payroll', impact: 3, category: 'emprego' },
+  CPI: { title: 'Inflação ao consumidor', short: 'CPI', impact: 3, category: 'inflacao' },
+  FOMC: { title: 'Decisão de juros do Fed', short: 'FOMC', impact: 3, category: 'juros' },
+  PPI: { title: 'Inflação ao produtor', short: 'PPI', impact: 2, category: 'inflacao' },
+  PCE: { title: 'Gastos e inflação do consumo', short: 'PCE', impact: 2, category: 'inflacao' },
+});
+/**
+ * Categoria do evento: a COR na tela identifica o TIPO de notícia (emprego / inflação / juros), nunca "bom" ou "ruim".
+ * O rótulo em texto acompanha sempre a cor (a cor sozinha não pode carregar o significado).
+ */
+export const CATEGORY_META = Object.freeze({
+  emprego: { label: 'Emprego' },
+  inflacao: { label: 'Inflação' },
+  juros: { label: 'Juros' },
 });
 export const IMPACT_LABELS = Object.freeze({ 3: 'Impacto alto', 2: 'Impacto médio', 1: 'Impacto baixo' });
 export const EVENT_HINTS = Object.freeze({
@@ -66,9 +75,45 @@ export function parseEvents(json) {
     const startMs = isoMs(e.startsAtUtc);
     if (!Number.isFinite(startMs)) continue;
     seen.add(e.id);
-    out.push({ id: e.id, kind: e.kind, status: e.status, startsAtUtc: e.startsAtUtc, startMs });
+    const values = parseEventValues(e.values);
+    out.push({ id: e.id, kind: e.kind, status: e.status, startsAtUtc: e.startsAtUtc, startMs, ...(values ? { values } : {}) });
   }
   return out;
+}
+
+/** Texto dos números curto (ex.: "151 mil", "3,2%"); o arquivo vem da rede, então qualquer coisa fora disso é descartada. */
+const VALUE_MAX_LEN = 24;
+function cleanValueText(v) {
+  if (typeof v !== 'string') return null;
+  // eslint-disable-next-line no-control-regex
+  const t = v.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  return t && t.length <= VALUE_MAX_LEN ? t : null;
+}
+
+/**
+ * Números oficiais do evento, se o coletor um dia os trouxer: `{ previous, actual, source }` (textos curtos). Hoje o arquivo
+ * público NÃO tem esse campo — a tela só desenha o espaço quando ele existe (nada de "—" permanente). Não existe "projeção":
+ * não há fonte gratuita e licenciada, e o painel não inventa número.
+ */
+export function parseEventValues(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const previous = cleanValueText(raw.previous);
+  const actual = cleanValueText(raw.actual);
+  if (!previous && !actual) return null;
+  return { previous, actual, source: cleanValueText(raw.source) };
+}
+
+/**
+ * Espaços de número do evento, na ordem da tela: Anterior e Atual. Vazio se o evento não traz números. Com "Anterior" mas sem
+ * "Atual", o Atual aparece como "aguardando" (`text: null`) — o número só entra quando a fonte oficial publicar.
+ */
+export function eventValueSlots(e) {
+  const v = e?.values;
+  if (!v || (!v.previous && !v.actual)) return [];
+  const slots = [];
+  if (v.previous) slots.push({ key: 'previous', label: 'Anterior', text: v.previous });
+  slots.push({ key: 'actual', label: 'Atual', text: v.actual ?? null });
+  return slots;
 }
 
 /** Hora da última checagem do coletor (`status.json`), em ms; null se o corpo não serve. */

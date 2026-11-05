@@ -34040,6 +34040,15 @@ Escolha dele: cartão do **próximo evento** + **linha do tempo por dia**; núme
 - **Provas [verificado]:** 35 testes das funções puras (inclui virada de dia em Brasília 23:30 → 00:30 = "Amanhã") e 16 do componente com
   relógio fixo; 11 mutações plantadas, todas reprovam teste (uma 12ª era equivalente — `formatCountdown` já devolve "agora" para ≤ 0 —
   e foi removida do código em vez de "provada"). O teste de fumaça de páginas foi atualizado para o texto novo.
+- **v2 (05/11, mesmo PR, pedido do usuário depois de ver as imagens):** (1) a linha do tempo virou **uma coluna por dia COM evento**, lado
+  a lado (rola para o lado se não couber; no celular as colunas empilham). Dias sem evento não ganham coluna: a agenda real tem 2 eventos
+  em 7 dias e 3 em 14, então uma semana de 7 colunas teria 5 vazias; (2) **cor pelo TIPO da notícia** (emprego azul, inflação roxo, juros
+  rosa), sempre com ícone e rótulo em texto e fora da paleta de urgência — **nunca** verde/vermelho de "melhor/pior que o esperado" (é o que
+  o Investing.com faz; aqui a faixa é só informação); (3) **espaço dos números** (Anterior / Atual + "Fonte: …") que só aparece quando o
+  evento traz `values`. Hoje o arquivo público **não** traz, então a tela de produção não muda por isso. `parseEventValues` descarta tudo que
+  não é texto curto (≤ 24 caracteres, sem caractere de controle). **Não existe Projeção** (sem fonte gratuita e licenciada; o painel não
+  inventa número). O formato `values` é o contrato que o PR do BLS (Anterior) terá de preencher na coleta. As imagens de teste usaram
+  números FICTÍCIOS ("exemplo fictício" na fonte), só para mostrar o espaço. Provas: +14 testes, 10 mutações novas, todas reprovam teste.
 
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 

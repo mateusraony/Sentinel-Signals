@@ -61,7 +61,7 @@ describe('MarketContextBand', () => {
     ]);
     renderPage(<MarketContextBand />);
     await screen.findByRole('article', { name: 'Próximo evento' });
-    expect(screen.getByText('Depois')).toBeTruthy();
+    expect(screen.getByText('Nos próximos dias')).toBeTruthy();
     expect(screen.getByText('TER')).toBeTruthy();
     expect(screen.getByText('em 6 dias')).toBeTruthy(); // 10/11
     expect(screen.getByText('em 9 dias')).toBeTruthy(); // 13/11
@@ -89,6 +89,78 @@ describe('MarketContextBand', () => {
     expect(screen.getByText('Amanhã')).toBeTruthy();
     expect(screen.getByText('QUA')).toBeTruthy();
     expect(screen.getByText('QUI')).toBeTruthy();
+  });
+
+  it('colunas: uma por dia COM evento, lado a lado, com o tipo da notícia em texto (cor nunca sozinha)', async () => {
+    dados([
+      ev('NFP-x', 'NFP', '2026-11-06T13:30:00.000Z'),
+      ev('CPI-x', 'CPI', '2026-11-10T13:30:00.000Z'),
+      ev('PPI-x', 'PPI', '2026-11-13T13:30:00.000Z'),
+      ev('PCE-x', 'PCE', '2026-11-25T13:30:00.000Z'),
+    ]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Próximo evento' });
+    const colunas = screen.getByRole('region', { name: 'Próximos dias com evento' });
+    expect(colunas.tabIndex).toBe(0); // rolável por teclado
+    expect(within(colunas).getAllByRole('listitem').length).toBe(3); // CPI, PPI, PCE — o Payroll é o destaque
+    expect(within(colunas).getAllByText('Inflação').length).toBe(3);
+    expect(within(colunas).queryByText('Emprego')).toBeNull();
+    expect(within(card).getByText('Emprego')).toBeTruthy();
+    expect(within(colunas).getByText('TER')).toBeTruthy();
+    expect(within(colunas).getByText('QUA')).toBeTruthy(); // 25/11
+  });
+
+  it('dois eventos no mesmo dia ficam na MESMA coluna (uma só etiqueta de dia)', async () => {
+    dados([
+      ev('PPI-hoje', 'PPI', iso(NOW + 3 * 3600000)),
+      ev('PCE-hoje', 'PCE', iso(NOW + 4 * 3600000)),
+      ev('CPI-hoje', 'CPI', iso(NOW + 5 * 3600000)),
+    ]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Próximo evento' });
+    const colunas = screen.getByRole('region', { name: 'Próximos dias com evento' });
+    expect(within(colunas).getAllByRole('listitem').length).toBe(2);
+    expect(within(colunas).getAllByText('Hoje').length).toBe(1);
+  });
+
+  it('números oficiais: Anterior e Atual (aguardando) com a fonte — e nunca Projeção', async () => {
+    dados([
+      { ...ev('NFP-x', 'NFP', '2026-11-06T13:30:00.000Z'), values: { previous: '151 mil', actual: null, source: 'BLS' } },
+      { ...ev('CPI-x', 'CPI', '2026-11-10T13:30:00.000Z'), values: { previous: '3,2%', actual: null, source: 'BLS' } },
+    ]);
+    const { container } = renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Próximo evento' });
+    expect(within(card).getByText('Anterior')).toBeTruthy();
+    expect(within(card).getByText('151 mil')).toBeTruthy();
+    expect(within(card).getByText('Atual')).toBeTruthy();
+    expect(within(card).getByText('aguardando')).toBeTruthy();
+    expect(within(card).getByText('Fonte: BLS')).toBeTruthy();
+    // o evento seguinte (na coluna) também mostra o seu Anterior, em tamanho compacto
+    const colunas = screen.getByRole('region', { name: 'Próximos dias com evento' });
+    expect(within(colunas).getByText('3,2%')).toBeTruthy();
+    expect(within(colunas).getByText('Fonte: BLS')).toBeTruthy();
+    // ...mas o "aguardando" não se repete em cada coluna: só o cartão do próximo evento mostra o Atual pendente
+    expect(within(colunas).queryByText('aguardando')).toBeNull();
+    expect(within(colunas).queryByText('Atual')).toBeNull();
+    expect(container.textContent).not.toMatch(/proje/i);
+  });
+
+  it('Atual publicado substitui o "aguardando"', async () => {
+    dados([{ ...ev('NFP-x', 'NFP', iso(NOW - 5 * 60000)), values: { previous: '151 mil', actual: '175 mil', source: 'BLS' } }]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Próximo evento' });
+    expect(within(card).getByText('175 mil')).toBeTruthy();
+    expect(within(card).queryByText('aguardando')).toBeNull();
+  });
+
+  it('sem números no arquivo (o caso de hoje): nenhum espaço vazio nem traço permanente', async () => {
+    dados([ev('NFP-x', 'NFP', '2026-11-06T13:30:00.000Z'), ev('CPI-x', 'CPI', '2026-11-10T13:30:00.000Z')]);
+    const { container } = renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Próximo evento' });
+    expect(screen.queryByText('Anterior')).toBeNull();
+    expect(screen.queryByText('Atual')).toBeNull();
+    expect(screen.queryByText('aguardando')).toBeNull();
+    expect(container.textContent).not.toMatch(/Fonte:/);
   });
 
   it('em menos de 1 h o cartão avisa "Em menos de 1 h" com a contagem em minutos', async () => {
