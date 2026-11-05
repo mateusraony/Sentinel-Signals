@@ -34456,3 +34456,44 @@ completa do código) + todas as checagens; a recuperação foi tratada primeiro 
   próximo teste a seco real deve vir sem esse aviso; o aviso continua para falta real de velas no começo.
 - **Limites [honesto].** Causa do "0 ativos" do 1º scan; conteúdo do backup pré-recuperação; o selo ♻️ no painel (conferência visual do
   usuário); a taxa de sinais por hora e a regra :03–:40 têm 1 caso confirmado.
+
+## 289. Resumo por scan nos logs + leitura da auditoria de 05/11 (2026-11-05)
+
+**Pedido do usuário (05/11):** "faz o resumo por scan nos logs" — depois de ver uma passada de 1 s com "0 ativo(s)" e de achar estranho "não ter
+nenhuma operação por perto". O log só dizia `10 ativo(s), 0 falha(s)`: não dava para distinguir uma passada normal de uma que saiu por lock
+ocupado, nem saber se achou sinal, abriu/fechou operação ou foi barrada por filtro, sem abrir o banco.
+
+- **O que foi feito [fato]:** `scripts/scanSummary.mjs` (puro: sem import nenhum — travado por teste) + ligação em `scripts/run-scan.mjs`. Cada scan imprime
+  UMA linha antes de `finished in`, por exemplo
+  `[scan] resumo: lock=ok ativos_ok=10/10 sinais_novos=0 ops=nenhuma funil=nenhum price_check=ok`, ou, com atividade,
+  `… ops{abertas=1 tp1=1 stop=1 atualizadas=3 cas_descartadas=1} funil{regime_rejected=7 no_trigger=3} …`.
+  - **`lock=ocupado`** passa a ser visível (o `skipped` de `scanAllAssets()` era ignorado) — é o que explicaria passadas de ~1 s com "0 ativos".
+  - **Sem tocar `src/lib/scanner.js`:** sinais novos e motivos do funil vêm do que `scanAllAssets()` já devolve (`persisted.persistedSignals`,
+    `entryFunnelOutcomes`); as operações abertas/fechadas/atualizadas vêm de `instrumentTradeOps`, que embrulha `backend.tradeOps` (`createTradeOpIfNoneActive` com
+    `created:true`; `transitionTradeOp` com `applied:true` classificado por `status` de destino + `closed_reason`; `applied:false` = descartada pelo CAS) **dentro de `main()`**
+    e só observa o retorno: mesmo retorno, mesma exceção, nenhuma consulta extra ao banco. Um erro na contagem é engolido; o resumo é impresso em `try/catch` não fatal
+    (nunca muda o código de saída).
+- **SEGURANÇA — o repositório é PÚBLICO, então o log do Actions é legível sem login.** A linha só tem contagens e códigos `[a-z0-9_]{1,40}` (o resto vira
+  `codigo_invalido`, sanitizado duas vezes: ao montar e ao formatar), no máximo 8 motivos (o resto soma em `demais`) e 400 caracteres. Nunca preço de entrada/stop/alvo,
+  R, lado junto de símbolo de operação aberta (revelaria posição em tempo real), id de operação/sinal nem texto de erro. Teste planta uma URL com senha no erro e prova que não sai.
+- **Limites [honesto]:** (1) o contador só vê o que ESTE processo grava — operações movidas pelo scan do navegador não entram; (2) `funil{…}` conta avaliações desta passada
+  (1ª passada + retry), não sinais únicos; (3) `atualizadas` inclui rotina (stop que sobe, MFE/MAE, marcadores), não só mudança de status; (4) **não verificado em execução real:**
+  a linha só aparece no log do Actions a partir do próximo scan depois do merge — conferir lá.
+- **Provas [verificado]:** +41 testes (classificação, embrulho que preserva argumentos/retorno/exceção, `restore`, lock ocupado, funil/ordem/excedente, segurança, ligação em
+  `run-scan.mjs`, ponta a ponta); 12 mutações plantadas — 10 reprovaram de primeira e **2 sobreviveram** (formatador sem sanitizar o código; ordem do funil sem desempate): os testes foram
+  reforçados e os dois passaram a reprovar. Os testes também pegaram 2 defeitos de robustez no código novo (`null` na entrada; item `null` no funil), corrigidos antes do commit.
+  **Revisão do Codex (PR #541, P2):** o `catch` do resumo imprimia `err.message` cru no log público — contradizia a própria regra. Agora a mensagem é FIXA
+  (`[scan] resumo indisponível (não crítico)`) e um teste trava que o trecho não usa `err`/`.message`/interpolação (a mutação que devolve o `err?.message` reprova).
+- **Achado à parte [não corrigido, fora do pedido]:** `scripts/run-scan.mjs` imprime `r.error` CRU por ativo que falhou (`console.error('[scan]   SYMBOL: erro')`) num log público. Um erro de
+  conexão pode conter host ou trecho de URL. Vale um item de segurança próprio (sanitizar/limitar).
+
+### Leitura da auditoria de saúde de 05/11 (14:18 UTC) — "por que não há operação?"
+Pergunta do usuário: "estranho não ter nenhuma operação que possa sim estar próxima". Auditoria (rodada por ele): 0 erros/avisos; 61 operações lidas (as mesmas 61 de 00:07 UTC), **0 ativas**;
+**29 avisos 4h (eram 25 às 00:07) e 1 expirou sem virar operação: `regime_rejected / adx`**.
+- **Leitura [inferência, não leitura direta do banco]:** o motor ESTÁ achando sinais (4 novos em ~14 h) e o filtro de regime (ADX = tendência fraca) barrou ao menos 1; os outros ~3 provavelmente aguardam a
+  confirmação de 15 min. Nenhuma operação nova, mas também nenhum erro nem sinal perdido por falha. Ritmo de referência: 10 operações em 14 dias (20/10–03/11) ≈ 0,7/dia → chance de 0 novas em ~13 h ≈ 68 % (média, não garantia).
+- **Cores dos cartões "tudo azul" [fato, leitura do código]:** não é regressão — é o item 277 (17/10): a barra de proximidade pulsava na cor do lado e soava como compra/venda iminente, e passou a ser azul neutro e
+  parado (`ProximityBar.jsx:36`, `AssetCard.jsx:401-424`). Cor viva só com operação ativa, flash de sinal/operação novos ou dado atrasado. Com mercado lateral e sem operação, vários ativos ficam "perto da linha" ao mesmo tempo.
+- **Bug confirmado, ainda não corrigido:** na aba Histórico os botões 1H/4H/1D filtram por `op.timeframe` (`TradeHistory.jsx:477`), que é `15m` (cascata 4h→15m) ou `5m` (SMC) — então não mostram nenhuma operação nova.
+  `Trades.jsx:583` já usa `signal_timeframe ?? timeframe`. Entra no primeiro PR do Histórico.
+- **Cron:** confirmado a 15 min (02:15, 02:30 e 02:45 UTC de 05/11; passadas de ~12 s, 10 ativos, 75 consultas) — antes eram 10 em 10 até 02:10.

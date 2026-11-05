@@ -16,6 +16,10 @@ checagem retroativa ao adicionar/reativar um ativo, roda em
 esgotada do Firestore ou apenas uma etapa travada — nunca classifique isso por
 regex no ponto de entrada (`docs/known-risks.md` item 162); a mensagem de
 `scanTimeout.mjs` diz só o que foi observado, sem chutar a causa.
+`scanSummary.mjs` (item 289, 05/11/2026) é o **resumo por scan**: UMA linha `[scan] resumo: …` antes de `finished in`,
+**só contagens e códigos** — o repositório é público e o log do Actions é legível sem login (nada de preço, lado+símbolo, id nem texto
+de erro). Módulo **puro** (sem import: travado por `scanSummary.test.mjs`); o contador de operações embrulha `backend.tradeOps`
+DENTRO de `main()` e só observa o retorno (não toca `scanner.js`, não faz consulta extra). Não mexa na linha sem rodar esse teste.
 `health-audit.mjs` (diária às 04:40 UTC + manual, `health-audit.yml`) é a
 auditoria de saúde read-only dos itens 164/165 — teto de leitura explícito, o
 job falha se ela escrever, e ela avisa no Telegram só quando acha algo.
