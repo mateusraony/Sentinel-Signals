@@ -7,10 +7,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  FRED_RELEASES, EVENT_KEYS, STATUS_KEYS, parseFredReleaseDates, buildEvents, buildStatus, eventsHash,
-  assertPublicShape, fetchFredDates, sanitizePrevious,
+  FRED_RELEASES, EVENT_KEYS, STATUS_KEYS, VALUES_KEYS, parseFredReleaseDates, buildEvents, buildStatus, eventsHash,
+  assertPublicShape, fetchFredDates, sanitizePrevious, sanitizeValues,
 } from './contextCollect.mjs';
-import { main, readPrevious } from './context-collect.mjs';
+import { main, readPrevious, describeBls } from './context-collect.mjs';
 import { DEFAULT_CONFIG } from './contextBudget.mjs';
 
 const NOW = Date.parse('2026-10-31T12:00:00Z');
@@ -311,6 +311,244 @@ describe('o executável (scripts/context-collect.mjs)', () => {
     expect(readPrevious(path.join(dir, 'events.json'))).toEqual([]);
     expect(readPrevious(path.join(dir, 'nao-existe.json'))).toEqual([]);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+// Addendum 14 — o "Anterior" do BLS no events.json. O que se prova: sai do mês de referência certo, só para CPI/PPI/Payroll; uma queda do BLS NÃO apaga o
+// que já estava publicado; evento futuro aceita o número novo (revisão) mas, DEPOIS que o evento sai, o número fica congelado; arquivo anterior ruim é
+// descartado; e a trava pública só deixa passar `null` ou `{ previous, source: 'BLS' }` no formato único. Rede toda simulada, a chave nunca vaza.
+describe('valor "Anterior" do BLS (addendum 14)', () => {
+  const mapa = (pontos) => new Map(pontos);
+  const BLS = {
+    CUSR0000SA0: mapa([['2026-09', 100.3], ['2026-08', 100]]),
+    CUUR0000SA0: mapa([['2026-09', 103], ['2025-09', 100]]),
+    WPSFD4: mapa([['2026-09', 149.7], ['2026-08', 150]]),
+    WPUFD4: mapa([['2026-09', 150.96], ['2025-09', 148]]),
+    CES0000000001: mapa([['2026-09', 159119], ['2026-08', 159000]]),
+  };
+  const CPI = { previous: '+0,3% m/m · +3,0% a/a', source: 'BLS' };
+  const build = (extra = {}) => buildEvents({ fredDatesByKind: FRED, nowMs: NOW, blsSeries: BLS, ...extra });
+
+  it('preenche o Anterior de CPI, PPI e Payroll pelo mês de referência (setembro); PCE, FOMC e quem não tem dado ficam sem', () => {
+    const m = byId(build());
+    expect(m['CPI-2026-11-10'].values).toEqual(CPI);
+    expect(m['PPI-2026-11-13'].values).toEqual({ previous: '-0,2% m/m · +2,0% a/a', source: 'BLS' });
+    expect(m['NFP-2026-11-06'].values).toEqual({ previous: '+119 mil', source: 'BLS' });
+    expect(m['PCE-2026-11-25'].values).toBeNull(); // o PCE é do BEA, não do BLS
+    expect(m['FOMC-2026-12-09'].values).toBeNull();
+    expect(m['NFP-2026-12-04'].values).toBeNull(); // mede novembro → anterior é outubro, que o BLS ainda não divulgou
+    for (const e of Object.values(m)) expect(Object.keys(e)).toEqual(EVENT_KEYS);
+  });
+
+  it('sem BLS (null, vazio ou todas as séries nulas): nenhum número, nenhuma quebra', () => {
+    for (const blsSeries of [null, {}, { CUSR0000SA0: null, CUUR0000SA0: null, WPSFD4: null, WPUFD4: null, CES0000000001: null }]) {
+      for (const e of buildEvents({ fredDatesByKind: FRED, nowMs: NOW, blsSeries })) expect(e.values, e.id).toBeNull();
+    }
+  });
+
+  it('o BLS cai depois de ter respondido: o Anterior já publicado é MANTIDO (queda não apaga)', () => {
+    const publicado = build();
+    for (const blsSeries of [null, {}, { CUSR0000SA0: null, CUUR0000SA0: null }]) {
+      const de_novo = buildEvents({ fredDatesByKind: FRED, nowMs: NOW + 3600000, previous: publicado, blsSeries });
+      expect(byId(de_novo)['CPI-2026-11-10'].values, JSON.stringify(blsSeries)).toEqual(CPI);
+      expect(byId(de_novo)['NFP-2026-11-06'].values).toEqual({ previous: '+119 mil', source: 'BLS' });
+    }
+  });
+
+  it('evento FUTURO aceita o número novo (o BLS revisou setembro); o horário de "mudou" não se mexe por causa do número', () => {
+    const publicado = build();
+    const revisto = { ...BLS, CUSR0000SA0: mapa([['2026-09', 100.6], ['2026-08', 100]]) }; // +0,6 % no mês
+    const depois = buildEvents({ fredDatesByKind: FRED, nowMs: NOW + 3600000, previous: publicado, blsSeries: revisto });
+    const cpi = byId(depois)['CPI-2026-11-10'];
+    expect(cpi.values).toEqual({ previous: '+0,6% m/m · +3,0% a/a', source: 'BLS' });
+    expect(cpi.lastChangedAt).toBe(byId(publicado)['CPI-2026-11-10'].lastChangedAt); // remarcação ≠ número novo
+  });
+
+  it('DEPOIS que o evento sai, o número fica CONGELADO (a API passa a revisar o anterior e a trazer o mês novo)', () => {
+    const publicado = build();
+    const depoisDoCpi = Date.parse('2026-11-10T15:30:00Z'); // CPI saiu às 13:30Z
+    const revisto = { ...BLS, CUSR0000SA0: mapa([['2026-10', 101], ['2026-09', 100.6], ['2026-08', 100]]) };
+    const ev = byId(buildEvents({ fredDatesByKind: FRED, nowMs: depoisDoCpi, previous: publicado, blsSeries: revisto }));
+    expect(ev['CPI-2026-11-10'].values).toEqual(CPI); // continua o número de antes do evento, não o revisado
+    // E um evento que já tinha saído SEM número publicado continua sem (nunca se calcula depois do fato).
+    const semNumero = buildEvents({ fredDatesByKind: FRED, nowMs: NOW, blsSeries: null });
+    const ev2 = byId(buildEvents({ fredDatesByKind: FRED, nowMs: depoisDoCpi, previous: semNumero, blsSeries: BLS }));
+    expect(ev2['CPI-2026-11-10'].values).toBeNull();
+    expect(ev2['PPI-2026-11-13'].values).toEqual({ previous: '-0,2% m/m · +2,0% a/a', source: 'BLS' }); // este ainda é futuro
+  });
+
+  it('values publicado ruim (formato, fonte, campo a mais, URL, tipo errado) é descartado — nunca copiado para a saída', () => {
+    const ruins = [
+      { previous: 'https://api.bls.gov/x?registrationkey=abc', source: 'BLS' },
+      { previous: '+0,3% m/m', source: 'FRED' },
+      { previous: 'CPI subiu forte', source: 'BLS' },
+      { previous: '+0,3% m/m', source: 'BLS', url: 'https://x.y' },
+      { previous: 0.3, source: 'BLS' },
+      ['+0,3% m/m', 'BLS'],
+      '+0,3% m/m',
+      { previous: '+0,3% m/m' },
+    ];
+    const base = build()[0];
+    for (const values of ruins) {
+      const ev = buildEvents({ fredDatesByKind: FRED, nowMs: NOW, previous: [{ ...base, values }], blsSeries: null });
+      expect(byId(ev)[base.id].values, JSON.stringify(values)).toBeNull();
+      expect(() => assertPublicShape(ev, buildStatus({ events: ev, fredDatesByKind: FRED, nowMs: NOW }))).not.toThrow();
+    }
+    expect(sanitizeValues(CPI)).toEqual(CPI);
+    expect(sanitizeValues(null)).toBeNull();
+  });
+
+  it('arquivo anterior de ANTES do addendum 14 (sem o campo values) segue valendo', () => {
+    const antigo = build({ blsSeries: null }).map(({ values: _v, ...resto }) => resto);
+    const ev = buildEvents({ fredDatesByKind: FRED, nowMs: NOW + 3600000, previous: antigo, blsSeries: BLS });
+    expect(byId(ev)['CPI-2026-11-10'].values).toEqual(CPI);
+    expect(byId(ev)['CPI-2026-11-10'].firstSeenAt).toBe('2026-10-31T12:00:00.000Z');
+  });
+
+  it('trava pública: aceita null e { previous, source: "BLS" }; recusa campo ausente, extra, outra fonte, texto livre, URL e tipo errado', () => {
+    const ev = build();
+    const st = buildStatus({ events: ev, fredDatesByKind: FRED, nowMs: NOW });
+    expect(() => assertPublicShape(ev, st)).not.toThrow();
+    const cpi = ev.find((e) => e.id === 'CPI-2026-11-10');
+    const plantados = [
+      { ...cpi, values: { previous: '+0,3% m/m', source: 'BLS', note: 'x' } },
+      { ...cpi, values: { previous: '+0,3% m/m', source: 'FRED' } },
+      { ...cpi, values: { previous: 'o CPI veio quente', source: 'BLS' } },
+      { ...cpi, values: { previous: 'https://api.bls.gov/publicAPI/v2/timeseries/data/X?registrationkey=abc', source: 'BLS' } },
+      { ...cpi, values: { previous: 0.3, source: 'BLS' } },
+      { ...cpi, values: { previous: '+0,3%', source: 'BLS' } }, // sem a unidade
+      { ...cpi, values: { previous: '+0.3% m/m', source: 'BLS' } }, // ponto em vez de vírgula
+      { ...cpi, values: ['+0,3% m/m'] },
+      { ...cpi, values: '+0,3% m/m' },
+      { ...cpi, values: undefined },
+      (({ values: _v, ...resto }) => resto)(cpi), // o campo some
+    ];
+    for (const e of plantados) expect(() => assertPublicShape([e], st), JSON.stringify(e.values)).toThrow(/conteúdo público recusado/);
+    expect(VALUES_KEYS).toEqual(['previous', 'source']);
+  });
+
+  describe('coleta ponta a ponta (main)', () => {
+    const FKEY = 'fredkey0123456789abcdef0123456789';
+    const BKEY = 'blskey0123456789abcdef0123456789';
+    const blsResp = (id) => new Response(JSON.stringify({
+      status: 'REQUEST_SUCCEEDED',
+      message: [],
+      Results: { series: [{ seriesID: id, data: [...BLS[id].entries()].map(([ym, v]) => ({ year: ym.slice(0, 4), period: `M${ym.slice(5)}`, value: String(v) })) }] },
+    }), { status: 200 });
+    const chaveRecusada = () => new Response(JSON.stringify({ status: 'REQUEST_NOT_PROCESSED', message: ['The key:*** provided by the User is invalid. Please provide a proper key for the operation to be successful'] }), { status: 200 });
+    const fetchComBls = ({ v2 = 'ok', v1 = 'ok' } = {}) => async (url) => {
+      const u = String(url);
+      if (u.includes('api.bls.gov')) {
+        const modo = u.includes('/v2/') ? v2 : v1;
+        if (modo === 'chave') return chaveRecusada();
+        if (modo === 'falha') return new Response('x', { status: 500 });
+        return blsResp(u.slice(u.lastIndexOf('/') + 1).split('?')[0]);
+      }
+      const id = Number(new URL(u).searchParams.get('release_id'));
+      const kind = Object.entries(FRED_RELEASES).find(([, v]) => v === id)?.[0];
+      return new Response(fredBody(FRED[kind]), { status: 200 });
+    };
+    async function coletar(env, fetchImpl, { now = NOW, dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-bls-')) } = {}) {
+      const logs = [];
+      const origLog = console.log;
+      console.log = (...a) => logs.push(a.join(' '));
+      try {
+        const code = await main(['--dir', dir], env, { fetchImpl, now: () => now });
+        return { code, dir, logs: logs.join('\n'), events: JSON.parse(fs.readFileSync(path.join(dir, 'events.json'), 'utf8')), raw: fs.readFileSync(path.join(dir, 'events.json'), 'utf8'), status: fs.readFileSync(path.join(dir, 'status.json'), 'utf8') };
+      } finally {
+        console.log = origLog;
+      }
+    }
+
+    it('com chave válida: o events.json traz o Anterior, o resumo mostra a coluna, e nenhuma chave nem URL vaza', async () => {
+      const r = await coletar({ FRED_API_KEY: FKEY, BLS_API_KEY: BKEY }, fetchComBls());
+      try {
+        expect(r.code).toBe(0);
+        const m = byId(r.events);
+        expect(m['CPI-2026-11-10'].values).toEqual(CPI);
+        expect(m['NFP-2026-11-06'].values).toEqual({ previous: '+119 mil', source: 'BLS' });
+        expect(r.logs).toMatch(/BLS \(valor "Anterior"\): 5 de 5 séries lidas \(v2 com chave: 5 · v1 sem chave: 0 · sem resposta: 0\)/);
+        expect(r.logs).toContain('| Evento | Hora (UTC) | Situação | Anterior (BLS) |');
+        expect(r.logs).toContain('| CPI-2026-11-10 | 2026-11-10 13:30 | oficial | +0,3% m/m · +3,0% a/a |');
+        expect(r.logs).toContain('| FOMC-2026-12-09 | 2026-12-09 19:00 | oficial | — |');
+        for (const texto of [r.raw, r.status, r.logs]) {
+          expect(texto).not.toContain(BKEY);
+          expect(texto).not.toContain(FKEY);
+          expect(texto).not.toMatch(/https?:\/\/|registrationkey/i);
+        }
+        expect(() => assertPublicShape(r.events, JSON.parse(r.status))).not.toThrow();
+      } finally {
+        fs.rmSync(r.dir, { recursive: true, force: true });
+      }
+    });
+
+    it('rodar de novo sem mudança no BLS não muda o events.json (o git não tem o que gravar)', async () => {
+      const r1 = await coletar({ FRED_API_KEY: FKEY, BLS_API_KEY: BKEY }, fetchComBls());
+      try {
+        const r2 = await coletar({ FRED_API_KEY: FKEY, BLS_API_KEY: BKEY }, fetchComBls(), { now: NOW + 3600000, dir: r1.dir });
+        expect(r2.raw).toBe(r1.raw);
+      } finally {
+        fs.rmSync(r1.dir, { recursive: true, force: true });
+      }
+    });
+
+    it('chave RECUSADA pelo BLS: o Anterior sai mesmo assim (versão sem chave) e o resumo explica o porquê, sem a chave', async () => {
+      const r = await coletar({ FRED_API_KEY: FKEY, BLS_API_KEY: BKEY }, fetchComBls({ v2: 'chave' }));
+      try {
+        expect(r.code).toBe(0);
+        expect(byId(r.events)['CPI-2026-11-10'].values).toEqual(CPI);
+        expect(r.logs).toMatch(/5 de 5 séries lidas \(v2 com chave: 0 · v1 sem chave: 5 · sem resposta: 0\)/);
+        expect(r.logs).toMatch(/ATENÇÃO: o BLS RECUSOU a chave `BLS_API_KEY`/);
+        expect(r.logs).toMatch(/ainda não foi ativada pelo link do e-mail/);
+        for (const texto of [r.raw, r.status, r.logs]) expect(texto).not.toContain(BKEY);
+      } finally {
+        fs.rmSync(r.dir, { recursive: true, force: true });
+      }
+    });
+
+    it('sem a chave: usa a versão sem chave e avisa no resumo', async () => {
+      const r = await coletar({ FRED_API_KEY: FKEY }, fetchComBls());
+      try {
+        expect(byId(r.events)['PPI-2026-11-13'].values).toEqual({ previous: '-0,2% m/m · +2,0% a/a', source: 'BLS' });
+        expect(r.logs).toMatch(/Sem o segredo `BLS_API_KEY`/);
+      } finally {
+        fs.rmSync(r.dir, { recursive: true, force: true });
+      }
+    });
+
+    it('o BLS fora do ar: a coleta das DATAS segue (código 0), sem número, e o resumo conta as falhas', async () => {
+      const r = await coletar({ FRED_API_KEY: FKEY, BLS_API_KEY: BKEY }, fetchComBls({ v2: 'falha', v1: 'falha' }));
+      try {
+        expect(r.code).toBe(0);
+        expect(r.events).toHaveLength(11);
+        for (const e of r.events) expect(e.values, e.id).toBeNull();
+        expect(r.logs).toMatch(/0 de 5 séries lidas \(v2 com chave: 0 · v1 sem chave: 0 · sem resposta: 5\)/);
+        expect(r.status).not.toContain(BKEY);
+      } finally {
+        fs.rmSync(r.dir, { recursive: true, force: true });
+      }
+    });
+
+    it('o BLS cai numa coleta seguinte: o número publicado antes continua no arquivo', async () => {
+      const r1 = await coletar({ FRED_API_KEY: FKEY, BLS_API_KEY: BKEY }, fetchComBls());
+      try {
+        const r2 = await coletar({ FRED_API_KEY: FKEY, BLS_API_KEY: BKEY }, fetchComBls({ v2: 'falha', v1: 'falha' }), { now: NOW + 3600000, dir: r1.dir });
+        expect(byId(r2.events)['CPI-2026-11-10'].values).toEqual(CPI);
+        expect(r2.raw).toBe(r1.raw);
+      } finally {
+        fs.rmSync(r1.dir, { recursive: true, force: true });
+      }
+    });
+
+    it('describeBls: só contagens e motivos (limite diário, chave ausente, chave recusada); null sem coleta', () => {
+      expect(describeBls(null)).toBeNull();
+      const base = { tally: { v2: 0, v1: 3, failed: 2 }, keyPresent: true, keyRejected: false, limitHit: true };
+      const t = describeBls(base);
+      expect(t).toMatch(/3 de 5 séries lidas/);
+      expect(t).toMatch(/O BLS informou que o limite diário de consultas foi atingido/);
+      expect(t).not.toMatch(/RECUSOU|Sem o segredo/);
+      expect(describeBls({ ...base, keyPresent: false, limitHit: false })).toMatch(/Sem o segredo `BLS_API_KEY`/);
+    });
   });
 });
 

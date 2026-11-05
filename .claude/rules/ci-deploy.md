@@ -354,10 +354,12 @@ paths:
   `workflow_dispatch`); `schedule` só de reserva (11:41 UTC).
   - **O que faz:** `scripts/context-collect.mjs` lê as datas de CPI/Payroll/PPI/PCE no FRED, junta com a lista fixa
     (FOMC só nela) e grava `events.json` e `status.json` na branch pública **`context-data`** (cria na 1ª vez).
+    Desde o addendum 14 grava também, em cada evento CPI/PPI/Payroll futuro, o `values.previous` (o "Anterior" oficial do BLS, calculado do histórico mensal; congelado depois do evento).
   - **Único workflow de contexto com `contents: write`**, e só dá push para `context-data`, sem reescrever histórico.
-    Segredos só `FRED_API_KEY` e `CONTEXT_CONTACT_EMAIL`. Sem banco (não acorda o Neon) e sem Telegram.
-  - **Conteúdo público travado** por `assertPublicShape` (lista fechada de campos; nada de URL, chave, erro, valor de
-    série ou volatilidade) e as regras do workflow por `scripts/contextIsolationTripwire.test.js`.
+    Segredos só `FRED_API_KEY`, `BLS_API_KEY` (opcional: o "Anterior", addendum 14) e `CONTEXT_CONTACT_EMAIL`. Sem banco (não acorda o Neon) e sem Telegram.
+  - **Conteúdo público travado** por `assertPublicShape` (lista fechada de campos; nada de URL, chave, erro, valor do
+    FRED ou volatilidade — a única exceção é o "Anterior" do BLS, domínio público, no formato único) e as regras do
+    workflow por `scripts/contextIsolationTripwire.test.js`.
 
 - `context-notify.yml` — **aviso do Contexto no Telegram** (Fase 4a, `docs/known-risks.md` item 285, addendum 12).
   Disparo **manual** (`workflow_dispatch` só, **sem `schedule`**): campos "Categoria" (`teste`, `agenda`, `pre-evento`) e

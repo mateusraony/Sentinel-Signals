@@ -166,9 +166,9 @@ describe('tripwire: a faixa de eventos do painel só lê a branch pública (item
 });
 
 // Fase 2 (addendum 9): o coletor é o ÚNICO workflow de contexto que escreve no repositório, e só na
-// branch pública `context-data`. Sem push forçado, sem outra branch, sem segredo além do FRED e do contato.
+// branch pública `context-data`. Sem push forçado, sem outra branch, sem segredo além do FRED, do BLS (addendum 14: o "Anterior") e do contato.
 const COLETOR = '.github/workflows/context-collect.yml';
-const SEGREDOS_DO_COLETOR = new Set(['FRED_API_KEY', 'CONTEXT_CONTACT_EMAIL']);
+const SEGREDOS_DO_COLETOR = new Set(['FRED_API_KEY', 'BLS_API_KEY', 'CONTEXT_CONTACT_EMAIL']);
 
 /** true quando o workflow NÃO tem `permissions:` no nível do arquivo (comentários ignorados). */
 function semPermissoes(yml) {
@@ -306,7 +306,10 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
       real.replace(push, 'echo sem push'),
       real.replace('contents: write', 'contents: write\n  pull-requests: write'),
       real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ secrets.FRED_API_KEY }}\n          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}'),
-      real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ secrets.BLS_API_KEY }}'),
+      // O BLS_API_KEY agora é permitido no coletor (addendum 14); a variante plantada usa um segredo que continua proibido.
+      real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ secrets.COINGECKO_API_KEY }}'),
+      real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ secrets.FRED_API_KEY }}\n          X: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}'),
+      real.replace('BLS_API_KEY: ${{ secrets.BLS_API_KEY }}', 'BLS_API_KEY: ${{ secrets.DATABASE_URL }}'),
       // Brechas achadas na auditoria de 31/10 (antes passavam):
       real.replace(push, 'git -C . push origin HEAD:refs/heads/main'),
       real.replace(push, 'git -c core.hooksPath=/dev/null push origin HEAD:refs/heads/context-data --tags'),
@@ -323,6 +326,20 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
   it('prova: não acusa o coletor real nem o nome do segredo em minúscula quando é um permitido', () => {
     const real = readFileSync(join(ROOT, COLETOR), 'utf8');
     expect(problemasDoColetor(real.replace('secrets.FRED_API_KEY', 'secrets.fred_api_key'))).toEqual([]);
+    expect(problemasDoColetor(real.replace('secrets.BLS_API_KEY', 'secrets.bls_api_key'))).toEqual([]);
+  });
+
+  it('o coletor recebe o segredo do BLS (addendum 14) e SÓ o passa ao passo que roda o coletor, como variável de ambiente', () => {
+    const real = readFileSync(join(ROOT, COLETOR), 'utf8');
+    const linhasComSegredo = real.split('\n').filter((l) => /secrets\./.test(l) && !/^\s*#/.test(l)).map((l) => l.trim());
+    expect(linhasComSegredo).toEqual([
+      'FRED_API_KEY: ${{ secrets.FRED_API_KEY }}',
+      'BLS_API_KEY: ${{ secrets.BLS_API_KEY }}',
+      'CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}',
+    ]);
+    // Os três vêm do mesmo bloco `env:` do passo "Coletar as datas" (que roda o coletor), nunca de outro passo.
+    const passo = real.slice(real.indexOf('- name: Coletar as datas'), real.indexOf('- name: Publicar na branch context-data'));
+    for (const l of linhasComSegredo) expect(passo, l).toContain(l);
   });
 
   it('prova: pega workflow de contexto sem bloco `permissions:`', () => {

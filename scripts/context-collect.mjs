@@ -8,12 +8,14 @@
 // Lê `<dir>/events.json` (a coleta anterior, se existir), busca as datas no FRED, monta os
 // eventos e grava `<dir>/events.json` e `<dir>/status.json`. Se a trava do conteúdo público
 // recusar, NÃO grava nada e sai com 1. Imprime um resumo em markdown (sem chave, sem URL).
-// Variáveis de ambiente lidas: FRED_API_KEY (vai só na URL da requisição) e
+// Variáveis de ambiente lidas: FRED_API_KEY e BLS_API_KEY (as duas vão só na URL da requisição) e
 // CONTEXT_CONTACT_EMAIL (só no cabeçalho User-Agent). Nenhum banco, nenhum Telegram.
+// O "Anterior" do BLS (addendum 14) é opcional: sem a chave ou sem resposta, o evento sai sem `values`, e a coleta das datas segue.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildEvents, buildStatus, assertPublicShape, fetchFredDates, FRED_RELEASES } from './contextCollect.mjs';
+import { fetchBlsSeries, allSeriesIds } from './contextBls.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -36,16 +38,37 @@ export function readPrevious(file) {
   }
 }
 
-export function formatCollectMarkdown(status, events, fredDatesByKind) {
+/**
+ * A linha do resumo sobre o BLS: só contagens e o motivo (nunca a chave, a URL nem o texto de erro do BLS).
+ * @param {{ tally: { v2: number, v1: number, failed: number }, keyPresent: boolean, keyRejected: boolean, limitHit: boolean }|null} bls
+ */
+export function describeBls(bls) {
+  if (!bls) return null;
+  const total = bls.tally.v2 + bls.tally.v1 + bls.tally.failed;
+  const lidas = bls.tally.v2 + bls.tally.v1;
+  const via = [`v2 com chave: ${bls.tally.v2}`, `v1 sem chave: ${bls.tally.v1}`, `sem resposta: ${bls.tally.failed}`].join(' · ');
+  const lines = [`BLS (valor "Anterior"): ${lidas} de ${total} séries lidas (${via}).`];
+  if (bls.keyPresent && bls.keyRejected) {
+    lines.push('ATENÇÃO: o BLS RECUSOU a chave `BLS_API_KEY` — ela ainda não foi ativada pelo link do e-mail do BLS, ou o segredo foi salvo com erro de cópia. A coleta usou a versão sem chave (25 consultas por dia, por endereço compartilhado).');
+  } else if (!bls.keyPresent) {
+    lines.push('Sem o segredo `BLS_API_KEY`: a coleta usou a versão sem chave do BLS (25 consultas por dia, por endereço compartilhado).');
+  }
+  if (bls.limitHit) lines.push('O BLS informou que o limite diário de consultas foi atingido: o "Anterior" já publicado foi mantido.');
+  return lines.join('\n');
+}
+
+export function formatCollectMarkdown(status, events, fredDatesByKind, bls = null) {
   const lines = ['## Coletor de contexto — datas dos eventos', ''];
   lines.push(`Checado em ${status.checkedAt} (UTC). FRED: **${status.fred}**${status.fred === 'ok' ? '' : ' — os tipos sem resposta usam a lista fixa'}.`);
   const porTipo = Object.keys(FRED_RELEASES).map((k) => `${k} ${Array.isArray(fredDatesByKind[k]) ? 'ok' : 'sem resposta'}`).join(' · ');
   lines.push(`Por tipo: ${porTipo}.`);
+  const blsLine = describeBls(bls);
+  if (blsLine) lines.push(blsLine);
   lines.push(`Eventos publicados: ${status.eventsCount}. Cobertura confirmada até: ${status.coverageUntil ?? '—'}.`);
   lines.push('');
-  lines.push('| Evento | Hora (UTC) | Situação |');
-  lines.push('|---|---|---|');
-  for (const e of events) lines.push(`| ${e.id} | ${e.startsAtUtc.slice(0, 16).replace('T', ' ')} | ${e.status} |`);
+  lines.push('| Evento | Hora (UTC) | Situação | Anterior (BLS) |');
+  lines.push('|---|---|---|---|');
+  for (const e of events) lines.push(`| ${e.id} | ${e.startsAtUtc.slice(0, 16).replace('T', ' ')} | ${e.status} | ${e.values?.previous ?? '—'} |`);
   return lines.join('\n');
 }
 
@@ -59,8 +82,10 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   const statusFile = path.join(args.dir, 'status.json');
   const previous = readPrevious(eventsFile);
   const fredDatesByKind = await fetchFredDates({ fetchImpl, env });
+  // O BLS é opcional: qualquer falha vira "sem número" e as datas seguem (fetchBlsSeries nunca lança nem devolve texto de erro).
+  const bls = await fetchBlsSeries({ fetchImpl, env, ids: allSeriesIds() });
   const nowMs = now();
-  const events = buildEvents({ fredDatesByKind, previous, nowMs });
+  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: bls.series });
   const status = buildStatus({ events, fredDatesByKind, nowMs });
   try {
     assertPublicShape(events, status);
@@ -71,7 +96,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   fs.mkdirSync(args.dir, { recursive: true });
   fs.writeFileSync(eventsFile, `${JSON.stringify(events, null, 2)}\n`);
   fs.writeFileSync(statusFile, `${JSON.stringify(status, null, 2)}\n`);
-  console.log(formatCollectMarkdown(status, events, fredDatesByKind));
+  console.log(formatCollectMarkdown(status, events, fredDatesByKind, bls));
   return 0;
 }
 

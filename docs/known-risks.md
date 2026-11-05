@@ -34050,6 +34050,34 @@ Escolha dele: cartão do **próximo evento** + **linha do tempo por dia**; núme
   inventa número). O formato `values` é o contrato que o PR do BLS (Anterior) terá de preencher na coleta. As imagens de teste usaram
   números FICTÍCIOS ("exemplo fictício" na fonte), só para mostrar o espaço. Provas: +14 testes, 10 mutações novas, todas reprovam teste.
 
+**Addendum 14 (2026-11-05, Fase 4a "Anterior") — o número oficial da divulgação anterior (BLS) entra no `events.json`.**
+Pedido do usuário (05/11): "falta o valor" e "dados que passou". Decisão dele: **histórico medido, sem previsão** — então só o que o BLS já divulgou.
+- **Sonda de 05/11 (23:37 UTC) [fato]:** portão aprovado. BLS API pública **v1 abre do GitHub** (CPI, período mais recente setembro/2026); as 3 linhas da **v2 com chave** voltaram
+  HTTP 200 com a mensagem do próprio BLS "chave inválida" (formato do pedido aceito; chave recusada); `financecalendar.com` respondeu **401** nas duas consultas. **Hipóteses [não confirmadas]:**
+  a chave do BLS ainda não foi **ativada** pelo link do e-mail, ou o segredo `BLS_API_KEY` foi salvo com erro de cópia; o financecalendar passou a exigir chave. Consequência: **segue sem fonte
+  gratuita e licenciada de valor estimado** — a faixa mostra o "Anterior" medido e, depois, o "Atual"; nunca inventa projeção.
+- **O que mudou [fato]:** `scripts/contextBls.mjs` (novo: leitura da resposta, contas e busca), `contextCollect.mjs` (`values` entra em `EVENT_KEYS`; `sanitizeValues`; trava pública),
+  `context-collect.mjs` (busca o BLS, coluna "Anterior (BLS)" no resumo, `describeBls`), `context-collect.yml` (passa `BLS_API_KEY` ao passo do coletor) e a trava de isolamento (`BLS_API_KEY`
+  passa a ser um segredo permitido ao coletor — mudança **deliberada**; ela continua exigindo que o segredo só apareça nas 3 linhas conhecidas do passo "Coletar as datas"). A faixa do Dashboard
+  **não mudou**: o contrato `values` já existia desde o PR #540.
+- **As contas [fato do código, números não conferidos com o BLS real]:** o "Anterior" de um evento é o período **anterior ao `reference` dele** (CPI de 10/11 mede outubro → Anterior = setembro).
+  CPI e PPI: variação no mês (série com ajuste sazonal) e em 12 meses (série **sem** ajuste, a que a imprensa cita); Payroll: variação do mês em milhares ("+119 mil"). Formato único
+  (`PREVIOUS_TEXT_RE`, usado pelo produtor e pela trava pública, ≤ 24 caracteres): "+0,3% m/m · +3,0% a/a" / "+119 mil". **Dado faltando ("-", mês ausente) → a parte some; fora de faixa
+  plausível (±5 % no mês, ±30 % em 12 meses, ±3.000 mil vagas) → some; nunca se preenche.** PCE (é do BEA) e FOMC ficam sem "Anterior".
+- **Congelamento [decisão de desenho]:** só evento que ainda não começou é recalculado (aceita a revisão do BLS); **depois que sai, o número fica como estava** — a API passa a trazer o mês novo e a
+  revisar o anterior, e recalcular mudaria o número depois do fato. Se o BLS não responder, vale o que já estava publicado (queda não apaga).
+- **Busca:** com a chave tenta a v2 (500 consultas/dia por chave, segundo o FAQ do BLS); se o BLS **recusa a chave**, para de tentar a chave nesta passada e usa a v1 sem chave (25 consultas/dia **por
+  endereço compartilhado** — por isso a chave é o caminho seguro). A chave é limpa nas pontas (espaço/quebra de linha) e só existe na URL da requisição; falha vira "sem número" **sem mensagem**
+  (uma mensagem poderia citar a URL com a chave). O resumo do coletor diz quantas séries vieram de cada via e, se for o caso, que o BLS recusou a chave.
+- **Limites [honesto]:** (1) a rede deste ambiente **bloqueia `api.bls.gov`** (403 no túnel): nada foi testado contra o BLS real — só fixtures no formato que a sonda mostrou e o da documentação;
+  (2) os códigos `WPUFD4` (PPI sem ajuste) e `CES0000000001` (Payroll) **não foram confirmados** por pesquisa (os do CPI foram); o primeiro resumo do coletor mostra os números — **conferir com a notícia**;
+  (3) "m/m" e "a/a" são abreviações de mercado (pergunta ao usuário se prefere palavras); (4) o "Anterior" usa o dado **como o BLS o tem hoje** (revisado), que pode diferir da primeira divulgação;
+  (5) a chave do BLS precisa ser **renovada 1 vez por ano** (regra do BLS); (6) as imagens de teste usaram números FICTÍCIOS.
+- **Provas [verificado]:** +47 testes (31 do módulo novo, +15 no coletor, +1 na trava); **40 mutações plantadas** (período errado, sinal invertido, faixa plausível removida, congelamento desligado, chave sem
+  limpar/codificar, HTTP de erro aceito, trava pública frouxa, workflow sem o segredo, segredo em outro passo…), todas reprovam teste. Teste ponta a ponta: nenhuma chave nem URL em `events.json`, `status.json`
+  ou no resumo, nem com a chave recusada.
+- **Passo manual pendente (do usuário, não bloqueia):** ativar a chave do BLS (link do e-mail) e/ou refazer o segredo `BLS_API_KEY` só com a chave, sem espaço, aspas nem quebra de linha; depois rodar a sonda de novo.
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 > **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista
