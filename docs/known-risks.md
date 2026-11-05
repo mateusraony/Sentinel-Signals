@@ -34022,6 +34022,34 @@ isolamento proíbe e custaria ~1 h/mês de Neon); as operações em risco passam
   numa janela fixa, onde guardar "já avisei", número oficial pela API do BLS e as medições de 06/11 e 10/11), resumos 07h/12h/21h e a
   Fase 3b (movimento esperado e operações em risco no painel).
 
+**Addendum 13 (2026-11-04) — a faixa "Agenda de eventos dos EUA" foi redesenhada (só visual).**
+Pedido do usuário: a lista antiga (texto de 11 px, sem destaque, dias confusos) era difícil de ler; queria "bater o olho e ver tudo".
+Escolha dele: cartão do **próximo evento** + **linha do tempo por dia**; números (Anterior/Atual) em PR separado.
+- **O que mudou [fato]:** `MarketContextBand.jsx` (cartão do próximo evento com contagem regressiva grande, barra de aproximação,
+  cor por urgência — pendente / acabou de sair / ≤ 1 h / ≤ 24 h / ≤ 7 d / distante — e ponto pulsante que respeita
+  `prefers-reduced-motion`; linha do tempo agrupada por dia em Brasília com "Hoje / Amanhã / em N dias"; "Ver todos (N)" acima de 6
+  eventos) e funções puras novas em `marketContextBand.js` (`EVENT_META`, `groupEventsByDay`, `splitFeatured`, `eventUrgency`,
+  `relativeDayLabel`…). Os exports antigos ficaram; `BandBoundary`, os 4 estados, o "Ocultar" (por navegador) e o texto "Só informação —
+  não altera sinais nem operações" continuam. Nenhuma linha de motor, banco, log, Firebase ou Telegram foi tocada; a trava
+  `contextIsolationTripwire.test.js` segue passando sem ajuste.
+- **Limites [honesto]:** (1) as bolinhas de **importância** (FOMC/CPI/Payroll = alta; PPI/PCE = média) e os **nomes em português** são
+  julgamento editorial meu ("referência do mercado"), não dado de fonte; (2) **não há Anterior / Projeção / Atual**: o arquivo público só
+  tem data e situação; Anterior e Atual (BLS) são PRs seguintes, Projeção fica de fora (sem fonte gratuita e licenciada); (3) a prova
+  visual é por captura de tela de um ambiente de teste com o `events.json` real, não da tela do usuário; (4) a faixa **não** foi ligada
+  ao Histórico (marcador "aberta durante <evento>" é o PR seguinte, com o portão de ≤ 30 % das operações).
+- **Provas [verificado]:** 35 testes das funções puras (inclui virada de dia em Brasília 23:30 → 00:30 = "Amanhã") e 16 do componente com
+  relógio fixo; 11 mutações plantadas, todas reprovam teste (uma 12ª era equivalente — `formatCountdown` já devolve "agora" para ≤ 0 —
+  e foi removida do código em vez de "provada"). O teste de fumaça de páginas foi atualizado para o texto novo.
+- **v2 (05/11, mesmo PR, pedido do usuário depois de ver as imagens):** (1) a linha do tempo virou **uma coluna por dia COM evento**, lado
+  a lado (rola para o lado se não couber; no celular as colunas empilham). Dias sem evento não ganham coluna: a agenda real tem 2 eventos
+  em 7 dias e 3 em 14, então uma semana de 7 colunas teria 5 vazias; (2) **cor pelo TIPO da notícia** (emprego azul, inflação roxo, juros
+  rosa), sempre com ícone e rótulo em texto e fora da paleta de urgência — **nunca** verde/vermelho de "melhor/pior que o esperado" (é o que
+  o Investing.com faz; aqui a faixa é só informação); (3) **espaço dos números** (Anterior / Atual + "Fonte: …") que só aparece quando o
+  evento traz `values`. Hoje o arquivo público **não** traz, então a tela de produção não muda por isso. `parseEventValues` descarta tudo que
+  não é texto curto (≤ 24 caracteres, sem caractere de controle). **Não existe Projeção** (sem fonte gratuita e licenciada; o painel não
+  inventa número). O formato `values` é o contrato que o PR do BLS (Anterior) terá de preencher na coleta. As imagens de teste usaram
+  números FICTÍCIOS ("exemplo fictício" na fonte), só para mostrar o espaço. Provas: +14 testes, 10 mutações novas, todas reprovam teste.
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 > **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista

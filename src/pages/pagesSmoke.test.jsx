@@ -136,10 +136,12 @@ describe('smoke — faixa de eventos do Dashboard (Contexto de Mercado, Fase 3)'
   it('com dados: mostra os eventos à frente', async () => {
     estado.populated = true;
     const { default: Dashboard } = await import('./Dashboard.jsx');
-    const { findByText, getByText } = renderPage(<Dashboard />);
+    const { findByText, getAllByText } = renderPage(<Dashboard />);
     expect(await findByText('Agenda de eventos dos EUA')).toBeTruthy();
-    expect(await findByText('CPI')).toBeTruthy();
-    expect(getByText('(data a confirmar)')).toBeTruthy();
+    // CPI (data oficial, em 30 h) é o próximo evento: aparece pelo nome em português no cartão de destaque.
+    expect(await findByText('Inflação ao consumidor')).toBeTruthy();
+    // Payroll com data a confirmar entra na linha do tempo, com o selo — nunca no cartão de destaque.
+    expect(getAllByText(/data a confirmar/i).length).toBeGreaterThan(0);
   });
 
   it('vazio: a faixa mostra "indisponível" e o resto do Dashboard continua', async () => {
