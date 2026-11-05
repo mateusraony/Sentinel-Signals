@@ -13,7 +13,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 
 // PnLChart (Recharts ResponsiveContainer) renderiza sempre que houver >1
@@ -439,6 +439,102 @@ describe('TradeHistory — timeframe do aviso e história do trade (item 291)', 
     const grupo = await screen.findByRole('group', { name: 'A história deste trade' });
     expect(grupo.textContent).not.toMatch(/No caminho|Bateu o TP1|undefined|NaN/);
     expect(grupo.textContent).toMatch(/Abriu uma operação/);
+  });
+});
+
+// Item 293 — "Visão geral" no topo: relatório de performance + "Como terminaram" sobre as operações FILTRADAS, e a linha que diz quantas operações
+// dentro da soma não são decisões do motor. Os números que já existiam (faixa-resumo) não mudam.
+describe('TradeHistory — visão geral e "Como terminaram" (item 293)', () => {
+  const T = '2026-11-01T12:00:00Z';
+  const base = { side: 'BUY', entry_price: 100, initial_stop: 95, tp1: 107.5, tp2: 115, partial_percent: 50, tp1_hit: false, created_date: T, closed_at: T, timeframe: '15m', signal_timeframe: '4h' };
+  const perda = (id, symbol, extra = {}) => ({ ...base, id, asset_id: id, symbol, status: 'STOP_HIT', exit_price: 95, stop_hit_at: T, ...extra });
+  const alvo = (id, symbol, extra = {}) => ({ ...base, id, asset_id: id, symbol, status: 'TP2_HIT', tp1_hit: true, tp1_hit_price: 107.5, exit_price: 115, ...extra });
+  const BASICAS = [perda('v1', 'BTCUSDT'), perda('v2', 'ETHUSDT'), alvo('v3', 'SOLUSDT')];
+
+  async function abrir(ops) {
+    mockBackend(ops);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+    await screen.findAllByText('BTC/USDT');
+  }
+  const breakdown = () => screen.getByRole('group', { name: 'Como terminaram' });
+  const linhas = () => [...breakdown().querySelectorAll('li')].map((li) => li.textContent);
+
+  it('mostra o relatório de performance e "Como terminaram" sobre as operações da tela', async () => {
+    await abrir(BASICAS);
+    expect(screen.getByText('Visão geral')).toBeTruthy();
+    expect(screen.getByText('Relatório de Performance')).toBeTruthy();
+    expect(linhas()).toEqual(['Alvo final (TP2)1 (33%)', 'Stop com perda2 (67%)']);
+  });
+
+  it('os filtros mudam a visão geral junto com a lista (só as perdas)', async () => {
+    await abrir(BASICAS);
+    fireEvent.click(screen.getByRole('button', { name: '🛑 Loss' })); // o botão do filtro (o mesmo texto também é rótulo do resumo do dia)
+    await waitFor(() => expect(linhas()).toEqual(['Stop com perda2 (100%)']));
+    // O relatório de performance e "Como terminaram" seguem o MESMO filtro (cada um mostra "(2 trades fechados)").
+    expect(screen.getAllByText('(2 trades fechados)')).toHaveLength(2);
+    expect(screen.queryByText('(3 trades fechados)')).toBeNull();
+  });
+
+  it('com poucas operações contadas, avisa que os números oscilam e não provam vantagem; com 30 ou mais, o aviso some', async () => {
+    await abrir(BASICAS);
+    expect(screen.getByText('Poucas operações contadas (3): esses números oscilam muito e não provam vantagem.')).toBeTruthy();
+    cleanup();
+    vi.resetModules();
+    await abrir(Array.from({ length: 30 }, (_, i) => perda(`m${i}`, i === 0 ? 'BTCUSDT' : `X${i}USDT`)));
+    expect(screen.queryByText(/Poucas operações contadas/)).toBeNull();
+    expect(linhas()).toEqual(['Stop com perda30 (100%)']);
+  });
+
+  it('a linha "Fora da conta" diz quantas operações da soma não são do motor — e os números da faixa-resumo continuam somando todas', async () => {
+    await abrir([...BASICAS, perda('s1', 'AVAXUSDT', { source: 'manual' }), perda('b1', 'LINKUSDT', { source: 'backfill' })]);
+    expect(screen.getByText('Fora da conta: 1 simulação manual · 1 retroativa — não são decisões do motor, mas entram nos números desta tela.')).toBeTruthy();
+    const faixa = screen.getByText(/^Total: /).parentElement; // a faixa-resumo conta as 5, inclusive as duas de fora da medição do motor
+    expect(within(faixa).getByText('5 trades')).toBeTruthy();
+  });
+
+  it('sem nenhuma operação fora da medição do motor, a linha não aparece (nem o resto da frase solto)', async () => {
+    await abrir(BASICAS);
+    expect(screen.queryByText(/Fora da conta/)).toBeNull();
+    expect(screen.queryByText(/não são decisões do motor/)).toBeNull();
+  });
+
+  it('a linha "Fora da conta" segue o filtro: some quando a busca deixa só operações do motor', async () => {
+    await abrir([...BASICAS, perda('s1', 'AVAXUSDT', { source: 'manual' })]);
+    expect(screen.getByText(/Fora da conta: 1 simulação manual/)).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('Buscar ativo...'), { target: { value: 'BTC' } });
+    await waitFor(() => expect(screen.queryByText(/Fora da conta/)).toBeNull());
+    expect(screen.queryByText(/não são decisões do motor/)).toBeNull();
+  });
+
+  it('"Visão geral" esconde e mostra de novo', async () => {
+    await abrir(BASICAS);
+    const botao = screen.getByText('Visão geral').closest('button');
+    expect(botao.textContent).toContain('▲ esconder');
+    fireEvent.click(botao);
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Como terminaram' })).toBeNull());
+    expect(screen.queryByText('Relatório de Performance')).toBeNull();
+    expect(botao.textContent).toContain('▼ mostrar');
+    fireEvent.click(botao);
+    expect(await screen.findByRole('group', { name: 'Como terminaram' })).toBeTruthy();
+    expect(botao.textContent).toContain('▲ esconder');
+  });
+
+  it('só operações sem resultado calculável: "Como terminaram" mostra "Outras" e o relatório de performance não aparece', async () => {
+    const { entry_price: _e, ...semEntrada } = perda('u1', 'BTCUSDT');
+    await abrir([semEntrada]);
+    expect(linhas()).toEqual(['Outras1 (100%)']);
+    expect(screen.queryByText('Relatório de Performance')).toBeNull();
+    expect(screen.queryByText('Sem trades fechados para relatório.')).toBeNull(); // o relatório nem é montado (não só "sem título")
+    expect(screen.queryByText(/Poucas operações contadas/)).toBeNull();
+  });
+
+  it('sem operação na tela (filtro sem resultado), a visão geral inteira some', async () => {
+    await abrir(BASICAS);
+    fireEvent.change(screen.getByPlaceholderText('Buscar ativo...'), { target: { value: 'ZZZ' } });
+    await screen.findByText('Nenhum trade encontrado com esses filtros.');
+    expect(screen.queryByText('Visão geral')).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Como terminaram' })).toBeNull();
   });
 });
 

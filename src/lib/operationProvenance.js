@@ -22,11 +22,18 @@ export const MANUAL_CLOSE_REASONS = Object.freeze([MANUAL_EDIT_REASON, MANUAL_CL
 
 export const PROVENANCE = Object.freeze({ ENGINE: 'engine', MANUAL: 'manual', BACKFILL: 'backfill', RECOVERY: 'recovery', EDITED: 'edited' });
 
+/**
+ * A operação foi encerrada/invalidada/editada à mão pelo painel? Olha só o MOTIVO do encerramento (e o executor do snapshot de saída) — independe de
+ * como a entrada nasceu: uma simulação (`source: 'manual'`) também pode ser encerrada à mão, e `operationProvenance` devolve MANUAL antes de chegar aqui
+ * (achado do Codex, PR #545). Encerrar/Invalidar gravam `decision_snapshot.executor: 'manual'` (decisionSnapshot.js) — marca estruturada, aceita junto do texto.
+ */
+export function isManualExit(op) {
+  return MANUAL_CLOSE_REASONS.includes(op?.closed_reason) || op?.decision_snapshot?.executor === 'manual';
+}
+
 export function operationProvenance(op) {
   if (op?.source === 'manual') return PROVENANCE.MANUAL;
-  // Encerrar/Invalidar também gravam `decision_snapshot.executor: 'manual'`
-  // (decisionSnapshot.js) — marca estruturada, aceita junto do texto.
-  if (MANUAL_CLOSE_REASONS.includes(op?.closed_reason) || op?.decision_snapshot?.executor === 'manual') return PROVENANCE.EDITED;
+  if (isManualExit(op)) return PROVENANCE.EDITED;
   if (op?.source === 'backfill') return PROVENANCE.BACKFILL;
   if (op?.source === 'recovery') return PROVENANCE.RECOVERY;
   return PROVENANCE.ENGINE;
