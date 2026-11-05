@@ -108,6 +108,7 @@ referência — uso amplo demais para checar por linha.
 | ⚙️ | Configuração / parâmetro ajustável | "Prioridade mínima" do Telegram e RF Period/Multiplier do Pine (como já era em "Filtros Avançados" e "Parâmetros Ativos") |
 | 🎚️ | Tier (classe de volatilidade do ativo) | TradeCard (já era) |
 | 📐 | Evidência numérica (resultado em R, fatos da decisão) | Telegram, TradeCard, Operações, Histórico, console do backtest |
+| 📖 · 👁️ · 🗺️ · 🧮 | Blocos do card aberto do Histórico (itens 291/292): "A história deste trade" · "O que o sistema via na entrada" · "Plano × realizado" · "Como o resultado foi formado" | novos; 🔎 (Sinal para Conferir) e 📏 (distância do Range Filter) já tinham outro sentido e **não** foram reaproveitados |
 | 🚨 | Alerta do sistema (infraestrutura) — não é evento de operação | cota esgotada (já era) e "Uma etapa travou" (canal 24h) |
 | 🧩 | Regras alinhadas N/100 | painel lateral ("Score técnico" → 🧩), aviso flutuante, notificação do navegador, Análise Preditiva e comparador ("Score" → "Regras") |
 | 🔥 · 〰 · 🚀 · ⏰ | Proibidos | ⏰ era Time Stop na página do Pine — virou ⏱️ |

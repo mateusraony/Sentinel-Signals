@@ -34544,3 +34544,29 @@ ver: linha do tempo do trade, quanto chegou a ganhar/perder, por que fechou + o 
   agora só entram carimbos de ENCERRAMENTO conhecidos (`stop_hit_*`, `closed_at*`) e, sem eles, a frase não traz horário; (2) `new Date(true)` e datas de calendário inexistentes (30/02) viram timestamp finito, mas o formatador da página (moment)
   devolve "Invalid date" — a régua passou a ser a SAÍDA do próprio formatador (texto ISO que vira data E que o formatador aceita; lança/vazio/"Invalid" = sem horário), pegando o primeiro horário válido entre os candidatos.
   +10 testes (inclusive com o `moment` real da página); 7 mutações novas, todas reprovam.
+
+**Estado do H1:** mesclado (PR #543, `4982395`) depois do "aprovado" do usuário sobre o visual e de CI verde + Codex sem achados no último commit.
+
+## 292. Aba Histórico, 2º PR (H2): "O que o sistema via na entrada", "Plano × realizado" e "Como o resultado foi formado" (2026-11-05)
+
+**Pedido do usuário (05/11):** do conjunto de melhorias do Histórico, "por que fechou e o que o sistema viu". **Leitura antes de construir [fato]:** o "por que fechou" **já estava coberto** — todo `reason_code` de saída
+que `decisionSnapshot.js` grava tem texto em `OPERATION_COPY` (`decisionExplanation.js`), a linha compacta do card mostra o `why`, e a história do H1 já traz o motivo (`closedReasonLabel`). O que **faltava** era o lado
+medido: o que o sistema enxergava na entrada, o plano contra o realizado e a conta do resultado. Foi isso que entrou; não repeti o "por quê" (a revisão de clareza de 18/09 já tinha tirado a mesma pergunta respondida 2×).
+
+- **Três blocos de leitura** (`src/lib/tradeContext.js`, puro; `TradeContext` em `TradeHistory.jsx`, só montado com o card aberto, depois da história do trade). Só campos que a operação **já tem** — o que falta
+  (operação legada) vira linha omitida, nunca "undefined"/"NaN"/"0/100":
+  1. **👁️ O que o sistema via na entrada:** tendências 1D/4H/1H (`tf_*_direction`, "a favor/contra" conforme o lado; 0/ausente = sem leitura), regras alinhadas (`🧩 N/100` + "não é chance de acerto", `agreementLabel` — score 0 = sem dado),
+     tier, ADX e Choppiness (nome simples + o que "maior" significa), padrão de vela (gate opt-in) e estrutura SMC (`aligned`/`against`; `unavailable` omitido).
+  2. **🗺️ Plano × realizado:** risco previsto (% do preço de entrada), alvos em R **calculados dos preços** (TP2 só quando a operação tem runner e o teto fixo — mesma regra de `getTp2Tooltip`), prazo máximo do Time Stop
+     (`tier_time_stop_bars` em velas do timeframe do aviso, só 4h/1h) e quanto **durou** (entrada → carimbo de ENCERRAMENTO conhecido; nunca `getClosedAt`, mesma régua do H1).
+  3. **🧮 Como o resultado foi formado:** bruto → custos estimados → líquido (em R e em %), com a parte do TP1 e a do restante quando houve parcial. **Invariantes travadas por teste:** bruto − custos = líquido; TP1 + restante = bruto;
+     o líquido é exatamente o `calcRealizedPnlPct`/`calcRealizedR` da fonte única (`tradeMetrics`) — nada de regra de resultado própria. A nota de custos é gerada de `DEFAULT_COST_MODEL` (mudou o modelo, mudou a frase).
+- **Decisões [honesto]:** (a) **não** mostrei `rr_at_entry`: o schema diz que ele é ~igual ao `tp1R` configurado em toda entrada de hoje (`rr_gate_mode: CONFIGURED_MULTIPLE`) — mostrá-lo como "R:R" sugeriria mais do que mede; os alvos em R saem
+  dos preços. (b) **não** repeti o stop inicial → final (já está na história do H1). (c) Texto neutro: descreve o medido, não prevê nem opina; "regras alinhadas" segue o item 277 (não é chance de acerto).
+- **Limites [honesto]:** os **custos são do modelo do painel** (taxa 0,05%/lado, deslizamento 0,01%/lado, funding 0,01%/8 h), não o extrato da corretora — dito na própria tela; a saída no TP1 usa o **nível planejado**, não um
+  preenchimento medido; a duração usa o candle de entrada quando existe (senão o horário do sinal, em operação legada); operação sem stop inicial mostra o resultado só em % (sem "R" inventado); a prova visual é captura de tela
+  de ambiente de teste com dados de **exemplo**, não da tela do usuário. Motor, banco, `TradeOperation` e Telegram intocados.
+- **Provas [verificado]:** +46 testes (40 do módulo puro, 6 da página); **30 mutações plantadas** (21 no módulo, 9 na tela): lado invertido, score 0 aceito, TP2 ignorando o teto, carimbo de stop para todo status, fallback
+  `created_date`, prazo de timeframe desconhecido, partes com o mesmo peso, alvo do lado errado, nota de custo fixa, bloco montado fechado, bloco vazio, sinal do custo, partes sumindo… — todas reprovam teste. **Duas sobreviveram
+  na 1ª rodada e foram tratadas:** `ms >= 0` na duração era equivalente (o `hoursLabel` já recusa negativo → simplificado) e "carimbo ruim na frente esconde o válido" não tinha teste (adicionado); a cor do líquido (verde/rosa) não
+  tinha teste (adicionado, lido do atributo `style`, falha se o elemento não existir). **Achado do guard de emojis (rodando o gate completo):** o 1º rascunho usava 📏 (já é "distância do Range Filter") e 🔎 (já é "Sinal para Conferir") — trocados por 👁️/🗺️, e os quatro glifos do Histórico (inclusive o 📖 do H1, que estava sem registro) entraram em `emojiRegistry.js` e `docs/notification-vocabulary.md`. Pequeno reuso: `hoursLabel` passou a ser exportado de `tradeStory.js` (o `elapsedLabel` chama o mesmo — comportamento idêntico, testes do H1 intactos).
