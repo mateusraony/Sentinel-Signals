@@ -34482,6 +34482,8 @@ ocupado, nem saber se achou sinal, abriu/fechou operação ou foi barrada por fi
 - **Provas [verificado]:** +41 testes (classificação, embrulho que preserva argumentos/retorno/exceção, `restore`, lock ocupado, funil/ordem/excedente, segurança, ligação em
   `run-scan.mjs`, ponta a ponta); 12 mutações plantadas — 10 reprovaram de primeira e **2 sobreviveram** (formatador sem sanitizar o código; ordem do funil sem desempate): os testes foram
   reforçados e os dois passaram a reprovar. Os testes também pegaram 2 defeitos de robustez no código novo (`null` na entrada; item `null` no funil), corrigidos antes do commit.
+  **Revisão do Codex (PR #541, P2):** o `catch` do resumo imprimia `err.message` cru no log público — contradizia a própria regra. Agora a mensagem é FIXA
+  (`[scan] resumo indisponível (não crítico)`) e um teste trava que o trecho não usa `err`/`.message`/interpolação (a mutação que devolve o `err?.message` reprova).
 - **Achado à parte [não corrigido, fora do pedido]:** `scripts/run-scan.mjs` imprime `r.error` CRU por ativo que falhou (`console.error('[scan]   SYMBOL: erro')`) num log público. Um erro de
   conexão pode conter host ou trecho de URL. Vale um item de segurança próprio (sanitizar/limitar).
 

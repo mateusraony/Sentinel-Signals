@@ -203,8 +203,9 @@ async function main() {
   // scripts/scanSummary.mjs). Nunca fatal: formatar o resumo não pode mudar o código de saída do scan.
   try {
     console.log(formatScanSummary(summarizeScanPass({ scanResult, priceCheckResult, ops: opsTracker.snapshot() })));
-  } catch (err) {
-    console.warn('[scan] resumo indisponível (não crítico):', err?.message);
+  } catch {
+    // Mensagem FIXA, de propósito: o texto da exceção não passa pela sanitização do formatador, e este log é público.
+    console.warn('[scan] resumo indisponível (não crítico)');
   }
   console.log(`[scan] finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   // Item 282: quanto o scan leu do banco nesta passada (ordem de grandeza da

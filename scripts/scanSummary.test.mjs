@@ -274,7 +274,10 @@ describe('ligação em scripts/run-scan.mjs', () => {
     expect(iPrint).toBeLessThan(iFinished);
     const antes = src.slice(Math.max(0, iPrint - 120), iPrint);
     expect(antes).toMatch(/try \{\s*console\.log\(\s*$/);
-    expect(src.slice(iPrint, iFinished)).toMatch(/catch \(err\)[\s\S]*não crítico/);
+    const trecho = src.slice(iPrint, iFinished);
+    expect(trecho).toMatch(/catch[\s\S]*não crítico/);
+    // O texto da exceção NÃO vai para o log público (Codex, PR #541): mensagem fixa, nunca `err.message`.
+    expect(trecho).not.toMatch(/\.message|\berr\b|\$\{/);
   });
   it('o resumo usa o objeto inteiro de scanAllAssets e de priceCheckActiveOps (lock ocupado e "pulado" não se perdem)', () => {
     expect(src).toMatch(/const scanResult = await withTimeout\(scanAllAssets\(\)/);
