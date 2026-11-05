@@ -330,9 +330,10 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
     && classifySignal(latestSignal, now, asset).phase === SIGNAL_PHASE.WAITING;
   // Item 290: o estado do último aviso (esperando confirmação / já passou / só informação) manda no rótulo e no contorno —
   // antes QUALQUER aviso sem operação virava "🔔 Aviso pendente", até um de dias atrás já expirado.
-  // Com o dado do ativo ATRASADO/falho o estado do aviso não vale: "Checando agora" seria falso (o app não está lendo o ativo) —
-  // o rótulo 📡 e o contorno de dado atrasado mandam, como já era para os outros casos.
-  const sigState = latestSignal && !hasActiveOp && !isStale ? classifySignal(latestSignal, now, asset) : null;
+  // Com o dado do ativo ATRASADO, com FALHA ou SEM LEITURA o estado do aviso não vale: "Checando agora" seria falso (o app não está
+  // lendo o ativo) — o rótulo 📡 e o contorno de dado atrasado mandam. `isStale` só cobre atraso/falha persistente (tem `reason`);
+  // falha recente (`error`) e ativo nunca lido (`unknown`) vêm com `reason: null`, por isso `dataUnreliable` também entra (Codex, PR #542).
+  const sigState = latestSignal && !hasActiveOp && !isStale && !dataUnreliable ? classifySignal(latestSignal, now, asset) : null;
   const sigStyle = sigState ? signalCardStyle(sigState.phase) : null;
   const sigReason = sigState ? rejectionCopy(latestSignal, sigState.phase) : null;
   const opSide = tradeOp?.side;

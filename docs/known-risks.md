@@ -34512,7 +34512,7 @@ Pergunta do usuário: "estranho não ter nenhuma operação que possa sim estar 
   - **⏳ Esperando confirmação** (dentro da janela de 4 h): contorno e brilho âmbar parados + o MOTIVO em linguagem simples ("Movimento sem força", "Falta o gatilho", "Checando agora"…);
   - **🚫 Já passou**: sem destaque, selo BUY/SELL apagado, motivo em cinza (em âmbar pareceria que ainda vale);
   - **ℹ Só informação**: sem destaque, selo apagado, rótulo uma vez só.
-  Esperando confirmação **vence** "perto da linha" (o azul continua só para quem não tem aviso). **Dado do ativo atrasado/falho** suspende o estado do aviso: "Checando agora" seria falso, e o 📡 e o
+  Esperando confirmação **vence** "perto da linha" (o azul continua só para quem não tem aviso). **Dado do ativo atrasado, com falha (inclusive recente) ou sem leitura** suspende o estado do aviso (`isStale` sozinho não bastava: falha recente e ativo nunca lido vêm com `reason: null` — achado do Codex, PR #542, corrigido com `dataUnreliable`): "Checando agora" seria falso, e o 📡 e o
   contorno de atraso mandam. Operação ativa (verde/rosa), flash de sinal/operação novos e o azul de "perto da linha" ficam como estavam.
 - **Regra do item 277 preservada [travada por teste]:** a cor do contorno NÃO depende do lado (BUY e SELL esperando ficam idênticos), nada de verde/rosa no estilo do aviso, e nenhum rótulo sugere
   compra/venda iminente, probabilidade ou "próximo".

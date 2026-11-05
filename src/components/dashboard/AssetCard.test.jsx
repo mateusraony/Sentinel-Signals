@@ -723,6 +723,21 @@ describe('AssetCard — estado do aviso manda no rótulo e no contorno (item 290
     expect(bordaDoCartao(container)).toMatch(/255, 159, 67/); // laranja de dado atrasado
   });
 
+  it('falha de leitura RECENTE (error, sem reason) ou ativo NUNCA LIDO (unknown): o estado do aviso também não vale (Codex, PR #542)', () => {
+    const casos = [
+      [{ ...ASSET, scan_status: 'error' }, /📡 Falha/],
+      [{ ...ASSET, scan_error_since: new Date(Date.now() - 10 * 60000).toISOString() }, /📡 Falha/],
+      [{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true }, /📡 Sem leitura/], // sem last_scan_at
+    ];
+    for (const [asset, rotulo] of casos) {
+      const { container, unmount } = renderCard({ asset, latestSignal: RF4H() });
+      expect(screen.getAllByText(rotulo).length).toBeGreaterThan(0); // o cartão avisa que o dado não veio
+      expect(container.textContent).not.toMatch(/Checando agora|Esperando confirmação/);
+      expect(bordaDoCartao(container)).not.toMatch(/255, 209, 102/);
+      unmount();
+    }
+  });
+
   it('aviso valendo mantém o selo BUY/SELL vivo (sem apagar)', () => {
     renderCard({ asset: ASSET, latestSignal: RF4H() });
     expect(screen.getByText('BUY').closest('span').style.opacity).toBe('');
