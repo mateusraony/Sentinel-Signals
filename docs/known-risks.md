@@ -34570,3 +34570,30 @@ medido: o que o sistema enxergava na entrada, o plano contra o realizado e a con
   `created_date`, prazo de timeframe desconhecido, partes com o mesmo peso, alvo do lado errado, nota de custo fixa, bloco montado fechado, bloco vazio, sinal do custo, partes sumindo… — todas reprovam teste. **Duas sobreviveram
   na 1ª rodada e foram tratadas:** `ms >= 0` na duração era equivalente (o `hoursLabel` já recusa negativo → simplificado) e "carimbo ruim na frente esconde o válido" não tinha teste (adicionado); a cor do líquido (verde/rosa) não
   tinha teste (adicionado, lido do atributo `style`, falha se o elemento não existir). **Achado do guard de emojis (rodando o gate completo):** o 1º rascunho usava 📏 (já é "distância do Range Filter") e 🔎 (já é "Sinal para Conferir") — trocados por 👁️/🗺️, e os quatro glifos do Histórico (inclusive o 📖 do H1, que estava sem registro) entraram em `emojiRegistry.js` e `docs/notification-vocabulary.md`. Pequeno reuso: `hoursLabel` passou a ser exportado de `tradeStory.js` (o `elapsedLabel` chama o mesmo — comportamento idêntico, testes do H1 intactos).
+
+**Estado do H2:** mesclado (PR #544, `45e4ccf`) depois do "aprovado" do usuário sobre o visual e de CI verde + Codex sem achados.
+
+## 293. Aba Histórico, 3º PR (H3): "Visão geral" — relatório de performance + "Como terminaram" + a linha "Fora da conta" (2026-11-05)
+
+**Pedido do usuário (05/11):** dos 4 itens do Histórico, "resumo e estatísticas no topo". Perguntei se os números do topo deveriam passar a ignorar as operações que não são decisões do motor (simulação manual, retroativa, recuperada,
+encerrada à mão); a resposta foi **"não entendi essa dúvida"** — então **adotei o padrão que não muda nada do que já funciona** e expliquei em linguagem simples, deixando a porta aberta para a mudança se o usuário quiser.
+
+- **Fato lido [`TradeHistory.jsx`]:** a faixa-resumo do topo (`summarizeOps(filtered)`: contagens, WR, Total) **soma tudo** o que está na tela, inclusive as 4 origens acima — `LiveConfidenceCard`/`PredictiveAnalysis` as deixam de fora
+  (`splitByProvenance`, item 278), o Histórico nunca deixou. **Nenhum número existente mudou.**
+- **O que entrou (só leitura/visual; motor, banco, `TradeOperation` e Telegram intocados):**
+  1. **Linha "Fora da conta: 1 simulação manual · 1 retroativa — não são decisões do motor, mas entram nos números desta tela."** logo abaixo da faixa-resumo (`provenanceExclusionText(splitByProvenance(filtered).excluded)`, as
+     funções do item 278 sem alteração). Segue o filtro; some quando não há nenhuma.
+  2. **"Visão geral"** (recolhível, aberta por padrão; só com operação na tela): o `PerformanceReport` que já existia em Operações, sobre as operações **filtradas** (só quando há operação com resultado calculável) + uma linha
+     "Poucas operações contadas (N): esses números oscilam muito e não provam vantagem." enquanto `summarizeOps` diz `sample_too_small` (menos de 30) — o mesmo gate de amostra do item 44, não uma regra nova.
+  3. **"Como terminaram"** (`src/lib/tradeOutcomesBreakdown.js` puro + `src/components/trades/OutcomeBreakdown.jsx`): as fechadas contadas por tipo de saída — alvo final (TP2) · TP1 fechou tudo · stop com lucro · stop no zero a zero ·
+     stop com perda · invalidada · tempo esgotado · mercado sem direção · encerrada à mão · outras. Cada operação cai em **exatamente uma** categoria (invariante: a soma é o total); o resultado do stop vem de `classifyOutcome` (fonte
+     única, nunca de `tp1_hit`); "encerrada à mão" ganha de qualquer status; sem resultado calculável vira "Outras" (nunca ganho/perda inventados); as cores são as de `outcomeColor` (testado). Cor nunca sozinha: rótulo, contagem e %.
+- **Não mexi [limitação anotada, decisão à parte]:** o `DaySummary` ("Resumo do Dia") conta por data de **abertura** e ignora os filtros — uma operação aberta ontem e fechada hoje não entra no dia de hoje. `summarizeOps`, `PnLChart`
+  e a faixa-resumo ficaram como estavam. **Quirk já existente do `PerformanceReport`** (visível quando o filtro deixa só perdas): "Ganho Médio +0.00%" sem nenhum vencedor — não é deste PR.
+- **Decisão pendente (do usuário, não bloqueia):** se o topo deve passar a contar **só** as decisões do motor (como a Confiança ao Vivo) ou mostrar os dois números lado a lado. Hoje: tudo somado + aviso.
+- **Limites [honesto]:** a tela carrega as últimas 200 operações (como o resto da página), então a visão geral é dessa janela; as categorias são contagens (não dizem quanto cada tipo ganhou/perdeu); a prova visual é captura de tela de
+  ambiente de teste com dados de **exemplo**, não da tela do usuário.
+- **Provas [verificado]:** +41 testes (27 do módulo puro, 5 do componente, 9 da página: filtros mudando os 3 blocos, linha "Fora da conta" com/sem/seguindo o filtro, amostra pequena × 30 ou mais, esconder/mostrar, só operações
+  sem resultado, nada na tela); **35 mutações plantadas** (17 na contagem, 18 na tela e no componente) — todas reprovam teste. Dois testes de "ausência" passariam no vazio (a frase solta e o relatório sem título) e foram
+  endurecidos. Lições do H1/H2 aplicadas antes do gate: nenhum glifo novo (ícones do sistema; 🏁 já é "alvo final atingido" no Telegram) e o botão novo **sem `aria-expanded`** (os testes antigos abrem um card pelo 1º `[aria-expanded]`;
+  mesmo padrão do botão "Curva de Capital" — 4 testes antigos quebraram quando eu o pus, e voltaram ao tirar).

@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { operationProvenance, PROVENANCE_LABEL } from '@/lib/operationProvenance';
+import { operationProvenance, PROVENANCE_LABEL, splitByProvenance, provenanceExclusionText } from '@/lib/operationProvenance';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { History, Filter, BarChart2, ChevronDown, ChevronUp, Search, Copy, Check } from 'lucide-react';
+import { History, Filter, BarChart2, Activity, ChevronDown, ChevronUp, Search, Copy, Check } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import PnLChart from '@/components/trades/PnLChart';
+import PerformanceReport from '@/components/trades/PerformanceReport';
+import OutcomeBreakdown from '@/components/trades/OutcomeBreakdown';
 // Achado M-17 do Raio-X de UI/UX: reusa as MESMAS funções puras já
 // corrigidas em AssetCard.jsx (achado do Codex review, PR #430) em vez
 // de duplicar texto estático de TP1/TP2 — evita repetir o mesmo bug
@@ -553,6 +555,7 @@ export default function TradeHistory() {
   const [filterMaxPnl, setFilterMaxPnl] = useState('');
   const [search, setSearch] = useState('');
   const [showChart, setShowChart] = useState(true);
+  const [showOverview, setShowOverview] = useState(true); // item 293 — "Visão geral" (relatório + "Como terminaram")
   const [sortBy, setSortBy] = useState('date_desc');
 
   const { data: operations = [], isLoading, isError, refetch } = useQuery({
@@ -593,8 +596,12 @@ export default function TradeHistory() {
     return list;
   }, [history, filterTf, filterSide, filterResult, filterDateFrom, filterDateTo, filterMinPnl, filterMaxPnl, search, sortBy]);
 
-  const { wins, losses, be, counted, totalPnlPct: totalPnl } = summarizeOps(filtered);
+  const summary = summarizeOps(filtered);
+  const { wins, losses, be, counted, totalPnlPct: totalPnl } = summary;
   const wr = counted > 0 ? Math.round((wins / counted) * 100) : 0;
+  // Item 293: a faixa-resumo soma TUDO o que está na tela, inclusive simulação manual, retroativa, recuperada e encerrada à mão (não são decisões do
+  // motor — `LiveConfidenceCard` já as deixa de fora). Os números não mudam; só dizemos quantas dessas estão dentro da soma.
+  const excludedNote = provenanceExclusionText(splitByProvenance(filtered).excluded);
   // docs/known-risks.md item 36 / roadmap.md Bloco 5 — volume de
   // exit_ambiguous (candle fechado tocou stop E TP no mesmo candle; política
   // "stop vence" já em produção, isso só torna o volume OBSERVÁVEL no
@@ -773,6 +780,37 @@ export default function TradeHistory() {
           <span className="ml-auto font-bold" style={{ color: totalPnl >= 0 ? '#00ff80' : '#ff1478' }}>
             Total: {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}%
           </span>
+        </div>
+      )}
+
+      {/* Item 293 — o que está dentro da soma acima que não é decisão do motor. Só aparece quando existe alguma. */}
+      {filtered.length > 0 && excludedNote && (
+        <p className="-mt-3 px-1 text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
+          {excludedNote} — não são decisões do motor, mas entram nos números desta tela.
+        </p>
+      )}
+
+      {/* Item 293 — "Visão geral": o relatório de performance que já existe em Operações + "Como terminaram", sobre as operações FILTRADAS. */}
+      {filtered.length > 0 && (
+        <div className="space-y-3">
+          {/* Sem `aria-expanded` de propósito: mesmo padrão do botão "Curva de Capital", e os testes desta tela abrem um card pelo 1º `[aria-expanded]` — um
+              segundo antes dos cards abriria/fecharia esta seção em vez do card. O texto "esconder/mostrar" já diz o estado. */}
+          <button onClick={() => setShowOverview(!showOverview)} className="flex items-center gap-2 group">
+            <Activity className="w-4 h-4" style={{ color: '#00e5ff' }} />
+            <span className="text-sm font-bold text-foreground/80 group-hover:text-foreground transition-colors">Visão geral</span>
+            <span className="text-10px font-mono" style={{ color: '#00e5ff' }}>{showOverview ? '▲ esconder' : '▼ mostrar'}</span>
+          </button>
+          {showOverview && (
+            <div className="space-y-4">
+              {counted > 0 && <PerformanceReport trades={filtered} />}
+              {summary.inconclusiveReason === 'sample_too_small' && counted > 0 && (
+                <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  Poucas operações contadas ({counted}): esses números oscilam muito e não provam vantagem.
+                </p>
+              )}
+              <OutcomeBreakdown ops={filtered} />
+            </div>
+          )}
         </div>
       )}
 
