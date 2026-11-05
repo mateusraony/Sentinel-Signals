@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { operationProvenance, splitByProvenance, provenanceExclusionText, MANUAL_EDIT_REASON, MANUAL_CLOSE_REASONS, PROVENANCE } from './operationProvenance.js';
+import { operationProvenance, isManualExit, splitByProvenance, provenanceExclusionText, MANUAL_EDIT_REASON, MANUAL_CLOSE_REASONS, PROVENANCE } from './operationProvenance.js';
 
 // Item 278 (PR-C): a estatística ao vivo misturava entradas que o motor NÃO
 // decidiu (simulação manual pelo painel, operação retroativa, operação
@@ -42,6 +42,33 @@ describe('operationProvenance', () => {
 
   it('as marcas são os textos que Trades.jsx grava (fonte única importada lá)', () => {
     expect(MANUAL_CLOSE_REASONS).toEqual(['Alterado manualmente', 'Encerrado manualmente', 'Invalidado manualmente']);
+  });
+});
+
+// Achado do Codex (PR #545): `operationProvenance` devolve MANUAL (simulação) para `source: 'manual'` ANTES de olhar o encerramento, então uma simulação
+// encerrada à mão pelo painel não aparecia como "encerrada à mão" em quem usava só a proveniência. `isManualExit` olha só o encerramento.
+describe('isManualExit — encerrada à mão, independente de como a entrada nasceu', () => {
+  it('os três textos do painel e a marca estruturada do snapshot de saída', () => {
+    for (const closed_reason of MANUAL_CLOSE_REASONS) expect(isManualExit({ closed_reason })).toBe(true);
+    expect(isManualExit({ closed_reason: 'outro texto', decision_snapshot: { executor: 'manual' } })).toBe(true);
+  });
+  it('vale para qualquer origem da entrada (simulação, retroativa, recuperada, motor)', () => {
+    for (const source of ['manual', 'backfill', 'recovery', 'range_filter', undefined]) {
+      expect(isManualExit({ source, closed_reason: 'Encerrado manualmente' })).toBe(true);
+      expect(isManualExit({ source, decision_snapshot: { executor: 'manual' } })).toBe(true);
+    }
+  });
+  it('encerramento do motor (ou sem encerramento) não é "à mão", mesmo numa simulação', () => {
+    for (const op of [{ source: 'manual', closed_reason: 'Time Stop' }, { source: 'manual', decision_snapshot: { executor: 'cron' } }, { source: 'manual', decision_snapshot: { executor: 'browser' } },
+      { source: 'manual' }, { closed_reason: 'TP1_FULL' }, {}, null, undefined, 7]) {
+      expect(isManualExit(op)).toBe(false);
+    }
+  });
+  it('a proveniência NÃO muda: simulação encerrada à mão continua sendo "simulação" (conta uma vez só em "Fora da conta")', () => {
+    expect(operationProvenance({ source: 'manual', closed_reason: 'Encerrado manualmente' })).toBe(PROVENANCE.MANUAL);
+    expect(operationProvenance({ source: 'manual', decision_snapshot: { executor: 'manual' } })).toBe(PROVENANCE.MANUAL);
+    const { excluded } = splitByProvenance([{ source: 'manual', closed_reason: 'Encerrado manualmente' }]);
+    expect(excluded).toMatchObject({ manual: 1, edited: 0, total: 1 });
   });
 });
 

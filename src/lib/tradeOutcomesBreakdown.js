@@ -9,7 +9,7 @@
  * Módulo puro (sem React, sem I/O).
  */
 import { classifyOutcome, isClosedOp } from './tradeMetrics.js';
-import { operationProvenance, PROVENANCE } from './operationProvenance.js';
+import { isManualExit } from './operationProvenance.js';
 
 export const OUTCOME_KIND = Object.freeze({
   TP2: 'tp2',
@@ -43,10 +43,13 @@ const ORDER = Object.keys(OUTCOME_META);
 /**
  * Em qual categoria uma operação FECHADA cai. `null` se a operação não está fechada.
  * Precedência: encerrada à mão (o resultado não é do motor) → status terminal → `closed_reason`.
+ * "À mão" olha só o MOTIVO do encerramento (`isManualExit`), não a proveniência da entrada: uma simulação (`source: 'manual'`) encerrada à mão
+ * pelo painel continua com `source: 'manual'` e `operationProvenance` a chama de simulação antes de ver o encerramento (achado do Codex, PR #545).
+ * Uma simulação que o MOTOR encerrou (stop, TP, tempo…) segue classificada pela saída.
  */
 export function classifyClosedOp(op) {
   if (!op || typeof op !== 'object' || !isClosedOp(op)) return null;
-  if (operationProvenance(op) === PROVENANCE.EDITED) return OUTCOME_KIND.MANUAL;
+  if (isManualExit(op)) return OUTCOME_KIND.MANUAL;
   switch (op.status) {
     case 'TP2_HIT':
       return OUTCOME_KIND.TP2;

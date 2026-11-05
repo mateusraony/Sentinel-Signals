@@ -61,6 +61,27 @@ describe('classifyClosedOp — a categoria de cada operação fechada', () => {
     expect(classifyClosedOp({ ...STOP_LOSS, decision_snapshot: { executor: 'manual' } })).toBe(OUTCOME_KIND.MANUAL);
   });
 
+  it('REGRESSÃO (Codex, PR #545): simulação/retroativa/recuperada ENCERRADA À MÃO pelo painel é "encerrada à mão" — não "outras" nem "invalidada"', () => {
+    // Encerrar/Invalidar do painel só mudam status + closed_reason + snapshot: `source` continua o da entrada, e `operationProvenance` devolve
+    // MANUAL (simulação) antes de olhar o encerramento. A categoria olha o MOTIVO do encerramento, não a origem da entrada.
+    for (const source of ['manual', 'backfill', 'recovery']) {
+      expect(classifyClosedOp({ ...MANUAL_CLOSE, source })).toBe(OUTCOME_KIND.MANUAL);
+      expect(classifyClosedOp({ ...base, status: 'INVALIDATED', closed_reason: 'Invalidado manualmente', exit_price: 98, source })).toBe(OUTCOME_KIND.MANUAL);
+      expect(classifyClosedOp({ ...base, status: 'CLOSED', closed_reason: 'Alterado manualmente', exit_price: 101, source })).toBe(OUTCOME_KIND.MANUAL);
+      expect(classifyClosedOp({ ...STOP_LOSS, source, decision_snapshot: { executor: 'manual' } })).toBe(OUTCOME_KIND.MANUAL);
+    }
+    // e a contagem inteira acompanha: a simulação encerrada à mão entra em "Encerrada à mão", não em "Outras"
+    const { items } = buildOutcomeBreakdown([{ ...MANUAL_CLOSE, source: 'manual' }, { ...base, status: 'INVALIDATED', closed_reason: 'Invalidado manualmente', exit_price: 98, source: 'manual' }]);
+    expect(items.map((i) => [i.key, i.count])).toEqual([['manual', 2]]);
+  });
+
+  it('simulação que o MOTOR encerrou (snapshot de saída com executor do motor) segue classificada pela saída, não como "à mão"', () => {
+    for (const executor of ['cron', 'browser', null]) {
+      expect(classifyClosedOp({ ...STOP_LOSS, source: 'manual', decision_snapshot: { executor } })).toBe(OUTCOME_KIND.STOP_LOSS);
+      expect(classifyClosedOp({ ...TIME_STOP, source: 'manual', decision_snapshot: { executor } })).toBe(OUTCOME_KIND.TIME_STOP);
+    }
+  });
+
   it('simulação manual / retroativa / recuperada continuam sendo classificadas pela SAÍDA (a proveniência vira aviso à parte)', () => {
     for (const source of ['manual', 'backfill', 'recovery']) {
       expect(classifyClosedOp({ ...STOP_LOSS, source })).toBe(OUTCOME_KIND.STOP_LOSS);

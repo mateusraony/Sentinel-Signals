@@ -34597,3 +34597,7 @@ encerrada à mão); a resposta foi **"não entendi essa dúvida"** — então **
   sem resultado, nada na tela); **35 mutações plantadas** (17 na contagem, 18 na tela e no componente) — todas reprovam teste. Dois testes de "ausência" passariam no vazio (a frase solta e o relatório sem título) e foram
   endurecidos. Lições do H1/H2 aplicadas antes do gate: nenhum glifo novo (ícones do sistema; 🏁 já é "alvo final atingido" no Telegram) e o botão novo **sem `aria-expanded`** (os testes antigos abrem um card pelo 1º `[aria-expanded]`;
   mesmo padrão do botão "Curva de Capital" — 4 testes antigos quebraram quando eu o pus, e voltaram ao tirar).
+- **Revisão do Codex (PR #545, 1 × P2, real):** `operationProvenance` devolve MANUAL (simulação) para `source: 'manual'` **antes** de olhar o encerramento, e os botões Encerrar/Invalidar do painel só mudam `status` + `closed_reason` +
+  snapshot (o `source` fica o da entrada) — então uma simulação encerrada à mão caía em "Outras"/"Invalidada" em vez de "Encerrada à mão". Corrigido na raiz: o teste "foi encerrada à mão?" virou `isManualExit(op)` em
+  `operationProvenance.js` (olha só o motivo do encerramento e o executor do snapshot, independe da origem da entrada), usado **pelas duas** — `operationProvenance` (comportamento idêntico: a simulação continua "simulação" e conta
+  uma vez só em "Fora da conta") e `classifyClosedOp`. Simulação que o **motor** encerrou segue classificada pela saída. +4 testes (reproduzem o caso; desfazer a correção os derruba) e 6 mutações novas, todas reprovam.
