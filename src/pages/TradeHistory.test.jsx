@@ -370,3 +370,61 @@ describe('TradeHistory — marca de simulação e de encerramento à mão (item 
     expect(screen.getByText('✏️ Encerrada à mão')).toBeTruthy();
   });
 });
+
+// Item 291 — "A história deste trade" + o timeframe do AVISO. O filtro 1H/4H/1D comparava com `timeframe` (execução: 15m/5m), que nunca
+// casava com nenhum botão: escolher 4H não mostrava nenhuma operação nova. Agora compara com o do aviso (`signal_timeframe`).
+describe('TradeHistory — timeframe do aviso e história do trade (item 291)', () => {
+  const base = { side: 'BUY', status: 'STOP_HIT', entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 107.5, tp2: 115, exit_price: 95, partial_percent: 50, tp1_hit: false, stop_hit_at: AGORA, closed_at: AGORA, created_date: AGORA };
+  const OP_4H = { ...base, id: 'f1', asset_id: 'a1', symbol: 'BTCUSDT', timeframe: '15m', signal_timeframe: '4h', mfe_r: 0.8, mae_r: -1.0, bars_to_mfe: 2 };
+  const OP_SMC_1H = { ...base, id: 'f2', asset_id: 'a2', symbol: 'ETHUSDT', timeframe: '5m', signal_timeframe: '1h', cascade: '1h_5m' };
+  const OP_LEGADA = { ...base, id: 'f3', asset_id: 'a3', symbol: 'SOLUSDT', timeframe: '15m' }; // sem signal_timeframe: cascata 4h→15m
+
+  async function abrir(ops) {
+    mockBackend(ops);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+    await screen.findAllByText('BTC/USDT');
+  }
+  const simbolosNaLista = () => ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'].filter((s) => screen.queryAllByText(s).length > 0);
+
+  it('o selo mostra "aviso → entrada": 4H → 15M, 1H → 5M e a operação legada de 15m também é 4H → 15M', async () => {
+    await abrir([OP_4H, OP_SMC_1H, OP_LEGADA]);
+    expect(screen.getAllByText('4H → 15M').length).toBe(2);
+    expect(screen.getAllByText('1H → 5M').length).toBe(1);
+  });
+
+  it('REGRESSÃO: o filtro 4H mostra as operações de aviso 4h (inclusive a legada de 15m) e esconde a de 1h; o 1H faz o contrário', async () => {
+    await abrir([OP_4H, OP_SMC_1H, OP_LEGADA]);
+    expect(screen.getAllByText('4H → 15M').length).toBe(2);
+    fireEvent.click(screen.getByText('4H'));
+    await waitFor(() => expect(screen.queryAllByText('1H → 5M').length).toBe(0));
+    expect(screen.getAllByText('4H → 15M').length).toBe(2); // BTC e SOL continuam
+    fireEvent.click(screen.getByText('1H'));
+    await waitFor(() => expect(screen.getAllByText('1H → 5M').length).toBe(1));
+    expect(screen.queryAllByText('4H → 15M').length).toBe(0);
+  });
+
+  it('expandir mostra "A história deste trade" em frases simples, na ordem', async () => {
+    await abrir([OP_4H]);
+    fireEvent.click(screen.getByText('BTC/USDT'));
+    const grupo = await screen.findByRole('group', { name: 'A história deste trade' });
+    const itens = [...grupo.querySelectorAll('li')].map((li) => li.textContent);
+    expect(itens[0]).toMatch(/^📍 Abriu uma operação de compra a \$100\.00 \(sinal de .+\) \(aviso do gráfico de 4H, confirmado no de 15M\)\.$/);
+    expect(itens[1]).toMatch(/^No caminho, chegou a \+0\.80R a favor e a -1\.00R contra \(o melhor ponto veio ~8 h depois da entrada\)/);
+    expect(itens.some((t) => /^🛑 Saiu pelo stop a \$95\.0000/.test(t))).toBe(true);
+    expect(itens.at(-1)).toMatch(/^Resultado final: -/);
+  });
+
+  it('fechado, a história não é montada (só ao expandir)', async () => {
+    await abrir([OP_4H]);
+    expect(screen.queryByRole('group', { name: 'A história deste trade' })).toBeNull();
+  });
+
+  it('operação legada sem caminho nem TP1: a história só tem o que existe', async () => {
+    await abrir([{ ...OP_LEGADA, symbol: 'BTCUSDT' }]);
+    fireEvent.click(screen.getByText('BTC/USDT'));
+    const grupo = await screen.findByRole('group', { name: 'A história deste trade' });
+    expect(grupo.textContent).not.toMatch(/No caminho|Bateu o TP1|undefined|NaN/);
+    expect(grupo.textContent).toMatch(/Abriu uma operação/);
+  });
+});

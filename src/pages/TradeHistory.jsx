@@ -21,6 +21,7 @@ import { formatPrice } from '@/lib/priceProximity';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 import { CandleBoundTag, DetectionLag } from '@/components/dashboard/EventTimeline';
 import { closedReasonLabel } from '@/lib/eventTimeline';
+import { buildTradeStory, opSignalTimeframe, timeframeChipLabel } from '@/lib/tradeStory';
 import { explainOperationDecision, legacyClosedOperationText } from '@/lib/decisionExplanation';
 import { useCopyToClipboard, formatTradeOpLine } from '@/lib/clipboardText';
 import { QueryErrorState } from '@/components/QueryErrorState';
@@ -50,6 +51,28 @@ const STATUS_MAP = {
   INVALIDATED: { label: '⚠️ Invalidado',        color: '#ff9f43', short: 'INV' },
   CLOSED:      { label: '✖ Encerrado',          color: '#64748b', short: 'ENC' },
 };
+
+/**
+ * Item 291 — "A história deste trade": o que aconteceu, em ordem e em frases simples (campos que a operação já tem). É um componente
+ * próprio, montado só com o card ABERTO: nada é calculado nas até 200 linhas fechadas.
+ */
+function TradeStory({ op }) {
+  const story = buildTradeStory(op, { fmt: (iso) => moment(iso).format('DD/MM/YY HH:mm') });
+  if (story.length === 0) return null;
+  return (
+    <div className="rounded-lg px-3 py-2.5" role="group" aria-label="A história deste trade"
+      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <div className="text-9px font-mono text-muted-foreground mb-1.5">📖 A história deste trade</div>
+      <ol className="space-y-1">
+        {story.map((step) => (
+          <li key={step.key} className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
+            {step.text}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
 
 function HistoryCard({ op }) {
   const [expanded, setExpanded] = useState(false);
@@ -83,7 +106,6 @@ function HistoryCard({ op }) {
 
   const exitPrice = getExitPrice(op);
   const closedAt = getClosedAt(op);
-
   // Duration from signal creation to close
   const duration = op.created_date && closedAt
     ? moment.duration(moment(closedAt).diff(moment(op.created_date))).humanize()
@@ -116,7 +138,7 @@ function HistoryCard({ op }) {
             <span className="font-bold text-sm text-foreground">{op.symbol?.replace('USDT', '/USDT')}</span>
             <span className="text-9px font-mono px-1.5 py-0.5 rounded"
               style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.07)' }}>
-              {op.timeframe?.toUpperCase()}
+              {timeframeChipLabel(op)}
             </span>
             {op.tier && (
               <Tooltip>
@@ -240,6 +262,9 @@ function HistoryCard({ op }) {
               </p>
             </div>
           )}
+
+          {/* Item 291 — "A história deste trade": o que aconteceu, em ordem e em frases simples (campos que a operação já tem). */}
+          <TradeStory op={op} />
 
           {/* Price breakdown grid — só TP1/TP2 precisam de tooltip
               (Entrada/Stop Inicial já são autoexplicativos). Texto
@@ -474,7 +499,9 @@ export default function TradeHistory() {
   const filtered = useMemo(() => {
     let list = history.filter(op => {
       if (search && !op.symbol?.toLowerCase().includes(search.toLowerCase())) return false;
-      if (filterTf !== 'all' && op.timeframe !== filterTf) return false;
+      // Item 291: o filtro 1H/4H/1D é o timeframe do AVISO (signal_timeframe), não o de execução (`timeframe` = 15m/5m, que nunca
+      // casava com nenhum botão — o filtro não mostrava nenhuma operação nova). Mesmo critério de Trades.jsx.
+      if (filterTf !== 'all' && opSignalTimeframe(op) !== filterTf) return false;
       if (filterSide !== 'all' && op.side !== filterSide) return false;
       if (filterResult !== 'all') {
         const outcome = classifyOutcome(op);

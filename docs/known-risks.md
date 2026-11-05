@@ -34495,7 +34495,7 @@ Pergunta do usuário: "estranho não ter nenhuma operação que possa sim estar 
 - **Cores dos cartões "tudo azul" [fato, leitura do código]:** não é regressão — é o item 277 (17/10): a barra de proximidade pulsava na cor do lado e soava como compra/venda iminente, e passou a ser azul neutro e
   parado (`ProximityBar.jsx:36`, `AssetCard.jsx:401-424`). Cor viva só com operação ativa, flash de sinal/operação novos ou dado atrasado. Com mercado lateral e sem operação, vários ativos ficam "perto da linha" ao mesmo tempo.
 - **Bug confirmado, ainda não corrigido:** na aba Histórico os botões 1H/4H/1D filtram por `op.timeframe` (`TradeHistory.jsx:477`), que é `15m` (cascata 4h→15m) ou `5m` (SMC) — então não mostram nenhuma operação nova.
-  `Trades.jsx:583` já usa `signal_timeframe ?? timeframe`. Entra no primeiro PR do Histórico.
+  `Trades.jsx:583` já usa `signal_timeframe ?? timeframe`. **Corrigido no item 291.**
 - **Cron:** confirmado a 15 min (02:15, 02:30 e 02:45 UTC de 05/11; passadas de ~12 s, 10 ativos, 75 consultas) — antes eram 10 em 10 até 02:10.
 
 ## 290. Cartões de ativo: o estado do aviso passa a mandar no rótulo e no contorno (2026-11-05)
@@ -34521,3 +34521,22 @@ Pergunta do usuário: "estranho não ter nenhuma operação que possa sim estar 
 - **Provas [verificado]:** +30 testes (estilo puro e cartão renderizado: borda lida do atributo `style`, que falha se o cartão não for achado — um `not.toMatch` em texto vazio passaria à toa); 18 mutações plantadas
   (sem contorno âmbar, "perto da linha" vencendo, rótulo antigo, selo que não apaga, motivo escondido/de cor fixa, estado com operação ativa, dado atrasado ignorado, chip repetido, cor dependendo do lado…),
   todas reprovam teste. O primeiro rascunho do teste tinha o seletor errado e 3 asserções passavam no vazio — foi o que a regra "reintroduza o bug" pegou.
+
+## 291. Aba Histórico, 1º PR (H1): "A história deste trade", selo "aviso → entrada" e o filtro de timeframe corrigido (2026-11-05)
+
+**Pedido do usuário (05/11):** "na aba Histórico acredito que dá pra melhorar e muito a forma com que os dados e o que aconteceu no trade, pois está muito vazio… veja com os agentes". Marcou as 4 coisas que quer
+ver: linha do tempo do trade, quanto chegou a ganhar/perder, por que fechou + o que o sistema viu, resumo/estatísticas no topo. Um agente de leitura mapeou a página (campos mostrados × campos que existem); este é o
+**H1** de 3 PRs (H2 = "por que fechou e o que o sistema viu"; H3 = visão geral no topo).
+
+- **Bug achado e corrigido [fato]:** os botões 1H/4H/1D filtravam por `op.timeframe` (`TradeHistory.jsx`), que é o timeframe de EXECUÇÃO (`15m`/`5m`) — nunca casava com nenhum botão, então **escolher 4H não mostrava
+  nenhuma operação nova**. Agora filtra por `opSignalTimeframe(op)` (`signal_timeframe`; legada de 15m/5m = `4h`, mesmo fallback de `scanner.js`/`SIGNAL_TF_MS`; anterior à cascata = o próprio `timeframe`), o mesmo critério
+  de `Trades.jsx:583`. Teste de regressão com operação 4h, 1h (SMC) e legada.
+- **Selo "4H → 15M"** (aviso → entrada) no lugar de só "15M" (`timeframeChipLabel`).
+- **"📖 A história deste trade"** (`src/lib/tradeStory.js`, puro + `TradeStory` em `TradeHistory.jsx`, só montado com o card aberto): abriu → o caminho (melhor e pior ponto em R, quando veio o melhor, quanto o resultado final ficou
+  abaixo dele) → TP1 → TP2 → stop movido (de/para, só o valor final é gravado: **não se sabe quando subiu**) → saída → resultado. Só usa campos que a operação já tem: operação legada gera só o que existe, nunca
+  "undefined"/"NaN"/horário inventado. `bars_to_mfe` é em barras do timeframe do AVISO (4h; 1h na SMC) — convertido em horas com a mesma convenção do Time Stop. Resultado vem de `tradeMetrics` (fonte única, já líquido de custos).
+  Texto neutro (descreve, não prevê nem opina), travado por teste. **Nada mudou** no motor, no banco, em `TradeOperation` nem nos textos/ chips que os testes já travavam (MFE/MAE, Linha do Tempo, "por quê").
+- **Limites [honesto]:** a frase "devolveu" compara o resultado final (líquido, com parcial) com o MFE do total da posição — é uma comparação aproximada, dita como "ficou X R abaixo desse melhor ponto"; o MFE/MAE tem resolução de vela
+  (não de tick) e não existe em operação antiga; a prova visual é por captura de tela de um ambiente de teste com dados de EXEMPLO (fictícios), não da tela do usuário.
+- **Provas [verificado]:** +31 testes (módulo puro e página: filtro, selo, história aberta/fechada, legada); 16 mutações plantadas — 15 reprovaram de primeira e **1 sobreviveu** ("montar a história mesmo com o card fechado": não muda a
+  tela, só gastava conta à toa) → o cálculo foi movido para um componente que só existe com o card aberto (a mutação equivalente deixou de existir) e a variante real (renderizar a história fora do bloco aberto) reprova.
