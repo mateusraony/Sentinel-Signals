@@ -11,7 +11,8 @@ import { fetch24hStats } from '@/lib/marketDataProvider';
 import { activateSignalManually } from '@/lib/scanner';
 import { backend } from '@/api/entities';
 import { toast } from '@/components/ui/use-toast';
-import { classifySignal, SIGNAL_PHASE } from '@/lib/signalStatus';
+import { classifySignal, SIGNAL_PHASE, rejectionCopy } from '@/lib/signalStatus';
+import { signalCardStyle, reasonColorFor } from '@/lib/assetCardSignalStyle';
 import { logError } from '@/lib/logger';
 import moment from 'moment';
 import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar';
@@ -327,6 +328,14 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
     && !latestSignal.is_dismissed
     && latestSignal.source === 'range_filter' && latestSignal.timeframe === '4h'
     && classifySignal(latestSignal, now, asset).phase === SIGNAL_PHASE.WAITING;
+  // Item 290: o estado do último aviso (esperando confirmação / já passou / só informação) manda no rótulo e no contorno —
+  // antes QUALQUER aviso sem operação virava "🔔 Aviso pendente", até um de dias atrás já expirado.
+  // Com o dado do ativo ATRASADO, com FALHA ou SEM LEITURA o estado do aviso não vale: "Checando agora" seria falso (o app não está
+  // lendo o ativo) — o rótulo 📡 e o contorno de dado atrasado mandam. `isStale` só cobre atraso/falha persistente (tem `reason`);
+  // falha recente (`error`) e ativo nunca lido (`unknown`) vêm com `reason: null`, por isso `dataUnreliable` também entra (Codex, PR #542).
+  const sigState = latestSignal && !hasActiveOp && !isStale && !dataUnreliable ? classifySignal(latestSignal, now, asset) : null;
+  const sigStyle = sigState ? signalCardStyle(sigState.phase) : null;
+  const sigReason = sigState ? rejectionCopy(latestSignal, sigState.phase) : null;
   const opSide = tradeOp?.side;
   const sigSide = latestSignal?.signal_type;
   const isBuy = (opSide || sigSide) === 'BUY';
@@ -374,9 +383,8 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
     if (tradeOp.status === 'RUNNER_ACTIVE') { statusLabel = '🏃 Runner Ativo'; statusColor = '#00e5ff'; }
     else if (opSide === 'BUY') { statusLabel = '🟢 Compra Ativa'; statusColor = '#00ff80'; }
     else { statusLabel = '🔴 Venda Ativa'; statusColor = '#ff1478'; }
-  } else if (latestSignal) {
-    statusLabel = sigSide === 'BUY' ? '🔔 Aviso pendente BUY' : '🔔 Aviso pendente SELL';
-    statusColor = sigSide === 'BUY' ? 'rgba(0,255,128,0.65)' : 'rgba(255,20,120,0.65)';
+  } else if (sigStyle) {
+    statusLabel = sigStyle.label; statusColor = sigStyle.labelColor;
   }
 
   // Proximidade à zona de entrada só faz sentido antes de já ter posição
@@ -407,18 +415,19 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
     cardBorder = fc;
     cardGlow = `0 0 30px ${fc}60, 0 0 60px ${fc}30`;
     flashStyle = isBuy ? 'flash-buy' : 'flash-sell';
+  } else if (hasActiveOp && isBuy) {
+    cardBorder = 'rgba(0,255,128,0.22)'; cardGlow = '0 0 20px rgba(0,255,128,0.07)';
+  } else if (hasActiveOp && isSell) {
+    cardBorder = 'rgba(255,20,120,0.22)'; cardGlow = '0 0 20px rgba(255,20,120,0.07)';
+  } else if (sigStyle?.border) {
+    // Item 290: aviso ESPERANDO confirmação = âmbar parado (não é a cor do lado: item 277). Vem antes de "perto da linha"
+    // porque, com mercado lateral, vários ativos ficam perto da linha ao mesmo tempo e o Dashboard virava tudo azul.
+    cardBorder = sigStyle.border; cardGlow = sigStyle.glow;
   } else if (proximity?.level === 'very_close') {
     // Preço a <1% da linha do Range Filter. Item 277: contorno neutro e
     // parado — antes pulsava na cor do lado (BUY/SELL), como se um sinal
     // fosse sair; a distância não diz isso (ver ProximityBar).
     cardBorder = 'rgba(96,165,250,0.4)';
-  } else if (hasActiveOp && isBuy) {
-    cardBorder = 'rgba(0,255,128,0.22)'; cardGlow = '0 0 20px rgba(0,255,128,0.07)';
-  } else if (hasActiveOp && isSell) {
-    cardBorder = 'rgba(255,20,120,0.22)'; cardGlow = '0 0 20px rgba(255,20,120,0.07)';
-  } else if (latestSignal && !hasActiveOp) {
-    const bc = sigSide === 'BUY' ? 'rgba(0,255,128,0.12)' : 'rgba(255,20,120,0.12)';
-    cardBorder = bc;
   } else if (isStale) {
     cardBorder = healthReason === 'persistent_error' ? 'rgba(255,20,120,0.22)' : 'rgba(255,159,67,0.22)';
   }
@@ -558,9 +567,14 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           <div className="flex items-center gap-1.5 flex-wrap">
             {showBadge && (
               <span className="flex items-center gap-1 text-sm font-mono font-bold px-4 py-1.5 rounded-lg"
-                style={showBadge === 'BUY'
-                  ? { background: 'rgba(0,255,128,0.15)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.4)', boxShadow: '0 0 12px rgba(0,255,128,0.15)' }
-                  : { background: 'rgba(255,20,120,0.15)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.4)', boxShadow: '0 0 12px rgba(255,20,120,0.15)' }}>
+                style={{
+                  ...(showBadge === 'BUY'
+                    ? { background: 'rgba(0,255,128,0.15)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.4)', boxShadow: '0 0 12px rgba(0,255,128,0.15)' }
+                    : { background: 'rgba(255,20,120,0.15)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.4)', boxShadow: '0 0 12px rgba(255,20,120,0.15)' }),
+                  // Item 290: o selo grande só fica vivo enquanto o aviso vale (esperando) ou há operação; aviso que já passou
+                  // (ou que nunca vira operação) fica apagado — o rótulo ao lado diz o porquê.
+                  ...(sigStyle?.dimBadge ? { opacity: 0.4, filter: 'saturate(0.5)', boxShadow: 'none' } : {}),
+                }}>
                 {showBadge === 'BUY' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                 {showBadge}
               </span>
@@ -576,6 +590,13 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
             <span className="text-10px font-mono font-semibold text-right" style={{ color: statusColor }}>{statusLabel}</span>
           )}
         </div>
+
+        {/* Item 290: por que o aviso ainda não virou operação, em linguagem simples (mesmo texto dos alertas e do drawer). */}
+        {sigStyle?.showReason && sigReason && (
+          <p className="text-10px font-mono mb-2.5" style={{ color: reasonColorFor(sigStyle, sigReason.kind) }} title={sigReason.detail}>
+            {sigReason.icon} {sigReason.chip}
+          </p>
+        )}
 
         {/* Proximity indicator — mostra sempre que há proximidade e ainda não
             existe posição aberta, mesmo com um sinal pendente (latestSignal),

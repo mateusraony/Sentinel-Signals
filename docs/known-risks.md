@@ -34497,3 +34497,27 @@ Pergunta do usuário: "estranho não ter nenhuma operação que possa sim estar 
 - **Bug confirmado, ainda não corrigido:** na aba Histórico os botões 1H/4H/1D filtram por `op.timeframe` (`TradeHistory.jsx:477`), que é `15m` (cascata 4h→15m) ou `5m` (SMC) — então não mostram nenhuma operação nova.
   `Trades.jsx:583` já usa `signal_timeframe ?? timeframe`. Entra no primeiro PR do Histórico.
 - **Cron:** confirmado a 15 min (02:15, 02:30 e 02:45 UTC de 05/11; passadas de ~12 s, 10 ativos, 75 consultas) — antes eram 10 em 10 até 02:10.
+
+## 290. Cartões de ativo: o estado do aviso passa a mandar no rótulo e no contorno (2026-11-05)
+
+**Pedido do usuário (05/11):** "as cores dos cards dos ativos está tudo padrão azul, sendo que antes era diferente, pode verificar isso e melhorar".
+
+- **Diagnóstico [fato, leitura do código + git]:** não era regressão. O item 277 (17/10) tirou de propósito a cor do LADO (verde/rosa) da barra de proximidade e do brilho do cartão, porque pulsava
+  e soava como compra/venda iminente; ficou um azul neutro e parado (`ProximityBar.jsx:36`, `AssetCard.jsx`). Sem operação aberta e com mercado lateral, vários ativos ficam "perto da linha" ao mesmo
+  tempo e o Dashboard inteiro fica azul — nada diferenciava um ativo com aviso esperando confirmação de um que só estava perto da linha.
+- **Defeito achado ao ler o cartão [fato]:** ele chamava QUALQUER último aviso sem operação de "🔔 Aviso pendente BUY/SELL" (na cor do lado), inclusive um de 3 dias atrás já expirado, e deixava o selo
+  grande BUY/SELL vivo. Afirmação falsa.
+- **O que mudou (só visual; motor, banco e Telegram intocados):** `src/lib/assetCardSignalStyle.js` (puro) + `AssetCard.jsx`. O estilo agora vem da FASE do aviso (`classifySignal`, a mesma dos alertas e do
+  drawer; textos de `phaseCopy`/`rejectionCopy` — fonte única, nada de tabela nova):
+  - **⏳ Esperando confirmação** (dentro da janela de 4 h): contorno e brilho âmbar parados + o MOTIVO em linguagem simples ("Movimento sem força", "Falta o gatilho", "Checando agora"…);
+  - **🚫 Já passou**: sem destaque, selo BUY/SELL apagado, motivo em cinza (em âmbar pareceria que ainda vale);
+  - **ℹ Só informação**: sem destaque, selo apagado, rótulo uma vez só.
+  Esperando confirmação **vence** "perto da linha" (o azul continua só para quem não tem aviso). **Dado do ativo atrasado, com falha (inclusive recente) ou sem leitura** suspende o estado do aviso (`isStale` sozinho não bastava: falha recente e ativo nunca lido vêm com `reason: null` — achado do Codex, PR #542, corrigido com `dataUnreliable`): "Checando agora" seria falso, e o 📡 e o
+  contorno de atraso mandam. Operação ativa (verde/rosa), flash de sinal/operação novos e o azul de "perto da linha" ficam como estavam.
+- **Regra do item 277 preservada [travada por teste]:** a cor do contorno NÃO depende do lado (BUY e SELL esperando ficam idênticos), nada de verde/rosa no estilo do aviso, e nenhum rótulo sugere
+  compra/venda iminente, probabilidade ou "próximo".
+- **Limites [honesto]:** o cartão usa o último `range_filter` entre os 50 `SignalEvent` mais recentes que o Dashboard carrega (`Dashboard.jsx:68-72`) — ativo cujo último aviso saiu dessa janela fica
+  sem estado; o motivo vem de `last_rejection_reason`, que só é gravado nas passadas de retry (um aviso recém-chegado mostra "Checando agora"). A prova visual é por captura de tela de um ambiente de teste, não da tela do usuário.
+- **Provas [verificado]:** +30 testes (estilo puro e cartão renderizado: borda lida do atributo `style`, que falha se o cartão não for achado — um `not.toMatch` em texto vazio passaria à toa); 18 mutações plantadas
+  (sem contorno âmbar, "perto da linha" vencendo, rótulo antigo, selo que não apaga, motivo escondido/de cor fixa, estado com operação ativa, dado atrasado ignorado, chip repetido, cor dependendo do lado…),
+  todas reprovam teste. O primeiro rascunho do teste tinha o seletor errado e 3 asserções passavam no vazio — foi o que a regra "reintroduza o bug" pegou.
