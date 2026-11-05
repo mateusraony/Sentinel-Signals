@@ -8,7 +8,7 @@
  *
  * Módulo puro (sem React, sem I/O): o componente injeta `fmt` (formatação de horário no fuso do usuário).
  */
-import { getClosedAt, getExitPrice, getTp1Price, calcRealizedPnlPct, calcRealizedR } from './tradeMetrics.js';
+import { getExitPrice, getTp1Price, calcRealizedPnlPct, calcRealizedR } from './tradeMetrics.js';
 import { closesFullyAtTp1 } from './opExitRules.js';
 import { closedReasonLabel } from './eventTimeline.js';
 import { formatPrice } from './priceProximity.js';
@@ -43,7 +43,18 @@ export function timeframeChipLabel(op) {
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const money = (v) => (isNum(v) ? `$${formatPrice(v)}` : null);
 const signedR = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}R`;
-const validDate = (iso) => (iso && Number.isFinite(new Date(iso).getTime()) ? iso : null);
+/**
+ * Horário formatado, ou `null`. Só vale texto ISO que vira data E que o PRÓPRIO formatador aceita: `new Date(true)` e datas de calendário
+ * inexistentes (30/02) viram timestamp finito mas o formatador da página (moment) devolve "Invalid date" — então a régua é a saída do
+ * formatador (Codex, PR #543). Nunca lança.
+ */
+function formatWhen(fmt, iso) {
+  if (typeof iso !== 'string' || !iso) return null;
+  if (!Number.isFinite(new Date(iso).getTime())) return null;
+  let out;
+  try { out = fmt(iso); } catch { return null; }
+  return typeof out === 'string' && out.trim() && !/invalid/i.test(out) ? out : null;
+}
 
 /** Horas desde a entrada em linguagem simples ("~12 h", "~3 dias"). As barras de `bars_to_*` são do timeframe do aviso (4h, ou 1h na SMC). */
 export function elapsedLabel(bars, signalTf) {
@@ -66,7 +77,9 @@ function defaultFmt(iso) {
 export function buildTradeStory(op, { fmt = defaultFmt } = {}) {
   if (!op || typeof op !== 'object') return [];
   const steps = [];
-  const at = (iso) => { const v = validDate(iso); return v ? ` em ${fmt(v)}` : ''; };
+  // Primeiro horário VÁLIDO entre os candidatos (os campos de saída podem vir ruins sem que os outros estejam).
+  const whenOf = (...isos) => { for (const iso of isos) { const w = formatWhen(fmt, iso); if (w) return w; } return null; };
+  const at = (...isos) => { const w = whenOf(...isos); return w ? ` em ${w}` : ''; };
   const sideWord = op.side === 'BUY' ? 'compra' : op.side === 'SELL' ? 'venda' : null;
   const isBuy = op.side === 'BUY';
   const isSell = op.side === 'SELL';
@@ -78,7 +91,8 @@ export function buildTradeStory(op, { fmt = defaultFmt } = {}) {
   const via = signalTf && execTf && signalTf !== execTf
     ? ` (aviso do gráfico de ${signalTf.toUpperCase()}, confirmado no de ${execTf.toUpperCase()})`
     : '';
-  const signalAt = validDate(op.created_date) ? ` (sinal de ${fmt(op.created_date)})` : '';
+  const signalWhen = whenOf(op.created_date);
+  const signalAt = signalWhen ? ` (sinal de ${signalWhen})` : '';
   steps.push({
     key: 'opened',
     text: `📍 Abriu uma operação${sideWord ? ` de ${sideWord}` : ''}${entry ? ` a ${entry}` : ''}${signalAt}${via}.`,
@@ -108,13 +122,13 @@ export function buildTradeStory(op, { fmt = defaultFmt } = {}) {
     const what = closesFullyAtTp1(op)
       ? 'fechou toda a posição'
       : `realizou ${partial}% da posição, deixando o resto correndo`;
-    steps.push({ key: 'tp1', text: `🎯 Bateu o TP1${price ? ` (${price})` : ''}${at(op.tp1_hit_real_time ?? op.tp1_hit_at)} e ${what}.` });
+    steps.push({ key: 'tp1', text: `🎯 Bateu o TP1${price ? ` (${price})` : ''}${at(op.tp1_hit_real_time, op.tp1_hit_at)} e ${what}.` });
   }
 
   // 4. TP2
   if (op.tp2_hit === true || op.tp2_hit_at) {
     const price = money(isNum(op.tp2_hit_price) ? op.tp2_hit_price : op.tp2);
-    steps.push({ key: 'tp2', text: `🏆 Bateu o TP2${price ? ` (${price})` : ''}${at(op.tp2_hit_real_time ?? op.tp2_hit_at)}.` });
+    steps.push({ key: 'tp2', text: `🏆 Bateu o TP2${price ? ` (${price})` : ''}${at(op.tp2_hit_real_time, op.tp2_hit_at)}.` });
   }
 
   // 5. O stop andou? (só o valor final é gravado — não se sabe QUANDO subiu)
@@ -127,13 +141,14 @@ export function buildTradeStory(op, { fmt = defaultFmt } = {}) {
   }
 
   // 6. Saída (TP2 já está contado acima)
+  // Horário de saída = só carimbo de ENCERRAMENTO que existe. `getClosedAt` cai em `updated_date`/`created_date` para documento legado,
+  // e a história diria que a operação saiu "no instante em que abriu" — sem carimbo conhecido, a frase simplesmente não traz horário.
   const exitPrice = money(getExitPrice(op));
-  const closedAt = op.closed_at_real_time ?? getClosedAt(op);
   if (op.status === 'STOP_HIT') {
-    steps.push({ key: 'exit', text: `🛑 Saiu pelo stop${exitPrice ? ` a ${exitPrice}` : ''}${at(op.stop_hit_real_time ?? op.stop_hit_at ?? closedAt)}.` });
+    steps.push({ key: 'exit', text: `🛑 Saiu pelo stop${exitPrice ? ` a ${exitPrice}` : ''}${at(op.stop_hit_real_time, op.stop_hit_at, op.closed_at_real_time, op.closed_at)}.` });
   } else if (op.status === 'INVALIDATED' || op.status === 'CLOSED') {
     const reason = closedReasonLabel(op) ?? (op.status === 'INVALIDATED' ? 'sinal invalidado' : null);
-    steps.push({ key: 'exit', text: `🔒 Encerrada${reason ? `: ${reason}` : ''}${exitPrice ? `, a ${exitPrice}` : ''}${at(closedAt)}.` });
+    steps.push({ key: 'exit', text: `🔒 Encerrada${reason ? `: ${reason}` : ''}${exitPrice ? `, a ${exitPrice}` : ''}${at(op.closed_at_real_time, op.closed_at)}.` });
   }
 
   // 7. Resultado

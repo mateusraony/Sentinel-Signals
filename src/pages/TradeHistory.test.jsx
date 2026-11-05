@@ -415,6 +415,19 @@ describe('TradeHistory — timeframe do aviso e história do trade (item 291)', 
     expect(itens.at(-1)).toMatch(/^Resultado final: -/);
   });
 
+  it('REGRESSÃO (Codex, PR #543): com o formatador REAL da página (moment), data ruim e legado sem carimbo não viram "Invalid date" nem horário inventado', async () => {
+    await abrir([{
+      ...OP_4H, created_date: '2026-02-30T12:00:00Z', tp1_hit: true, tp1_hit_at: '2026-02-30T12:00:00Z', tp1_hit_real_time: undefined,
+      stop_hit_at: undefined, stop_hit_real_time: undefined, closed_at: undefined, closed_at_real_time: undefined, updated_date: undefined,
+    }]);
+    fireEvent.click(screen.getAllByRole('button').find((b) => b.getAttribute('aria-expanded') !== null && /BTC\/USDT/.test(b.textContent)));
+    const grupo = await screen.findByRole('group', { name: 'A história deste trade' });
+    expect(grupo.textContent).not.toMatch(/Invalid date/);
+    const saida = [...grupo.querySelectorAll('li')].map((li) => li.textContent).find((t) => /^🛑 Saiu pelo stop/.test(t));
+    expect(saida).toBeTruthy();
+    expect(saida).not.toContain(' em '); // sem carimbo de encerramento: sem horário
+  });
+
   it('fechado, a história não é montada (só ao expandir)', async () => {
     await abrir([OP_4H]);
     expect(screen.queryByRole('group', { name: 'A história deste trade' })).toBeNull();

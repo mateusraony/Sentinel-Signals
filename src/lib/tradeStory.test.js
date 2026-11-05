@@ -165,3 +165,59 @@ describe('texto neutro — descreve o que aconteceu, não prevê nem opina', () 
     expect(todas).not.toMatch(/vai (subir|cair)|probabilidade|chance|previs|deveria|erro d|culpa|MFE|MAE/i);
   });
 });
+
+// Achados do Codex no PR #543: (1) a frase de saída não pode inventar horário quando só existe a data de criação; (2) a validação de data tem de ter
+// a mesma régua do formatador da página (moment): `true` e 30/02 viram timestamp finito mas "Invalid date" na tela.
+describe('horários — nunca inventados e nunca "Invalid date"', () => {
+  // imita o moment: data de calendário inexistente vira "Invalid date"
+  const momentLike = (iso) => (iso === '2026-02-30T12:00:00Z' ? 'Invalid date' : `T(${String(iso).slice(0, 10)})`);
+  const SEM_CARIMBO = { side: 'BUY', status: 'STOP_HIT', entry_price: 100, initial_stop: 95, current_stop: 95, exit_price: 95, created_date: '2026-10-01T00:00:00Z' };
+
+  it('REGRESSÃO: STOP_HIT legado sem nenhum carimbo de saída NÃO diz que saiu no horário da criação', () => {
+    const exit = buildTradeStory(SEM_CARIMBO, { fmt }).find((s) => s.key === 'exit');
+    expect(exit.text).toBe(`🛑 Saiu pelo stop a ${p(95)}.`);
+    expect(exit.text).not.toContain(' em ');
+  });
+  it('`updated_date` também não vira horário de saída (só carimbo de ENCERRAMENTO)', () => {
+    const exit = buildTradeStory({ ...SEM_CARIMBO, updated_date: '2026-10-09T00:00:00Z' }, { fmt }).find((s) => s.key === 'exit');
+    expect(exit.text).not.toContain(' em ');
+  });
+  it('encerrada (CLOSED/INVALIDATED) sem carimbo: sem horário também', () => {
+    const exit = buildTradeStory({ ...TIME_STOP, closed_at: undefined, closed_at_real_time: undefined }, { fmt }).find((s) => s.key === 'exit');
+    expect(exit.text).toBe(`🔒 Encerrada: tempo esgotado, a ${p(101)}.`);
+  });
+  it('com carimbo de encerramento, usa-o (closed_at quando o do stop falta)', () => {
+    const exit = buildTradeStory({ ...SEM_CARIMBO, closed_at: '2026-10-03T00:00:00Z' }, { fmt }).find((s) => s.key === 'exit');
+    expect(exit.text).toBe(`🛑 Saiu pelo stop a ${p(95)} em T(2026-10-03).`);
+  });
+
+  it('REGRESSÃO: `true` e 30/02 não viram horário (o formatador real devolveria "Invalid date")', () => {
+    const op = { ...BUY_STOP_APOS_TP1, created_date: true, tp1_hit_real_time: '2026-02-30T12:00:00Z', tp1_hit_at: '2026-02-30T12:00:00Z', stop_hit_at: '2026-02-30T12:00:00Z', closed_at: '2026-11-03T02:00:00Z' };
+    for (const f of [momentLike, undefined]) {
+      const steps = f ? buildTradeStory(op, { fmt: f }) : buildTradeStory(op);
+      expect(JSON.stringify(steps)).not.toMatch(/Invalid|\btrue\b/);
+      expect(steps[0].text).not.toContain('sinal de');
+    }
+  });
+  it('o primeiro horário VÁLIDO entre os candidatos vale: stop_hit_at ruim, closed_at bom', () => {
+    const op = { ...SEM_CARIMBO, stop_hit_at: '2026-02-30T12:00:00Z', closed_at: '2026-10-05T00:00:00Z' };
+    const exit = buildTradeStory(op, { fmt: momentLike }).find((s) => s.key === 'exit');
+    expect(exit.text).toContain('em T(2026-10-05)');
+  });
+  it('número, objeto e texto sem data não viram horário', () => {
+    for (const ruim of [1730000000000, {}, [], 'ontem', '', null, NaN]) {
+      const steps = buildTradeStory({ ...BUY_STOP_APOS_TP1, created_date: ruim, tp1_hit_at: ruim, tp1_hit_real_time: undefined }, { fmt });
+      expect(steps[0].text).not.toContain('sinal de');
+      expect(steps.find((s) => s.key === 'tp1').text).not.toContain(' em ');
+    }
+  });
+  it('formatador que lança ou devolve lixo não derruba a história nem imprime lixo', () => {
+    const lanca = () => { throw new Error('boom'); };
+    expect(() => buildTradeStory(BUY_STOP_APOS_TP1, { fmt: lanca })).not.toThrow();
+    for (const f of [lanca, () => undefined, () => '', () => 42]) {
+      const steps = buildTradeStory(BUY_STOP_APOS_TP1, { fmt: f });
+      expect(steps.find((s) => s.key === 'opened').text).not.toContain('sinal de');
+      expect(JSON.stringify(steps)).not.toMatch(/undefined|42/);
+    }
+  });
+});

@@ -34540,3 +34540,7 @@ ver: linha do tempo do trade, quanto chegou a ganhar/perder, por que fechou + o 
   (não de tick) e não existe em operação antiga; a prova visual é por captura de tela de um ambiente de teste com dados de EXEMPLO (fictícios), não da tela do usuário.
 - **Provas [verificado]:** +31 testes (módulo puro e página: filtro, selo, história aberta/fechada, legada); 16 mutações plantadas — 15 reprovaram de primeira e **1 sobreviveu** ("montar a história mesmo com o card fechado": não muda a
   tela, só gastava conta à toa) → o cálculo foi movido para um componente que só existe com o card aberto (a mutação equivalente deixou de existir) e a variante real (renderizar a história fora do bloco aberto) reprova.
+- **Revisão do Codex (PR #543, 2 × P2, ambos reais):** (1) a frase de saída usava `getClosedAt`, que cai em `updated_date`/`created_date` em documento legado — a história dizia que a operação saiu "no horário em que abriu";
+  agora só entram carimbos de ENCERRAMENTO conhecidos (`stop_hit_*`, `closed_at*`) e, sem eles, a frase não traz horário; (2) `new Date(true)` e datas de calendário inexistentes (30/02) viram timestamp finito, mas o formatador da página (moment)
+  devolve "Invalid date" — a régua passou a ser a SAÍDA do próprio formatador (texto ISO que vira data E que o formatador aceita; lança/vazio/"Invalid" = sem horário), pegando o primeiro horário válido entre os candidatos.
+  +10 testes (inclusive com o `moment` real da página); 7 mutações novas, todas reprovam.
