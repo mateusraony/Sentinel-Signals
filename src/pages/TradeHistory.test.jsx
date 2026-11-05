@@ -441,3 +441,97 @@ describe('TradeHistory — timeframe do aviso e história do trade (item 291)', 
     expect(grupo.textContent).toMatch(/Abriu uma operação/);
   });
 });
+
+// Item 292 — "O que o sistema via e como o trade se formou": contexto da entrada, plano × realizado e a conta do resultado (bruto → custos → líquido),
+// só ao abrir o card e só com o dado que a operação tem.
+describe('TradeHistory — contexto da entrada, plano × realizado e formação do resultado (item 292)', () => {
+  const base = { side: 'BUY', status: 'STOP_HIT', entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 107.5, tp2: 115, exit_price: 95, partial_percent: 50, tp1_hit: false, stop_hit_at: AGORA, closed_at: AGORA, created_date: AGORA };
+  const OP_COMPLETA = {
+    ...base, id: 'g1', asset_id: 'a1', symbol: 'BTCUSDT', timeframe: '15m', signal_timeframe: '4h',
+    tf_1d_direction: 1, tf_4h_direction: 1, tf_1h_direction: -1, entry_score: 80, tier: 'T2', adx_at_entry: 28.43, chop_at_entry: 45.2,
+    entry_candle_pattern: 'hammer', tier_time_stop_bars: 48,
+  };
+  const OP_LEGADA = { ...base, id: 'g2', asset_id: 'a2', symbol: 'BTCUSDT' };
+  const NOMES = ['O que o sistema via na entrada', 'Plano contra realizado', 'Como o resultado foi formado'];
+  // Estilo inline do valor do "Resultado final (líquido)". Falha se o elemento não existir (nunca passa "no vazio").
+  function corDoLiquido(grupo) {
+    const li = [...grupo.querySelectorAll('li')].find((x) => x.textContent.startsWith('Resultado final (líquido)'));
+    const style = li?.querySelector('span.font-bold')?.getAttribute('style');
+    if (!style) throw new Error('valor do resultado líquido não encontrado');
+    return style;
+  }
+
+  async function abrirCard(op) {
+    mockBackend([op]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+    await screen.findAllByText('BTC/USDT');
+    fireEvent.click(screen.getByText('BTC/USDT'));
+  }
+
+  it('card FECHADO: nenhum dos três blocos é montado', async () => {
+    mockBackend([OP_COMPLETA]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+    await screen.findAllByText('BTC/USDT');
+    for (const name of NOMES) expect(screen.queryByRole('group', { name })).toBeNull();
+  });
+
+  it('card aberto com a operação completa: mostra tendências, regras alinhadas, ADX/Chop, padrão, risco, alvos e prazo', async () => {
+    await abrirCard(OP_COMPLETA);
+    const entrada = await screen.findByRole('group', { name: NOMES[0] });
+    expect(entrada.textContent).toContain('Tendências: 1D alta (a favor) · 4H alta (a favor) · 1H baixa (contra)');
+    expect(entrada.textContent).toContain('Regras alinhadas: 🧩 80/100');
+    expect(entrada.textContent).toMatch(/não é chance de acerto/);
+    expect(entrada.textContent).toContain('Volatilidade (tier): T2');
+    expect(entrada.textContent).toContain('ADX (força da tendência): 28.4');
+    expect(entrada.textContent).toContain('Choppiness (de 0 a 100): 45.2');
+    expect(entrada.textContent).toContain('Padrão da vela: martelo');
+    const plano = screen.getByRole('group', { name: NOMES[1] });
+    expect(plano.textContent).toContain('Risco previsto: 5.00% do preço de entrada');
+    expect(plano.textContent).toContain('Alvos planejados: TP1 +1.50R · TP2 +3.00R');
+    expect(plano.textContent).toContain('Prazo máximo: 48 velas de 4H (~8 dias)');
+    expect(entrada.textContent + plano.textContent).not.toMatch(/undefined|NaN|Infinity/);
+  });
+
+  it('a conta do resultado: bruto −1,00R, custos −0,02R, líquido −1,02R (−5,12%) e o aviso de que os custos são do modelo', async () => {
+    await abrirCard(OP_COMPLETA);
+    const resultado = await screen.findByRole('group', { name: NOMES[2] });
+    const itens = [...resultado.querySelectorAll('li')].map((li) => li.textContent);
+    expect(itens[0]).toBe('Resultado bruto (antes dos custos): -1.00R (-5.00%)');
+    expect(itens[1]).toBe('Custos estimados: -0.02R (-0.12%)');
+    expect(itens[2]).toBe('Resultado final (líquido): -1.02R (-5.12%)');
+    // O sinal já está no texto; a cor só reforça: perda em rosa.
+    expect(corDoLiquido(resultado)).toMatch(/#ff1478|rgb\(255, 20, 120\)/i);
+    expect(resultado.textContent).toMatch(/Custos estimados pelo modelo do painel \(taxa 0\.05% na entrada e 0\.05% na saída/);
+    expect(resultado.textContent).toMatch(/não são o extrato da corretora/);
+  });
+
+  it('com TP1 realizado, as duas partes do bruto aparecem sob o bruto', async () => {
+    await abrirCard({ ...OP_COMPLETA, status: 'STOP_HIT', tp1_hit: true, tp1_hit_at: AGORA, tp1_hit_price: 107.5, exit_price: 100, current_stop: 100 });
+    const resultado = await screen.findByRole('group', { name: NOMES[2] });
+    const itens = [...resultado.querySelectorAll('li')].map((li) => li.textContent);
+    expect(itens[0]).toBe('Resultado bruto (antes dos custos): +0.75R (+3.75%)');
+    expect(itens[1]).toBe('· 50% fechado no TP1: +0.75R');
+    expect(itens[2]).toBe('· 50% restante, até a saída: +0.00R');
+    expect(corDoLiquido(resultado)).toMatch(/#00ff80|rgb\(0, 255, 128\)/i); // ganho em verde
+  });
+
+  it('operação legada: sem bloco de entrada, e o que sobra não traz "undefined", "NaN" nem "0/100"', async () => {
+    await abrirCard(OP_LEGADA);
+    const resultado = await screen.findByRole('group', { name: NOMES[2] });
+    expect(screen.queryByRole('group', { name: NOMES[0] })).toBeNull(); // nada gravado sobre a entrada → bloco inteiro some
+    const plano = screen.getByRole('group', { name: NOMES[1] });
+    expect(plano.textContent).not.toMatch(/Prazo máximo/);
+    for (const el of [resultado, plano]) expect(el.textContent).not.toMatch(/undefined|NaN|Infinity|0\/100/);
+  });
+
+  it('operação sem stop inicial: o resultado sai só em %, sem "R" inventado', async () => {
+    const { initial_stop: _i, ...semStop } = OP_LEGADA;
+    await abrirCard(semStop);
+    const resultado = await screen.findByRole('group', { name: NOMES[2] });
+    const itens = [...resultado.querySelectorAll('li')].map((li) => li.textContent);
+    expect(itens[0]).toBe('Resultado bruto (antes dos custos): -5.00%');
+    expect(resultado.textContent).not.toMatch(/\dR\b/);
+  });
+});

@@ -95,6 +95,11 @@ export const EMOJI_REGISTRY = Object.freeze({
   '🕯️': entry('Vela (candle) aberta ou fechada'),
   '🎚️': entry('Tier (classe de volatilidade do ativo)'),
   '📐': entry('Evidência numérica (resultado em R, fatos que levaram à decisão)'),
+  // Aba Histórico, card aberto (itens 291/292): um glifo por bloco de leitura. 🔎 e 📏 já têm outro sentido (Sinal para Conferir / distância do RF).
+  '📖': entry('Histórico: "A história deste trade" — a operação contada em frases, em ordem', { context: /história/i }),
+  '👁️': entry('Histórico: "O que o sistema via na entrada" — contexto medido na entrada', { context: /sistema via/i }),
+  '🗺️': entry('Histórico: "Plano × realizado" — risco, alvos e prazo previstos contra o que ocorreu', { context: /plano/i }),
+  '🧮': entry('Histórico: "Como o resultado foi formado" — bruto, custos estimados e líquido', { context: /resultado/i }),
   '🚨': entry('Alerta do sistema (infraestrutura) — não é evento de operação'),
   '🔄': entry('Sincronização', { context: /sincroniz|\bsync\b/i }),
   '⚡': entry('Marca "⚡ Sentinel Signals" — não é prioridade, runner nem força', { context: /Sentinel Signals/ }),

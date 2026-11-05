@@ -22,6 +22,7 @@ import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 import { CandleBoundTag, DetectionLag } from '@/components/dashboard/EventTimeline';
 import { closedReasonLabel } from '@/lib/eventTimeline';
 import { buildTradeStory, opSignalTimeframe, timeframeChipLabel } from '@/lib/tradeStory';
+import { buildEntryContext, buildPlanVsActual, buildResultBreakdown, costModelNote } from '@/lib/tradeContext';
 import { explainOperationDecision, legacyClosedOperationText } from '@/lib/decisionExplanation';
 import { useCopyToClipboard, formatTradeOpLine } from '@/lib/clipboardText';
 import { QueryErrorState } from '@/components/QueryErrorState';
@@ -71,6 +72,69 @@ function TradeStory({ op }) {
         ))}
       </ol>
     </div>
+  );
+}
+
+const INFO_BLOCK_STYLE = { background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' };
+
+/** Bloco de linhas "rótulo: valor" (+ dica em texto pequeno). Sem linhas, não renderiza nada. */
+function InfoBlock({ title, ariaLabel, rows }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-lg px-3 py-2.5" role="group" aria-label={ariaLabel} style={INFO_BLOCK_STYLE}>
+      <div className="text-9px font-mono text-muted-foreground mb-1.5">{title}</div>
+      <dl className="space-y-1">
+        {rows.map((row) => (
+          <div key={row.key} className="text-10px font-mono leading-relaxed">
+            <dt className="inline text-muted-foreground">{row.label}: </dt>
+            <dd className="inline" style={{ color: 'rgba(255,255,255,0.8)' }}>{row.value}</dd>
+            {row.hint && <span className="block text-9px" style={{ color: 'rgba(255,255,255,0.35)' }}>{row.hint}</span>}
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+const fmtR = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}R`;
+const fmtPct = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+/** Custo mostrado como desconto: "-0.12R" (se o funding foi recebido, sai "+"). */
+const fmtCost = (v, unit) => `${v >= 0 ? '-' : '+'}${Math.abs(v).toFixed(2)}${unit}`;
+
+/** Bruto → custos → líquido; "R (%)" quando há risco conhecido, só "%" quando a operação não tem stop inicial. */
+function ResultBreakdown({ op }) {
+  const b = buildResultBreakdown(op);
+  if (!b) return null;
+  const gross = b.grossR === null ? fmtPct(b.grossPct) : `${fmtR(b.grossR)} (${fmtPct(b.grossPct)})`;
+  const cost = b.costR === null ? fmtCost(b.costPct, '%') : `${fmtCost(b.costR, 'R')} (${fmtCost(b.costPct, '%')})`;
+  const net = b.netR === null ? fmtPct(b.netPct) : `${fmtR(b.netR)} (${fmtPct(b.netPct)})`;
+  return (
+    <div className="rounded-lg px-3 py-2.5" role="group" aria-label="Como o resultado foi formado" style={INFO_BLOCK_STYLE}>
+      <div className="text-9px font-mono text-muted-foreground mb-1.5">🧮 Como o resultado foi formado</div>
+      <ul className="space-y-1 text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
+        <li>Resultado bruto (antes dos custos): <span style={{ color: 'rgba(255,255,255,0.9)' }}>{gross}</span></li>
+        {b.legs.map((leg) => (
+          <li key={leg.key} className="pl-3" style={{ color: 'rgba(255,255,255,0.5)' }}>· {leg.label}: {fmtR(leg.r)}</li>
+        ))}
+        <li>Custos estimados: <span style={{ color: '#ff9f43' }}>{cost}</span></li>
+        <li>Resultado final (líquido): <span className="font-bold" style={{ color: b.netPct >= 0 ? '#00ff80' : '#ff1478' }}>{net}</span></li>
+      </ul>
+      <p className="text-9px font-mono mt-1.5 leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>{costModelNote()}</p>
+    </div>
+  );
+}
+
+/**
+ * Item 292 — "O que o sistema via e como o trade se formou": contexto da entrada, plano × realizado e a conta do resultado, só com campos que
+ * a operação já tem. Componente próprio, montado só com o card ABERTO (nada é calculado nas até 200 linhas fechadas).
+ */
+function TradeContext({ op }) {
+  return (
+    <>
+      <InfoBlock title="👁️ O que o sistema via na entrada" ariaLabel="O que o sistema via na entrada" rows={buildEntryContext(op)} />
+      <InfoBlock title="🗺️ Plano × realizado" ariaLabel="Plano contra realizado" rows={buildPlanVsActual(op)} />
+      <ResultBreakdown op={op} />
+    </>
   );
 }
 
@@ -265,6 +329,9 @@ function HistoryCard({ op }) {
 
           {/* Item 291 — "A história deste trade": o que aconteceu, em ordem e em frases simples (campos que a operação já tem). */}
           <TradeStory op={op} />
+
+          {/* Item 292 — o que o sistema via na entrada, plano × realizado e a conta do resultado (bruto → custos → líquido). */}
+          <TradeContext op={op} />
 
           {/* Price breakdown grid — só TP1/TP2 precisam de tooltip
               (Entrada/Stop Inicial já são autoexplicativos). Texto

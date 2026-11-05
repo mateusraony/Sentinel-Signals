@@ -56,13 +56,18 @@ function formatWhen(fmt, iso) {
   return typeof out === 'string' && out.trim() && !/invalid/i.test(out) ? out : null;
 }
 
-/** Horas desde a entrada em linguagem simples ("~12 h", "~3 dias"). As barras de `bars_to_*` são do timeframe do aviso (4h, ou 1h na SMC). */
-export function elapsedLabel(bars, signalTf) {
-  if (!isNum(bars) || bars < 0) return null;
-  const hours = bars * (signalTf === '1h' ? 1 : 4);
+/** Horas em linguagem simples ("~12 h", "~3 dias"); `null` se não for um número ≥ 0. Reusada pelo bloco de contexto (item 292). */
+export function hoursLabel(hours) {
+  if (!isNum(hours) || hours < 0) return null;
   if (hours < 1) return 'menos de 1 h';
   if (hours < 48) return `~${Math.round(hours)} h`;
   return `~${Math.round(hours / 24)} dias`;
+}
+
+/** Horas desde a entrada em linguagem simples ("~12 h", "~3 dias"). As barras de `bars_to_*` são do timeframe do aviso (4h, ou 1h na SMC). */
+export function elapsedLabel(bars, signalTf) {
+  if (!isNum(bars) || bars < 0) return null;
+  return hoursLabel(bars * (signalTf === '1h' ? 1 : 4));
 }
 
 function defaultFmt(iso) {
