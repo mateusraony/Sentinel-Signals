@@ -650,3 +650,120 @@ describe('AssetCard — preço e "📈 +x% em 24h · Futures" do mesmo instante 
     expect(screen.queryByText(/NaN/)).toBeNull();
   });
 });
+
+// Item 290: o cartão diferencia pelo ESTADO do último aviso (esperando confirmação / já passou / só informação), não pela cor do lado.
+// Antes: QUALQUER aviso sem operação virava "🔔 Aviso pendente BUY/SELL", inclusive um de dias atrás já expirado; e, sem operação,
+// vários ativos "perto da linha" deixavam o Dashboard inteiro azul.
+describe('AssetCard — estado do aviso manda no rótulo e no contorno (item 290)', () => {
+  const ASSET = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN() };
+  const VERY_CLOSE = [{ timeframe: '1h', rf_filter_value: 100, last_close: 100.4, rf_direction: 1 }]; // 0,4 % da linha
+  // jsdom: `.style.border` não devolve o atalho com rgba(), e o seletor com "rgba(" não casa — o atributo `style` está inteiro
+  // e o fundo do cartão (`13, 22, 0.82`) o identifica. Se o cartão não for achado, o teste FALHA (um `not.toMatch` em '' passaria à toa).
+  const bordaDoCartao = (container) => {
+    const raiz = container.querySelector('[style*="13, 22, 0.82"]');
+    if (!raiz) throw new Error('cartão do ativo não encontrado no DOM');
+    return (raiz.getAttribute('style') ?? '').match(/border: ([^;]+);/)?.[1] ?? '';
+  };
+  const OLD_SIGNAL = () => RF4H({ created_date: new Date(Date.now() - 3 * 24 * 3600000).toISOString() });
+
+  it('aviso esperando confirmação: rótulo ⏳ em âmbar, contorno âmbar e nada de "Aviso pendente"', () => {
+    const { container } = renderCard({ asset: ASSET, latestSignal: RF4H() });
+    const rotulo = screen.getByText('⏳ Esperando confirmação');
+    expect(rotulo.style.color).toBe('rgb(255, 209, 102)');
+    expect(bordaDoCartao(container)).toMatch(/255, 209, 102/);
+    expect(container.textContent).not.toMatch(/Aviso pendente/);
+  });
+
+  it('mostra POR QUE ainda não virou operação, com o texto da fonte única (motivo salvo no aviso)', () => {
+    renderCard({ asset: ASSET, latestSignal: RF4H({ last_rejection_reason: 'regime_rejected', last_rejection_detail: 'adx' }) });
+    const chip = screen.getByText(/Movimento sem força/);
+    expect(chip.title).toMatch(/Nada a fazer\./);
+    expect(chip.style.color).toBe('rgb(255, 159, 67)'); // família "piorou"
+  });
+
+  it('motivo de aviso JÁ EXPIRADO fica em cinza (em âmbar pareceria que ainda vale)', () => {
+    renderCard({ asset: ASSET, latestSignal: OLD_SIGNAL() });
+    // sem motivo salvo, um aviso expirado mostra "Sem detalhe salvo" (família do app = cinza)
+    const chip = screen.getByText(/Sem detalhe salvo/);
+    expect(chip.style.color).toBe('rgb(148, 163, 184)');
+    cleanup();
+    renderCard({ asset: ASSET, latestSignal: { ...OLD_SIGNAL(), last_rejection_reason: 'no_trigger' } });
+    expect(screen.getByText(/Falta o gatilho/).style.color).toBe('rgb(148, 163, 184)'); // família "esperando" = âmbar se valesse
+  });
+
+  it('aviso recém-chegado sem motivo: "Checando agora"', () => {
+    renderCard({ asset: ASSET, latestSignal: RF4H() });
+    screen.getByText(/Checando agora/);
+  });
+
+  it('aviso de 3 dias atrás (expirado): "🚫 Já passou" cinza, SEM contorno âmbar e com o selo BUY apagado', () => {
+    const { container } = renderCard({ asset: ASSET, latestSignal: OLD_SIGNAL() });
+    const rotulo = screen.getByText('🚫 Já passou');
+    expect(rotulo.style.color).toBe('rgb(100, 116, 139)');
+    expect(bordaDoCartao(container)).not.toMatch(/255, 209, 102/);
+    expect(container.textContent).not.toMatch(/Esperando confirmação|Aviso pendente/);
+    const selo = screen.getByText('BUY').closest('span');
+    expect(selo.style.opacity).toBe('0.4');
+  });
+
+  it('aviso que nunca vira operação (MACD/EMA 4h, Range Filter 1h): "Só informação" UMA vez, sem destaque', () => {
+    const { container } = renderCard({ asset: ASSET, latestSignal: RF4H({ source: 'macd', timeframe: '4h' }) });
+    screen.getByText(/ℹ Só informação/);
+    expect(screen.getAllByText(/Só informação/).length).toBe(1); // o chip do motivo não repete o rótulo
+    expect(bordaDoCartao(container)).not.toMatch(/255, 209, 102/);
+  });
+
+  it('dado do ativo ATRASADO: o estado do aviso não vale — nada de "Checando agora" nem contorno âmbar; vale o 📡 e o contorno de atraso', () => {
+    const { container } = renderCard({
+      asset: { ...ASSET, last_scan_at: new Date(Date.now() - 2 * 3600000).toISOString() },
+      latestSignal: RF4H(),
+    });
+    expect(screen.getAllByText(/📡 Atrasado/).length).toBeGreaterThan(0);
+    expect(container.textContent).not.toMatch(/Checando agora|Esperando confirmação/);
+    expect(bordaDoCartao(container)).toMatch(/255, 159, 67/); // laranja de dado atrasado
+  });
+
+  it('aviso valendo mantém o selo BUY/SELL vivo (sem apagar)', () => {
+    renderCard({ asset: ASSET, latestSignal: RF4H() });
+    expect(screen.getByText('BUY').closest('span').style.opacity).toBe('');
+  });
+
+  it('esperando confirmação VENCE "perto da linha": com mercado lateral o Dashboard não fica tudo azul', () => {
+    const esperando = renderCard({ asset: ASSET, states: VERY_CLOSE, latestSignal: RF4H() });
+    expect(bordaDoCartao(esperando.container)).toMatch(/255, 209, 102/);
+    esperando.unmount();
+    const soPerto = renderCard({ asset: ASSET, states: VERY_CLOSE });
+    expect(bordaDoCartao(soPerto.container)).toMatch(/96, 165, 250/); // sem aviso: continua azul (item 277)
+  });
+
+  it('a cor do contorno NÃO depende do lado: BUY e SELL esperando ficam iguais (item 277)', () => {
+    const buy = renderCard({ asset: ASSET, latestSignal: RF4H({ signal_type: 'BUY' }) });
+    const bordaBuy = bordaDoCartao(buy.container);
+    buy.unmount();
+    const sell = renderCard({ asset: ASSET, latestSignal: RF4H({ signal_type: 'SELL' }) });
+    expect(bordaDoCartao(sell.container)).toBe(bordaBuy);
+  });
+
+  it('nenhum texto do estado sugere compra/venda iminente', () => {
+    const { container } = renderCard({ asset: ASSET, latestSignal: RF4H({ last_rejection_reason: 'no_trigger' }) });
+    expect(container.textContent).not.toMatch(/iminente|vai (subir|cair)|probabilidade|chance de/i);
+  });
+
+  it('operação ativa não muda: verde na compra, sem rótulo de aviso', () => {
+    const { container } = renderCard({
+      asset: ASSET, latestSignal: RF4H(),
+      tradeOp: { id: 'op1', status: 'SIGNAL_CONFIRMED', side: 'BUY', entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 110, tp2: 120 },
+    });
+    screen.getByText('🟢 Compra Ativa');
+    expect(bordaDoCartao(container)).toMatch(/0, 255, 128/);
+    expect(container.textContent).not.toMatch(/Esperando confirmação|Já passou|Checando agora/);
+  });
+
+  it('dado atrasado continua na linha de status (📡 vem antes do estado do aviso)', () => {
+    renderCard({
+      asset: { ...ASSET, last_scan_at: new Date(Date.now() - 2 * 3600000).toISOString() },
+      latestSignal: RF4H(),
+    });
+    expect(screen.getAllByText(/📡 Atrasado/).length).toBeGreaterThan(0);
+  });
+});
