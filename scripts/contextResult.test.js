@@ -208,6 +208,39 @@ describe('histórico de 45 dias e eventos que já aconteceram', () => {
   });
 });
 
+describe('data ADIADA pelo FRED nunca vira divulgação (achado do Codex no PR #547)', () => {
+  const ADIADO = { ...FRED, CPI: ['2026-11-11', '2026-12-10'] }; // o CPI de 10/11 foi para 11/11
+  const publicado = publicar(NOW, ANTES);
+  const emBreve = buildEvents({ fredDatesByKind: ADIADO, nowMs: Date.parse('2026-11-05T12:00:00Z'), previous: publicado, blsSeries: ANTES });
+
+  it('antes da hora: a data antiga vira "a confirmar"; depois da hora original continua "a confirmar" (não volta a "oficial")', () => {
+    expect(byId(emBreve)['CPI-2026-11-10'].status).toBe('a_confirmar');
+    const depois = buildEvents({ fredDatesByKind: ADIADO, nowMs: Date.parse('2026-11-10T14:00:00Z'), previous: emBreve, blsSeries: ANTES });
+    expect(byId(depois)['CPI-2026-11-10'].status).toBe('a_confirmar');
+    expect(byId(depois)['CPI-2026-11-11'].status).toBe('oficial'); // a nova data segue oficial
+  });
+
+  it('mesmo quando o BLS já traz o mês, o evento antigo "a confirmar" NÃO ganha o "Atual" (não foi uma divulgação)', () => {
+    const t = Date.parse('2026-11-10T20:00:00Z');
+    const ev = byId(buildEvents({ fredDatesByKind: ADIADO, nowMs: t, previous: emBreve, blsSeries: DEPOIS }));
+    expect(ev['CPI-2026-11-10'].status).toBe('a_confirmar');
+    expect(ev['CPI-2026-11-10'].values).toEqual({ previous: CPI_ANTERIOR, source: 'BLS' });
+    expect(ev['CPI-2026-11-10'].values.actual).toBeUndefined();
+  });
+
+  it('sem nada publicado antes e fora do FRED depois da hora: "a confirmar" (lado seguro — não se afirma que aconteceu)', () => {
+    const ev = byId(buildEvents({ fredDatesByKind: ADIADO, nowMs: Date.parse('2026-11-10T14:00:00Z'), previous: [], blsSeries: ANTES }));
+    expect(ev['CPI-2026-11-10'].status).toBe('a_confirmar');
+  });
+
+  it('o evento que de fato aconteceu e saiu da janela de 20 datas do FRED continua "oficial" (publicado como oficial)', () => {
+    const saiu = publicar(AFTER_CPI, DEPOIS, publicar(NOW, ANTES));
+    const ev = byId(buildEvents({ fredDatesByKind: { ...FRED, CPI: ['2026-12-10'] }, nowMs: Date.parse('2026-11-20T12:00:00Z'), previous: saiu, blsSeries: DEPOIS }));
+    expect(ev['CPI-2026-11-10'].status).toBe('oficial');
+    expect(ev['CPI-2026-11-10'].values.actual).toBe(CPI_ATUAL);
+  });
+});
+
 describe('trava pública com "Atual" e "Revisado"', () => {
   const OK = { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', revised: '+0,4% m/m · +3,0% a/a', source: 'BLS' };
 

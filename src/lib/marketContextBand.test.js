@@ -473,6 +473,11 @@ describe('resultEvents e releaseHistory — quem vira cartão de resultado e que
     expect(releaseHistory([null, 5, { startMs: NaN }], NOW)).toEqual([]);
   });
 
+  it('data "a confirmar" nunca entra na lista, mesmo com "Atual" (uma data adiada não foi divulgação)', () => {
+    const v = { previous: '+0,3% m/m', actual: '+0,5% m/m', source: 'BLS' };
+    expect(releaseHistory([e('adiado', 'CPI', 3 * 24 * HORA, v, 'a_confirmar'), e('ok', 'CPI', 4 * 24 * HORA, v)], NOW).map((x) => x.id)).toEqual(['ok']);
+  });
+
   it('um evento nunca está nos dois lugares (cartão de resultado e lista) ao mesmo tempo', () => {
     const lista = [-1, 0, 1, 23, 24, 25, 48].map((h) => e(`E${h}`, 'CPI', h * HORA + (h === 24 ? 0 : 1), { previous: '+0,3% m/m', actual: '+0,5% m/m', source: 'BLS' }));
     const noCartao = new Set(resultEvents(lista, NOW).map((x) => x.id));

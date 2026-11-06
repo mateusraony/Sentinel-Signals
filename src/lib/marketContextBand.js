@@ -198,11 +198,11 @@ export function resultEvents(events, nowMs) {
 
 /**
  * "Últimas divulgações": eventos que JÁ têm o "Atual" e saíram há mais de 24 h (os de menos de 24 h estão no cartão de resultado). Mais
- * recente primeiro. Evento sem "Atual" não entra: a lista só mostra o que tem número oficial.
+ * recente primeiro. Evento sem "Atual" não entra (a lista só mostra o que tem número oficial) e data "a confirmar" também não.
  */
 export function releaseHistory(events, nowMs) {
   return (Array.isArray(events) ? events : [])
-    .filter((e) => Number.isFinite(e?.startMs) && e.startMs < nowMs - RESULT_CARD_MS && e.values?.actual)
+    .filter((e) => e?.status !== 'a_confirmar' && Number.isFinite(e?.startMs) && e.startMs < nowMs - RESULT_CARD_MS && e.values?.actual)
     .sort((a, b) => (a.startMs === b.startMs ? String(a.id).localeCompare(String(b.id)) : b.startMs - a.startMs));
 }
 

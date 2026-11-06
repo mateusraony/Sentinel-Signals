@@ -100,12 +100,14 @@ const hasHappened = (kind, date, nowMs) => {
 /**
  * Os números oficiais de um evento naquele instante (regra 6 de `buildEvents`). Pura.
  * - Ainda NÃO divulgado: o "Anterior" recalculado a cada coleta (o BLS pode revisá-lo antes); sem resposta do BLS, o publicado.
- * - Já divulgado: enquanto o BLS não trouxe o mês que o evento mede, mantém o publicado. No PRIMEIRO instante em que traz,
+ * - Já divulgado (e com data firme): enquanto o BLS não trouxe o mês que o evento mede, mantém o publicado. No PRIMEIRO instante em que traz,
  *   grava o "Atual"; se o "Anterior" recalculado agora difere do congelado, grava também o "Revisado". Daí em diante tudo fica
  *   CONGELADO (uma revisão posterior do mês não troca o número que saiu na divulgação).
  */
-function eventValues({ kind, reference, released, published, blsSeries }) {
+function eventValues({ kind, reference, status, released, published, blsSeries }) {
   if (published?.actual) return published;
+  // Data a confirmar (adiada, retirada) que já passou NÃO é uma divulgação: nunca ganha "Atual" (o mês que o BLS traz é o do evento remarcado).
+  if (released && status === STATUS.A_CONFIRMAR) return published;
   if (!released) {
     const fresh = blsSeries ? previousValues(kind, blsSeries, reference) : null;
     return fresh ?? published;
@@ -155,6 +157,7 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
   const nowIso = new Date(nowMs).toISOString();
   const cutoffMs = nowMs - DAY_MS;
   const cand = new Map(); // id → { kind, date, reference, status }
+  const prevById = new Map(sanitizePrevious(previous).map((p) => [p.id, p]));
 
   for (const e of fixedList) {
     if (!Object.prototype.hasOwnProperty.call(KINDS, e?.kind) || !DATE_RE.test(e?.date ?? '')) continue;
@@ -173,12 +176,16 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
       cand.set(id, { kind, date: d, reference: prev?.reference ?? null, status: STATUS.OFICIAL });
     }
     for (const [id, c] of cand) {
-      // Evento que já aconteceu não vira "a confirmar" só porque o FRED deixou a data antiga de fora da janela de 20 datas.
-      if (c.kind === kind && !set.has(c.date) && !hasHappened(c.kind, c.date, nowMs)) cand.set(id, { ...c, status: STATUS.A_CONFIRMAR });
+      if (c.kind !== kind || set.has(c.date)) continue;
+      // Data que o FRED não traz = "a confirmar". Exceção: a hora dela JÁ passou e ela foi publicada antes — vale o status PUBLICADO.
+      // Assim um evento que de fato aconteceu e saiu da janela de 20 datas do FRED continua "oficial", e uma data ADIADA (já rebaixada
+      // antes da hora) continua "a confirmar" em vez de voltar a "oficial" quando a hora original passa (achado do Codex, PR #547).
+      const published = prevById.get(id)?.status;
+      const keep = hasHappened(c.kind, c.date, nowMs) && Object.values(STATUS).includes(published);
+      cand.set(id, { ...c, status: keep ? published : STATUS.A_CONFIRMAR });
     }
   }
 
-  const prevById = new Map(sanitizePrevious(previous).map((p) => [p.id, p]));
   for (const [id, c] of cand) {
     const p = prevById.get(id);
     if (!p || !(c.kind in FRED_RELEASES) || fredAnswered.has(c.kind) || !Object.values(STATUS).includes(p.status)) continue;
@@ -204,7 +211,7 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     if (!utc) continue;
     const p = prevById.get(id);
     const values = eventValues({
-      kind: c.kind, reference: c.reference, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries,
+      kind: c.kind, reference: c.reference, status: c.status, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries,
     });
     // Só de ontem em diante; o já divulgado COM "Atual" fica HISTORY_DAYS dias (alimenta "Últimas divulgações").
     if (utc.ms < cutoffMs && !(values?.actual && utc.ms >= nowMs - HISTORY_DAYS * DAY_MS)) continue;
