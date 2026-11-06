@@ -11,15 +11,15 @@ name: Coletor de contexto — datas dos eventos (Sentinel Signals)
 #
 # Escrita: é o ÚNICO workflow de contexto com `contents: write`, e só dá push na branch
 # `context-data` (cria na 1ª vez, sem --force). Disparo principal: cron-job.org (07h, 12h e 21h de
-# Brasília, via workflow_dispatch — docs/claude/external-cron-setup.md). O `schedule` tem 2 entradas:
-# uma reserva diária e a "janela de divulgação" (abaixo). Ambas fora do minuto :00 (o GitHub atrasa os
-# agendamentos sob carga e desliga `schedule` após 60 dias sem atividade no repositório).
-# Modo "janela" (addendum 15/16): nas horas das divulgações dos EUA (12h-14h UTC = 09h-11h50 de Brasília, cobre o horário de
-# verão e o de inverno), de segunda a sexta, a cada ~10 min. Nesse modo o coletor só trabalha se algum evento do BLS saiu há ≤ 4 h
-# e ainda não tem o "Atual"; senão sai sem rede e sem gravar. Quem liga o modo: a entrada `mode` = "janela" (um job do cron-job.org,
-# opcional) OU o próprio agendamento da janela (`github.event.schedule` igual ao texto dessa entrada). O valor chega ao script SÓ
-# por variável de ambiente (nunca dentro do texto do `run:`). O agendador do GitHub é menos pontual que o cron-job.org (atrasa
-# sob carga): o "Atual" aparece na 1ª janela depois da divulgação, não no minuto exato.
+# Brasília, via workflow_dispatch — docs/claude/external-cron-setup.md). O `schedule` tem 1 entrada, uma reserva
+# diária fora do minuto :00 (o GitHub atrasa os agendamentos sob carga e desliga `schedule` após 60 dias sem atividade no repositório).
+# Modo "janela" (addendum 15/17): nas horas das divulgações dos EUA (12h-14h UTC = 09h-11h50 de Brasília, cobre o horário de
+# verão e o de inverno). Nesse modo o coletor só trabalha se algum evento do BLS saiu há ≤ 4 h e ainda não tem o "Atual"; senão
+# sai sem rede e sem gravar. Quem liga o modo: a entrada `mode` = "janela" (um job do cron-job.org, opcional) OU o gatilho
+# `workflow_run`: o fim de cada "Scheduled scan" (que o cron-job.org dispara a cada ~15 min) serve de relógio. O `schedule` do GitHub NÃO serve
+# de relógio da janela: em 06/11/2026 a janela agendada não disparou nenhuma vez em ~50 min e a reserva diária do próprio coletor
+# chega ~7 h atrasada (docs/known-risks.md item 285, addendum 17). O filtro de hora (12h-14h UTC) fica no `if:` do job — fora dela o
+# job nem começa (não gasta minuto). O valor do modo chega ao script SÓ por variável de ambiente (nunca dentro do texto do `run:`).
 
 on:
   workflow_dispatch:
@@ -31,7 +31,10 @@ on:
         type: string
   schedule:
     - cron: "41 11 * * *"
-    - cron: "7,17,27,37,47,57 12-14 * * 1-5"
+  workflow_run:
+    workflows: ["Scheduled scan"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
@@ -42,6 +45,13 @@ concurrency:
 
 jobs:
   collect:
+    # No gatilho do fim do scan só segue se: o scan é deste repositório, veio do cron-job.org ou da reserva (nunca de PR/push) e
+    # terminou entre 12h e 14h59 UTC. Os outros gatilhos (manual, reserva diária) não passam por este filtro.
+    if: >-
+      github.event_name != 'workflow_run' || (
+      github.event.workflow_run.head_repository.full_name == github.repository
+      && (github.event.workflow_run.event == 'workflow_dispatch' || github.event.workflow_run.event == 'schedule')
+      && (contains(github.event.workflow_run.updated_at, 'T12:') || contains(github.event.workflow_run.updated_at, 'T13:') || contains(github.event.workflow_run.updated_at, 'T14:')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -82,7 +92,7 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
           CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}
-          COLLECT_MODE: ${{ github.event.inputs.mode || (github.event.schedule == '7,17,27,37,47,57 12-14 * * 1-5' && 'janela') || '' }}
+          COLLECT_MODE: ${{ github.event.inputs.mode || (github.event_name == 'workflow_run' && 'janela') || '' }}
         run: |
           set -o pipefail
           node scripts/context-collect.mjs --dir data | tee -a "$GITHUB_STEP_SUMMARY"

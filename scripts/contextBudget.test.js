@@ -2,6 +2,7 @@
 // importa é o de FALHA: provar que ela reprova quando o consumo passa do teto
 // (guard que nunca falhou é suposição, não proteção — .claude/rules/testing.md).
 import { describe, it, expect } from 'vitest';
+import { SCAN_CADENCE_MIN } from '../src/lib/pollingIntervals.js';
 import {
   DEFAULT_CONFIG, estimateBudget, stress, exceedsProviderLimit, formatBudgetTable, DAYS_PER_MONTH,
   COLLECTOR_WORST_CASE_RUNS_PER_DAY, RELEASE_WINDOW, estimateReleaseWindow,
@@ -22,7 +23,7 @@ describe('pior caso do coletor (3 do cron-job.org + 1 da reserva do `schedule` =
     const { readFileSync } = await import('node:fs');
     const yml = readFileSync('.github/workflows/context-collect.yml', 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
     const crons = [...yml.matchAll(/^\s+- cron: "([^"]+)"/gm)].map((m) => m[1]);
-    expect(crons.length).toBe(2); // a reserva diária + a janela de divulgação (esta é orçada à parte: RELEASE_WINDOW)
+    expect(crons.length).toBe(1); // só a reserva diária; a janela de divulgação vem do fim do scan (workflow_run, orçada à parte: RELEASE_WINDOW)
     expect(crons[0]).toMatch(/^\d+ \d+ \* \* \*$/); // a reserva é DIÁRIA
     expect(yml).toMatch(/workflow_dispatch/); // + as 3 do cron-job.org
   });
@@ -110,13 +111,13 @@ describe('tabela para o resumo do job', () => {
   });
 });
 
-// Addenda 15/16 — o modo "janela" do coletor (agendamento do GitHub; job do cron-job.org opcional). Orçamento à parte; o teste que importa é o de FALHA.
-describe('modo "janela" do coletor (addendum 15)', () => {
-  it('cabe: 396 min/mês de Actions e 105 consultas/dia ao BLS no pior caso (teto 600 min e 250 consultas)', () => {
+// Addenda 15/17 — o modo "janela" do coletor (fim do "Scheduled scan" via workflow_run; job do cron-job.org opcional). Orçamento à parte; o teste que importa é o de FALHA.
+describe('modo "janela" do coletor (addenda 15/17)', () => {
+  it('cabe: 360 min/mês de Actions e 75 consultas/dia ao BLS no pior caso (teto 600 min e 250 consultas)', () => {
     const e = estimateReleaseWindow();
-    expect(e.runsPerMonth).toBe(396);
-    expect(e.minutesPerMonth).toBe(396);
-    expect(e.blsCallsPerDay).toBe(105); // 15 das 3 coletas + 18 disparos x 5 séries
+    expect(e.runsPerMonth).toBe(360);
+    expect(e.minutesPerMonth).toBe(360);
+    expect(e.blsCallsPerDay).toBe(75); // 15 das 3 coletas + 12 disparos x 5 séries
     expect(e.ok).toBe(true);
   });
 
@@ -124,27 +125,26 @@ describe('modo "janela" do coletor (addendum 15)', () => {
     const aCadaMinuto = estimateReleaseWindow({ ...RELEASE_WINDOW, runsPerDay: 180 });
     expect(aCadaMinuto.minutesOk).toBe(false);
     expect(aCadaMinuto.ok).toBe(false);
-    const muitasSeries = estimateReleaseWindow({ ...RELEASE_WINDOW, blsCallsPerWorkingRun: 15 });
+    const muitasSeries = estimateReleaseWindow({ ...RELEASE_WINDOW, blsCallsPerWorkingRun: 25 });
     expect(muitasSeries.blsOk).toBe(false);
     expect(muitasSeries.ok).toBe(false);
   });
 
-  it('o agendamento da janela no workflow dá exatamente os disparos que o orçamento conta (18 por dia, só dias úteis)', async () => {
+  it('o filtro do workflow dá exatamente os disparos que o orçamento conta (scans por hora x horas do `if:`, 12 por dia)', async () => {
     const { readFileSync } = await import('node:fs');
     const yml = readFileSync('.github/workflows/context-collect.yml', 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-    const janela = [...yml.matchAll(/^\s+- cron: "([^"]+)"/gm)].map((m) => m[1]).find((c) => / 1-5$/.test(c));
-    expect(janela, 'o workflow precisa trazer o agendamento da janela').toBeDefined();
-    const [minutos, horas, , , diasDaSemana] = janela.split(' ');
-    const [de, ate] = horas.split('-').map(Number);
-    expect(diasDaSemana).toBe('1-5');
-    expect(minutos.split(',').length * (ate - de + 1)).toBe(RELEASE_WINDOW.runsPerDay);
+    const horas = [...yml.matchAll(/contains\(github\.event\.workflow_run\.updated_at, 'T(\d{2}):'\)/g)].map((m) => m[1]);
+    expect(horas, 'o `if:` do job precisa listar as horas da janela').toEqual(['12', '13', '14']);
+    expect((60 / SCAN_CADENCE_MIN) * horas.length).toBe(RELEASE_WINDOW.runsPerDay);
+    expect(RELEASE_WINDOW.daysPerMonth).toBe(30); // sem filtro de dia da semana no `if:`
+    expect(yml).not.toMatch(/github\.event\.workflow_run\.[a-z_]*day/);
   });
 
-  it('o job OPCIONAL do cron-job.org (guia) usa o mesmo corpo; ligar os DOIS (GitHub + cron-job.org) dobra os disparos e estoura o teto interno de minutos', async () => {
+  it('o job OPCIONAL do cron-job.org (guia) usa o mesmo corpo; ligar os DOIS (fim do scan + cron-job.org) dobra os disparos e estoura o teto interno de minutos', async () => {
     const { readFileSync } = await import('node:fs');
     expect(readFileSync('docs/claude/external-cron-setup.md', 'utf8')).toContain('"inputs":{"mode":"janela"}');
     const dobro = estimateReleaseWindow({ ...RELEASE_WINDOW, runsPerDay: RELEASE_WINDOW.runsPerDay * 2 });
-    expect(dobro.minutesPerMonth).toBe(792);
+    expect(dobro.minutesPerMonth).toBe(720);
     expect(dobro.minutesOk).toBe(false);
   });
 });

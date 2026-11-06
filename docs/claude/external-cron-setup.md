@@ -227,10 +227,11 @@ O workflow também tem uma reserva própria 1x/dia (11:41 UTC), só para o caso 
 
 ## Coletor de contexto — 4º job: "janela de divulgação" (addendum 15 do item 285, 2026-11-06) — **OPCIONAL desde o addendum 16**
 
-> **Você não precisa criar este job.** O próprio workflow do coletor passou a disparar a janela (`schedule` do GitHub, de segunda a sexta,
-> das 12h às 14h57 UTC). O GitHub é menos pontual que o cron-job.org (atrasa sob carga), então o "Atual" aparece em dezenas de minutos em
-> vez de ~10. **Se criar este job, não deixe os dois ligados** — os disparos dobram (acima do teto interno de minutos do orçamento).
-> Use este job só se quiser a pontualidade do cron-job.org, e então a ideia é manter só ele.
+> **Você não precisa criar este job.** O próprio workflow do coletor dispara a janela **quando termina cada "Scheduled scan"** (gatilho
+> `workflow_run`; o scan já é disparado pelo seu job de 15 min do cron-job.org), só entre 12h e 14h59 UTC. Assim o "Atual" aparece em até
+> ~15 min depois de o BLS publicar. (O `schedule` do GitHub chegou a ser usado para isso no addendum 16 e foi trocado no addendum 17: em 06/11 a
+> janela agendada não disparou nenhuma vez em ~50 min.) **Se criar este job, não deixe os dois ligados** — os disparos dobram (acima do
+> teto interno de minutos do orçamento). Use este job só se quiser pontualidade de ~10 min, e então a ideia é tirar o gatilho do fim do scan.
 
 
 Para o **resultado** (o número "Atual" do BLS) aparecer no painel minutos depois da divulgação — e não só na próxima das 3 coletas do dia —
