@@ -12,13 +12,13 @@ import { FRED_RELEASES, parseFredReleaseDates } from './contextCollect.mjs';
 import { buildUserAgent, MAX_BODY_BYTES } from './contextProbe.mjs';
 import {
   MIN_NORMAL_DAYS, WINDOW_CANDLES, parseKlines, releaseInstants, normalDayInstants, reactionAt, summarizeGroup, compareToNormal,
-  formatReport, formatEventList, toJson,
+  formatReport, formatEventList, formatYearTable, toJson,
 } from './contextReaction.mjs';
 
 const KLINES_URL = 'https://data-api.binance.vision/api/v3/klines';
 const FRED_DATES_URL = 'https://api.stlouisfed.org/fred/release/dates';
 export const DEFAULT_SINCE = '2024-01-01';
-export const NORMAL_DAYS = 90;
+export const NORMAL_DAYS = 120;
 const CONCURRENCY = 4;
 const MIN = 60 * 1000;
 
@@ -99,7 +99,7 @@ export async function main({ argv = process.argv.slice(2), env = process.env, fe
 
   const events = releaseInstants(datesByKind, { sinceDate: opts.since, nowMs });
   const eventDates = Object.values(datesByKind).flatMap((d) => (Array.isArray(d) ? d : []));
-  const normals = normalDayInstants({ eventDates, nowMs, count: NORMAL_DAYS });
+  const normals = normalDayInstants({ eventDates, nowMs, count: NORMAL_DAYS, sinceDate: opts.since });
   const fetchOpts = { fetchImpl, env, sleep };
 
   const measured = await pool([...events, ...normals], async (inst) => {
@@ -124,6 +124,7 @@ export async function main({ argv = process.argv.slice(2), env = process.env, fe
 
   const result = { perKind, normal, generatedAtMs: nowMs, sinceDate: opts.since };
   log(formatReport(result));
+  log(formatYearTable(Object.values(rowsByKind).flat(), measured.filter((m) => m.kind === 'NORMAL')));
   log(formatEventList(rowsByKind));
   if (opts.json) writeFileSync(opts.json, `${JSON.stringify(toJson(result), null, 2)}\n`);
   return 0;

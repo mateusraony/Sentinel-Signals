@@ -73,19 +73,26 @@ export function releaseInstants(datesByKind, { sinceDate, nowMs }) {
   return out.sort((a, b) => a.ms - b.ms || a.kind.localeCompare(b.kind));
 }
 
-/** Os `count` dias úteis mais recentes (em Nova York) que NÃO têm divulgação nenhuma, no mesmo horário das divulgações. */
-export function normalDayInstants({ eventDates, nowMs, count }) {
+/**
+ * Os `count` dias úteis (em Nova York) SEM divulgação, ESPALHADOS por todo o período desde `sinceDate` (do mais antigo ao mais recente, incluindo os dois
+ * extremos), no mesmo horário das divulgações. Espalhar importa: pegar só os mais recentes comparava divulgações de 2024-2026 com um trecho curto de 2026, e a
+ * volatilidade do BTC muda com o período (achado na 1ª execução real, 06/11/2026). Com menos dias elegíveis que `count`, devolve todos.
+ */
+export function normalDayInstants({ eventDates, nowMs, count, sinceDate = '2000-01-01' }) {
   const days = new Set(eventDates);
   const todayNy = new Date(nowMs - 6 * 3600 * 1000).toISOString().slice(0, 10); // dia de Nova York com folga; os recentes demais caem fora abaixo
-  const out = [];
-  for (let date = addDays(todayNy, -1); out.length < count && date > '2000-01-01'; date = addDays(date, -1)) {
+  const eligible = [];
+  for (let date = addDays(todayNy, -1); date >= sinceDate; date = addDays(date, -1)) {
     const wd = weekdayOf(date);
     if (wd === 0 || wd === 6 || days.has(date)) continue;
     const ms = nyMs(date);
     if (ms === null || ms + WINDOW_CANDLES * MIN > nowMs) continue;
-    out.push({ kind: 'NORMAL', date, ms });
+    eligible.push({ kind: 'NORMAL', date, ms });
   }
-  return out.sort((a, b) => a.ms - b.ms);
+  eligible.sort((x, y) => x.ms - y.ms);
+  if (eligible.length <= count || count < 1) return eligible;
+  if (count === 1) return [eligible[eligible.length - 1]];
+  return Array.from({ length: count }, (_, i) => eligible[Math.floor((i * (eligible.length - 1)) / (count - 1))]);
 }
 
 /**
@@ -180,8 +187,32 @@ export function formatReport({ perKind, normal, generatedAtMs, sinceDate }) {
     const small = group.n < SMALL_SAMPLE ? ' (amostra pequena)' : '';
     lines.push(`| ${KIND_LABEL[kind] ?? kind} | ${group.n} / ${group.total}${small} | ${pct(group.medAbs[5])} | ${pct(group.medAbs[30])} | ${pct(group.medAbs[60])} | ${pct(group.medRange)} | ${group.up60} / ${group.down60} | ${vsNormal.ratio60 === null ? 'sem dado' : `${BR(vsNormal.ratio60, 1)}x`} | ${vsNormal.rank60 === null ? 'sem dado' : `maior que ${Math.round(vsNormal.rank60 * 100)}% dos dias normais`} |`);
   }
-  lines.push(`| Dia normal (mesmo horário, dia útil sem divulgação) | ${normal.n} / ${normal.total} | ${pct(normal.medAbs[5])} | ${pct(normal.medAbs[30])} | ${pct(normal.medAbs[60])} | ${pct(normal.medRange)} | ${normal.up60} / ${normal.down60} | 1,0x | referência |`);
+  lines.push(`| Dia normal (mesmo horário, dia útil sem divulgação, espalhado pelo mesmo período) | ${normal.n} / ${normal.total} | ${pct(normal.medAbs[5])} | ${pct(normal.medAbs[30])} | ${pct(normal.medAbs[60])} | ${pct(normal.medRange)} | ${normal.up60} / ${normal.down60} | 1,0x | referência |`);
   lines.push('', 'Os valores das medianas são o tamanho do movimento (sem o sinal). "Subiu / caiu" conta quantas vezes o BTC estava acima / abaixo da referência 60 minutos depois.', '', REPORT_NOTE);
+  return lines.join('\n');
+}
+
+/** Meses com 2 ou mais datas do MESMO tipo (ex.: revisão anual ou remarcação do FRED, que não é a divulgação principal): "CPI 2024-02". */
+export function monthsWithTwoDates(rowsByKind) {
+  const out = [];
+  for (const [kind, rows] of Object.entries(rowsByKind)) {
+    const count = new Map();
+    for (const r of rows) count.set(r.date.slice(0, 7), (count.get(r.date.slice(0, 7)) ?? 0) + 1);
+    for (const [month, n] of [...count].sort()) if (n > 1) out.push(`${kind} ${month}`);
+  }
+  return out;
+}
+
+/** Por ano: divulgações (todos os tipos juntos) contra os dias normais do MESMO ano, para ver se a diferença é do período ou da divulgação. */
+export function formatYearTable(eventRows, normalRows) {
+  const years = [...new Set([...eventRows, ...normalRows].map((r) => r.date.slice(0, 4)))].sort();
+  const lines = ['', '### Por ano (todos os tipos juntos)', '', '| Ano | Divulgações (casos) | Mediana 60 min | Dias normais (casos) | Mediana 60 min | Razão |', '|---|---:|---:|---:|---:|---:|'];
+  for (const y of years) {
+    const ev = summarizeGroup(eventRows.filter((r) => r.date.startsWith(y)));
+    const no = summarizeGroup(normalRows.filter((r) => r.date.startsWith(y)));
+    const enough = ev.n >= 5 && no.n >= 5;
+    lines.push(`| ${y} | ${ev.n} | ${pct(ev.medAbs[60])} | ${no.n} | ${pct(no.medAbs[60])} | ${enough && no.medAbs[60] ? `${BR(ev.medAbs[60] / no.medAbs[60], 1)}x` : 'poucos casos'} |`);
+  }
   return lines.join('\n');
 }
 
@@ -195,6 +226,8 @@ export function formatEventList(rowsByKind) {
       ? `| ${r.kind} | ${r.date} | ${signed(r.reaction.moves[5])} | ${signed(r.reaction.moves[30])} | ${signed(r.reaction.moves[60])} | ${pct(r.reaction.rangePct)} |`
       : `| ${r.kind} | ${r.date} | sem dado | sem dado | sem dado | sem dado |`);
   }
+  const duplicated = monthsWithTwoDates(rowsByKind);
+  if (duplicated.length) lines.push('', `Meses com 2 datas do mesmo tipo (pode ser revisão anual ou remarcação, e não a divulgação principal; tende a diluir a mediana do tipo): ${duplicated.join(', ')}.`);
   return lines.join('\n');
 }
 
