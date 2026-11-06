@@ -9,6 +9,8 @@
     "lastChangedAt": "2026-10-31T16:19:52.086Z",
     "values": {
       "previous": "+29 mil",
+      "actual": "+165 mil",
+      "revised": "+60 mil",
       "source": "BLS"
     }
   },
@@ -56,7 +58,10 @@
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
     "lastChangedAt": "2026-10-31T16:19:52.086Z",
-    "values": null
+    "values": {
+      "previous": "+165 mil",
+      "source": "BLS"
+    }
   },
   {
     "id": "FOMC-2026-12-09",
