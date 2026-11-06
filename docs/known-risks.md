@@ -34078,6 +34078,31 @@ Pedido do usuário (05/11): "falta o valor" e "dados que passou". Decisão dele:
   ou no resumo, nem com a chave recusada.
 - **Passo manual pendente (do usuário, não bloqueia):** ativar a chave do BLS (link do e-mail) e/ou refazer o segredo `BLS_API_KEY` só com a chave, sem espaço, aspas nem quebra de linha; depois rodar a sonda de novo.
 
+**Addendum 15 (2026-11-06, Agenda v3 "Resultado") — "Atual", "Revisado", histórico de 45 dias e modo "janela" (BLS).**
+Pedido do usuário ("onde consulto o resultado depois que sair?" → "dá para deixar mais profissional"); pacote aprovado por ele em 06/11. Um PR, duas fases.
+
+*Fato (verificado em produção, 06/11):*
+- Sonda das 00:12 UTC com a chave nova do BLS: API v2 com chave respondeu OK para CPI, Payroll e PPI ("período mais recente: September 2026"). Coletor manual das 00:18 UTC: **5 de 5 séries lidas pela v2** e gravadas em `context-data`.
+- Números de "Anterior" que o coletor publicou (**não conferidos por mim com a notícia; o usuário confere**): Payroll 06/11 "+29 mil"; CPI 10/11 "+0,6% m/m · +3,7% a/a"; PPI 13/11 "+1,3% m/m · +6,3% a/a" (os dois do PPI parecem altos; cabem nas faixas de plausibilidade, então a dúvida é só se refletem a série certa — conferir).
+- O ambiente da sessão **não consegue disparar workflow** (GitHub devolve 403 "Resource not accessible by integration"); o usuário aperta *Run workflow* e a sessão lê o log por `actions_list`/`get_job_logs`.
+
+*O que mudou (dados):* `values` = `{ previous?, actual?, revised?, source: 'BLS' }`.
+- `actual`: número do PRÓPRIO mês de referência (`actualValueText`); só depois da hora do evento; **CPI/PPI só completos** (no mês E em 12 meses — metade publicada espera a próxima coleta em vez de congelar pela metade); congela no 1º instante em que aparece.
+- `revised`: o "Anterior" recalculado no mesmo instante, **só se difere** do `previous` congelado (revisão do BLS junto com a divulgação). `previous` fica como foi publicado antes do evento.
+- Retenção: evento divulgado COM `actual` fica 45 dias (`HISTORY_DAYS`); sem `actual`, 1 dia como sempre. **Evento que já aconteceu nunca é rebaixado para "a confirmar"** (a regra antiga rebaixava qualquer data que o FRED deixasse de fora; com histórico isso teria marcado resultados antigos como "a confirmar").
+- Modo "janela": `workflow_dispatch` ganhou a entrada `mode`; chega ao script só por `COLLECT_MODE` (nunca dentro de um `run:`; o tripwire trava e tem variantes plantadas). Só o valor exato `janela` liga; nesse modo o coletor sai sem rede e sem gravar quando nenhum evento do BLS saiu há ≤ 4 h sem "Atual" (`needsResultCheck`). Orçamento à parte (`RELEASE_WINDOW`): 18 disparos/dia úteis = 396 min/mês e ≤ 105 consultas/dia ao BLS no pior caso (limite 500). **Passo manual do usuário:** 4º job no cron-job.org (`docs/claude/external-cron-setup.md`). Sem ele nada quebra: as 3 coletas diárias também gravam o "Atual".
+
+*O que mudou (tela):* evento do BLS que saiu há ≤ 24 h vira **cartão de Resultado** (tabela Anterior × Anterior revisado × Atual, uma linha por medida: "No mês" / "Em 12 meses"; comparação **neutra** com seta e palavra acima/abaixo/igual, sem verde nem vermelho); depois fica na lista **"Últimas divulgações"** (some inteira enquanto vazia); texto **por extenso** ("no mês", "em 12 meses") traduzido na tela a partir de "m/m"/"a/a" (o dado público continua compacto, ≤ 24 caracteres). `upcomingEvents` **não mudou** (o Telegram do Contexto o usa). PCE/FOMC e evento sem número seguem o fluxo antigo ("acabou de sair" por 30 min).
+
+*Limites (honestos):*
+- **A hora em que o BLS publica na API ainda não foi medida** (o Payroll de 06/11 às 13:30 UTC é a primeira chance; a Sonda tem as linhas para isso). O "Atual" aparece na primeira coleta depois de o BLS trazer o mês.
+- A comparação é com o **mês anterior, não com a expectativa do mercado** (que o painel não tem: sem fonte gratuita e licenciada; financecalendar devolve 401). Não é previsão nem sinal.
+- O histórico **começa vazio** e cresce a cada divulgação com `reference` (só a lista fixa tem referência); não há retroativo (o "Anterior" de antes da revisão não é recuperável).
+- A lista fixa de datas só cobre até 23/12/2026 (a Sonda já avisa); renovar antes.
+- O "Revisado" mostra a correção do mês anterior que o BLS fez NA divulgação; revisões posteriores não entram (tudo congelado).
+
+*Testes:* ~64 novos (`scripts/contextResult.test.js` 34, orçamento 3, tripwire 2, lib da faixa 13, tela 12); **63 mutações plantadas, todas mortas** (33 no coletor/workflow/tripwire, 30 na lib/tela; 2 da tela conferidas à mão porque o texto também estava num comentário).
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 > **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista

@@ -355,10 +355,12 @@ paths:
   - **O que faz:** `scripts/context-collect.mjs` lê as datas de CPI/Payroll/PPI/PCE no FRED, junta com a lista fixa
     (FOMC só nela) e grava `events.json` e `status.json` na branch pública **`context-data`** (cria na 1ª vez).
     Desde o addendum 14 grava também, em cada evento CPI/PPI/Payroll futuro, o `values.previous` (o "Anterior" oficial do BLS, calculado do histórico mensal; congelado depois do evento).
+    Desde o addendum 15 grava, depois da divulgação, `values.actual` (o "Atual", no 1º instante em que o BLS traz o mês, CPI/PPI só completos) e `values.revised` (só se o BLS corrigiu o mês anterior), tudo congelado. Evento divulgado com "Atual" fica 45 dias no arquivo (lista "Últimas divulgações"); evento que já aconteceu nunca vira "a confirmar".
+    **Modo "janela"** (entrada `mode` do workflow → variável `COLLECT_MODE`, só o valor exato `janela`): 4º job do cron-job.org (`docs/claude/external-cron-setup.md`) que só trabalha se há evento do BLS divulgado há ≤ 4 h sem "Atual"; senão sai sem rede e sem gravar. A entrada NUNCA entra no texto de um `run:` (travado pelo tripwire).
   - **Único workflow de contexto com `contents: write`**, e só dá push para `context-data`, sem reescrever histórico.
-    Segredos só `FRED_API_KEY`, `BLS_API_KEY` (opcional: o "Anterior", addendum 14) e `CONTEXT_CONTACT_EMAIL`. Sem banco (não acorda o Neon) e sem Telegram.
+    Segredos só `FRED_API_KEY`, `BLS_API_KEY` (opcional: os números do BLS, addenda 14 e 15) e `CONTEXT_CONTACT_EMAIL`. Sem banco (não acorda o Neon) e sem Telegram.
   - **Conteúdo público travado** por `assertPublicShape` (lista fechada de campos; nada de URL, chave, erro, valor do
-    FRED ou volatilidade — a única exceção é o "Anterior" do BLS, domínio público, no formato único) e as regras do
+    FRED ou volatilidade — a única exceção são os números do BLS ("Anterior", "Atual", "Revisado"), domínio público, no formato único) e as regras do
     workflow por `scripts/contextIsolationTripwire.test.js`.
 
 - `context-notify.yml` — **aviso do Contexto no Telegram** (Fase 4a, `docs/known-risks.md` item 285, addendum 12).
