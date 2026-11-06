@@ -124,17 +124,19 @@ export function formatBudgetTable(estimate) {
 }
 
 /**
- * Modo "janela" do coletor (addenda 15/16): um agendamento do próprio GitHub (a cada ~10 min, das 12h às 14h57 UTC, de segunda a sexta; o cron exato está em `context-collect.yml`; um job do cron-job.org com `mode: janela` é OPCIONAL e, ligado junto, DOBRA os disparos) que só trabalha quando algum
- * evento do BLS saiu há ≤ 4 h e ainda não tem o "Atual"; nos demais disparos o coletor sai sem rede e sem gravar. As 12h-14h UTC cobrem
- * 8:30 de Nova York no horário de verão (12:30 UTC) e no de inverno (13:30 UTC). É um orçamento À PARTE (não entra em `estimateBudget`):
- * o das 3 coletas diárias segue valendo como está.
+ * Modo "janela" do coletor (addenda 15/17): o fim de cada "Scheduled scan" (que o cron-job.org dispara a cada `SCAN_CADENCE_MIN` = 15 min) aciona o coletor
+ * (`workflow_run`), mas o `if:` do job só deixa começar entre 12h e 14h59 UTC; fora disso o job nem inicia (não gasta minuto). Dentro da hora o coletor só
+ * trabalha quando algum evento do BLS saiu há ≤ 4 h e ainda não tem o "Atual"; nos demais disparos sai sem rede e sem gravar. As 12h-14h UTC cobrem
+ * 8:30 de Nova York no horário de verão (12:30 UTC) e no de inverno (13:30 UTC). Não há filtro de dia da semana (o `if:` não enxerga o dia): sábado e
+ * domingo disparam e saem na hora, por isso o mês conta 30 dias. Um job do cron-job.org com `mode: janela` é OPCIONAL e, ligado junto, DOBRA os disparos.
+ * É um orçamento À PARTE (não entra em `estimateBudget`): o das 3 coletas diárias segue valendo como está.
  */
 export const RELEASE_WINDOW = Object.freeze({
-  runsPerDay: 18, // 6 por hora x 3 horas (12h, 13h e 14h UTC)
-  daysPerMonth: 22, // dias úteis (segunda a sexta)
+  runsPerDay: 12, // 4 scans por hora (a cada 15 min) x 3 horas (12h, 13h e 14h UTC)
+  daysPerMonth: 30, // sem filtro de dia da semana
   minutesPerRun: 1, // disparo sem trabalho: ~20 s, cobrado como 1 min
   blsCallsPerWorkingRun: 5, // as 5 séries do BLS
-  maxWorkingRunsPerDay: 18, // pior caso: o BLS demora a trazer o mês e TODOS os disparos do dia trabalham
+  maxWorkingRunsPerDay: 12, // pior caso: o BLS demora a trazer o mês e TODOS os disparos do dia trabalham
   baseBlsCallsPerDay: 15, // as 3 coletas diárias x 5 séries
   blsDailyLimit: 500, // limite diário da chave v2 do BLS
   internalCapBlsRatio: 0.5, // aceitamos usar até metade

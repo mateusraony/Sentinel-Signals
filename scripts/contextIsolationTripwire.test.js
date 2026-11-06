@@ -169,8 +169,18 @@ describe('tripwire: a faixa de eventos do painel só lê a branch pública (item
 // branch pública `context-data`. Sem push forçado, sem outra branch, sem segredo além do FRED, do BLS (addendum 14: o "Anterior") e do contato.
 const COLETOR = '.github/workflows/context-collect.yml';
 const SEGREDOS_DO_COLETOR = new Set(['FRED_API_KEY', 'BLS_API_KEY', 'CONTEXT_CONTACT_EMAIL']);
-/** A linha que liga o modo janela: a entrada `mode` OU o agendamento da janela (o texto do cron vai no grupo 1). */
-const MODO_JANELA = /^\s*COLLECT_MODE:\s*\$\{\{\s*github\.event\.inputs\.mode \|\| \(github\.event\.schedule == '([0-9*,/ -]+)' && 'janela'\) \|\| ''\s*\}\}\s*$/;
+/** A linha que liga o modo janela: a entrada `mode` OU o gatilho `workflow_run` (o fim do "Scheduled scan" serve de relógio; addendum 17). */
+const MODO_JANELA = /^\s*COLLECT_MODE:\s*\$\{\{\s*github\.event\.inputs\.mode \|\| \(github\.event_name == 'workflow_run' && 'janela'\) \|\| ''\s*\}\}\s*$/;
+/** O filtro do job no gatilho `workflow_run`: o scan é deste repositório, veio do cron-job.org ou da reserva e terminou de 12h a 14h59 UTC. */
+const FILTRO_DO_GATILHO = [
+  "github.event_name != 'workflow_run'",
+  'github.event.workflow_run.head_repository.full_name == github.repository',
+  "github.event.workflow_run.event == 'workflow_dispatch'",
+  "github.event.workflow_run.event == 'schedule'",
+  "contains(github.event.workflow_run.updated_at, 'T12:')",
+  "contains(github.event.workflow_run.updated_at, 'T13:')",
+  "contains(github.event.workflow_run.updated_at, 'T14:')",
+];
 
 /** true quando o workflow NÃO tem `permissions:` no nível do arquivo (comentários ignorados). */
 function semPermissoes(yml) {
@@ -197,22 +207,24 @@ function problemasDoColetor(yml) {
   if (/TELEGRAM/.test(codigo)) p.push('Telegram (só na Fase 4, com remetente sem banco)');
   if (!/workflow_dispatch/.test(codigo)) p.push('sem disparo manual (o cron-job.org usa workflow_dispatch)');
   if (!/node scripts\/context-collect\.mjs/.test(codigo)) p.push('não roda o coletor');
-  // Modo "janela" (addenda 15/16): a ÚNICA entrada lida do workflow é `mode`, e só como variável de ambiente do passo que roda o coletor.
+  // Modo "janela" (addenda 15/17): a ÚNICA entrada lida do workflow é `mode`, e só como variável de ambiente do passo que roda o coletor.
   // Entrada dentro do texto de um `run:` seria injeção de comando (quem dispara o workflow controla o valor). O modo também liga sozinho
-  // quando o agendamento da JANELA dispara (`github.event.schedule`); esse texto tem de ser um dos 2 agendamentos declarados, só de dias
-  // úteis — a reserva diária nunca pode virar modo janela (ela deixaria de coletar).
+  // quando o disparo vem do fim de um scan (`github.event_name == 'workflow_run'`): o scan do cron-job.org é o relógio, porque o `schedule`
+  // do GitHub atrasa horas (06/11/2026). A reserva diária (`schedule`) nunca pode virar modo janela (ela deixaria de coletar).
   for (const l of codigo.split('\n').filter((x) => /\binputs\./.test(x))) {
     if (!MODO_JANELA.test(l)) p.push(`entrada do workflow fora do permitido (só COLLECT_MODE por variável de ambiente): ${l.trim()}`);
   }
-  const linhaModo = codigo.split('\n').find((l) => MODO_JANELA.test(l));
-  if (!linhaModo) p.push('falta COLLECT_MODE vindo de github.event.inputs.mode / do agendamento da janela (o modo janela não chegaria ao coletor)');
-  else {
-    const cronJanela = MODO_JANELA.exec(linhaModo)[1];
-    const crons = [...codigo.matchAll(/^\s*-\s*cron:\s*"([^"]+)"/gm)].map((m) => m[1]);
-    if (crons.length !== 2) p.push(`esperados exatamente 2 agendamentos (reserva diária + janela); há ${crons.length}`);
-    if (!crons.includes(cronJanela)) p.push('o agendamento que liga o modo janela não existe no `schedule:`');
-    if (!/ 1-5$/.test(cronJanela)) p.push('o agendamento do modo janela deve ser só de dias úteis (a reserva diária nunca pode virar modo janela)');
+  if (!codigo.split('\n').some((l) => MODO_JANELA.test(l))) p.push('falta COLLECT_MODE vindo de github.event.inputs.mode / do gatilho workflow_run (o modo janela não chegaria ao coletor)');
+  // O `schedule:` é só a reserva diária (nenhuma entrada que ligue o modo janela).
+  const crons = [...codigo.matchAll(/^\s*-\s*cron:\s*"([^"]+)"/gm)].map((m) => m[1]);
+  if (crons.length !== 1) p.push(`esperado exatamente 1 agendamento (a reserva diária); há ${crons.length}`);
+  for (const c of crons) if (!/^\d+ \d+ \* \* \*$/.test(c)) p.push(`o agendamento deve ser diário e fora do modo janela: ${c}`);
+  // O gatilho do fim do scan: só o "Scheduled scan", só na main, só quando termina, e o job filtra por hora e por origem.
+  if (!/^\s*workflow_run:\s*\n\s*workflows:\s*\["Scheduled scan"\]\s*\n\s*types:\s*\[completed\]\s*\n\s*branches:\s*\[main\]\s*$/m.test(codigo)) {
+    p.push('workflow_run fora do molde (só o "Scheduled scan", types: [completed], branches: [main])');
   }
+  for (const trecho of FILTRO_DO_GATILHO) if (!codigo.includes(trecho)) p.push(`filtro do gatilho workflow_run sem: ${trecho}`);
+  if (/^\s*(pull_request|pull_request_target|push|issue_comment|repository_dispatch):/m.test(codigo)) p.push('gatilho que qualquer pessoa pode acionar (PR, push, comentário, dispatch externo)');
   return p;
 }
 
@@ -360,10 +372,9 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
     for (const l of linhasComSegredo) expect(passo, l).toContain(l);
   });
 
-  const CRON_JANELA = '7,17,27,37,47,57 12-14 * * 1-5';
-  const MODO = `COLLECT_MODE: \${{ github.event.inputs.mode || (github.event.schedule == '${CRON_JANELA}' && 'janela') || '' }}`;
+  const MODO = `COLLECT_MODE: \${{ github.event.inputs.mode || (github.event_name == 'workflow_run' && 'janela') || '' }}`;
 
-  it('o modo "janela" (addenda 15/16) chega ao coletor SÓ por variável de ambiente do passo que o roda — nunca dentro de um `run:`', () => {
+  it('o modo "janela" (addenda 15/17) chega ao coletor SÓ por variável de ambiente do passo que o roda — nunca dentro de um `run:`', () => {
     const real = readFileSync(join(ROOT, COLETOR), 'utf8');
     const usos = real.split('\n').filter((l) => /\binputs\./.test(l) && !/^\s*#/.test(l)).map((l) => l.trim());
     expect(usos).toEqual([MODO]);
@@ -372,17 +383,20 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
     expect(problemasDoColetor(real)).toEqual([]);
   });
 
-  it('o `schedule:` tem exatamente a reserva diária e a janela, e a janela é só de dias úteis nas horas das divulgações (12h-14h UTC)', () => {
+  it('o `schedule:` é só a reserva diária; a janela vem do fim do "Scheduled scan" (workflow_run), e esse nome existe de verdade no scan.yml', () => {
     const real = readFileSync(join(ROOT, COLETOR), 'utf8');
     const crons = [...real.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n').matchAll(/^\s*-\s*cron:\s*"([^"]+)"/gm)].map((m) => m[1]);
-    expect(crons).toEqual(['41 11 * * *', CRON_JANELA]);
+    expect(crons).toEqual(['41 11 * * *']);
+    const scan = readFileSync(join(ROOT, '.github/workflows/scan.yml'), 'utf8');
+    expect(scan).toMatch(/^name: Scheduled scan\s*$/m);
+    expect(real).toContain('workflows: ["Scheduled scan"]');
   });
 
-  it('prova: pega a entrada do workflow interpolada no script, em outro lugar, uma entrada a mais, o modo sem chegar ao coletor e a reserva virando janela', () => {
+  it('prova: pega a entrada do workflow interpolada no script, em outro lugar, uma entrada a mais, o modo sem chegar ao coletor, a reserva virando janela e o gatilho do scan aberto demais', () => {
     const real = readFileSync(join(ROOT, COLETOR), 'utf8');
     const env = MODO;
     expect(real).toContain(env);
-    const cronLinha = `    - cron: "${CRON_JANELA}"\n`;
+    const cronLinha = '    - cron: "41 11 * * *"\n';
     expect(real).toContain(cronLinha);
     const plantados = [
       real.replace('node scripts/context-collect.mjs --dir data', 'node scripts/context-collect.mjs --dir data ${{ github.event.inputs.mode }}'),
@@ -391,19 +405,28 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
       real.replace(env, `${env}\n          OUTRA: \${{ github.event.inputs.extra }}`),
       real.replace(`          ${env}\n`, ''),
       real.replace(env, 'COLLECT_MODE: janela'),
-      // a RESERVA diária virando modo janela (deixaria de coletar):
-      real.replace(`github.event.schedule == '${CRON_JANELA}'`, "github.event.schedule == '41 11 * * *'"),
-      // o texto da comparação não existe no `schedule:`:
-      real.replace(`github.event.schedule == '${CRON_JANELA}'`, "github.event.schedule == '7 12 * * 1-5'"),
-      // a janela some do `schedule:` (o modo nunca ligaria) / um 3º agendamento aparece:
-      real.replace(cronLinha, ''),
-      real.replace(cronLinha, `${cronLinha}    - cron: "5 * * * *"\n`),
       // o modo ligado SEMPRE (inclusive no botão manual em branco e na reserva):
       real.replace("&& 'janela') || ''", "&& 'janela') || 'janela'"),
       // a entrada deixa de valer:
       real.replace('github.event.inputs.mode || (', '('),
+      // a reserva diária some / vira dia útil / ganha uma irmã que liga a janela por horário:
+      real.replace(cronLinha, ''),
+      real.replace(cronLinha, '    - cron: "41 11 * * 1-5"\n'),
+      real.replace(cronLinha, `${cronLinha}    - cron: "7,17,27,37,47,57 12-14 * * 1-5"\n`),
+      // o gatilho do scan: outro workflow, qualquer branch, outro momento:
+      real.replace('workflows: ["Scheduled scan"]', 'workflows: ["CI"]'),
+      real.replace('    branches: [main]\n', ''),
+      real.replace('types: [completed]', 'types: [requested]'),
+      // gatilhos que qualquer pessoa aciona:
+      real.replace('on:\n  workflow_dispatch:', 'on:\n  pull_request:\n  workflow_dispatch:'),
+      real.replace('on:\n  workflow_dispatch:', 'on:\n  push:\n  workflow_dispatch:'),
+      // cada peça do filtro do job, tirada uma a uma (o job passaria a rodar fora da hora, de outro repositório ou de qualquer origem):
+      ...FILTRO_DO_GATILHO.map((trecho) => real.replace(trecho, 'true')),
     ];
-    plantados.forEach((yml, i) => expect(problemasDoColetor(yml).length, `variante plantada nº ${i}`).toBeGreaterThan(0));
+    plantados.forEach((yml, i) => {
+      expect(yml, `variante plantada nº ${i} não mudou o arquivo`).not.toBe(real);
+      expect(problemasDoColetor(yml).length, `variante plantada nº ${i}`).toBeGreaterThan(0);
+    });
   });
 
   it('prova: pega workflow de contexto sem bloco `permissions:`', () => {
