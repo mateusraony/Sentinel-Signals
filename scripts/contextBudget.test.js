@@ -21,7 +21,9 @@ describe('pior caso do coletor (3 do cron-job.org + 1 da reserva do `schedule` =
   it('a reserva existe de verdade no workflow (senão o número 4 estaria errado)', async () => {
     const { readFileSync } = await import('node:fs');
     const yml = readFileSync('.github/workflows/context-collect.yml', 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-    expect((yml.match(/^\s+- cron: /gm) || []).length).toBe(1); // 1 reserva diária
+    const crons = [...yml.matchAll(/^\s+- cron: "([^"]+)"/gm)].map((m) => m[1]);
+    expect(crons.length).toBe(2); // a reserva diária + a janela de divulgação (esta é orçada à parte: RELEASE_WINDOW)
+    expect(crons[0]).toMatch(/^\d+ \d+ \* \* \*$/); // a reserva é DIÁRIA
     expect(yml).toMatch(/workflow_dispatch/); // + as 3 do cron-job.org
   });
 });
@@ -108,7 +110,7 @@ describe('tabela para o resumo do job', () => {
   });
 });
 
-// Addendum 15 — o modo "janela" do coletor (4º job do cron-job.org). Orçamento à parte; o teste que importa é o de FALHA.
+// Addenda 15/16 — o modo "janela" do coletor (agendamento do GitHub; job do cron-job.org opcional). Orçamento à parte; o teste que importa é o de FALHA.
 describe('modo "janela" do coletor (addendum 15)', () => {
   it('cabe: 396 min/mês de Actions e 105 consultas/dia ao BLS no pior caso (teto 600 min e 250 consultas)', () => {
     const e = estimateReleaseWindow();
@@ -127,13 +129,22 @@ describe('modo "janela" do coletor (addendum 15)', () => {
     expect(muitasSeries.ok).toBe(false);
   });
 
-  it('o horário do guia do cron-job.org dá exatamente os disparos que o orçamento conta (18 por dia, só dias úteis)', async () => {
+  it('o agendamento da janela no workflow dá exatamente os disparos que o orçamento conta (18 por dia, só dias úteis)', async () => {
     const { readFileSync } = await import('node:fs');
-    const guia = readFileSync('docs/claude/external-cron-setup.md', 'utf8');
-    const m = /\*\/(\d+) (\d+)-(\d+) \* \* 1-5/.exec(guia);
-    expect(m, 'o guia precisa trazer o cron da janela').not.toBeNull();
-    const [passo, de, ate] = [Number(m[1]), Number(m[2]), Number(m[3])];
-    expect(((ate - de + 1) * 60) / passo).toBe(RELEASE_WINDOW.runsPerDay);
-    expect(guia).toContain('"inputs":{"mode":"janela"}');
+    const yml = readFileSync('.github/workflows/context-collect.yml', 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    const janela = [...yml.matchAll(/^\s+- cron: "([^"]+)"/gm)].map((m) => m[1]).find((c) => / 1-5$/.test(c));
+    expect(janela, 'o workflow precisa trazer o agendamento da janela').toBeDefined();
+    const [minutos, horas, , , diasDaSemana] = janela.split(' ');
+    const [de, ate] = horas.split('-').map(Number);
+    expect(diasDaSemana).toBe('1-5');
+    expect(minutos.split(',').length * (ate - de + 1)).toBe(RELEASE_WINDOW.runsPerDay);
+  });
+
+  it('o job OPCIONAL do cron-job.org (guia) usa o mesmo corpo; ligar os DOIS (GitHub + cron-job.org) dobra os disparos e estoura o teto interno de minutos', async () => {
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync('docs/claude/external-cron-setup.md', 'utf8')).toContain('"inputs":{"mode":"janela"}');
+    const dobro = estimateReleaseWindow({ ...RELEASE_WINDOW, runsPerDay: RELEASE_WINDOW.runsPerDay * 2 });
+    expect(dobro.minutesPerMonth).toBe(792);
+    expect(dobro.minutesOk).toBe(false);
   });
 });

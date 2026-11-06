@@ -225,7 +225,13 @@ item 285, addendum 9) grava as datas de CPI, Payroll, PPI, PCE e FOMC na branch 
 
 O workflow também tem uma reserva própria 1x/dia (11:41 UTC), só para o caso do cron-job.org falhar.
 
-## Coletor de contexto — 4º job: "janela de divulgação" (addendum 15 do item 285, 2026-11-06)
+## Coletor de contexto — 4º job: "janela de divulgação" (addendum 15 do item 285, 2026-11-06) — **OPCIONAL desde o addendum 16**
+
+> **Você não precisa criar este job.** O próprio workflow do coletor passou a disparar a janela (`schedule` do GitHub, de segunda a sexta,
+> das 12h às 14h57 UTC). O GitHub é menos pontual que o cron-job.org (atrasa sob carga), então o "Atual" aparece em dezenas de minutos em
+> vez de ~10. **Se criar este job, não deixe os dois ligados** — os disparos dobram (acima do teto interno de minutos do orçamento).
+> Use este job só se quiser a pontualidade do cron-job.org, e então a ideia é manter só ele.
+
 
 Para o **resultado** (o número "Atual" do BLS) aparecer no painel minutos depois da divulgação — e não só na próxima das 3 coletas do dia —
 o coletor ganhou o modo **janela**. É um 4º job no cron-job.org, igual aos 3 do coletor, trocando só o horário e o corpo:
