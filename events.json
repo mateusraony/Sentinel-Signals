@@ -6,7 +6,11 @@
     "startsAtUtc": "2026-11-06T13:30:00.000Z",
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": {
+      "previous": "+29 mil",
+      "source": "BLS"
+    }
   },
   {
     "id": "CPI-2026-11-10",
@@ -15,7 +19,11 @@
     "startsAtUtc": "2026-11-10T13:30:00.000Z",
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": {
+      "previous": "+0,6% m/m · +3,7% a/a",
+      "source": "BLS"
+    }
   },
   {
     "id": "PPI-2026-11-13",
@@ -24,7 +32,11 @@
     "startsAtUtc": "2026-11-13T13:30:00.000Z",
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": {
+      "previous": "+1,3% m/m · +6,3% a/a",
+      "source": "BLS"
+    }
   },
   {
     "id": "PCE-2026-11-25",
@@ -33,7 +45,8 @@
     "startsAtUtc": "2026-11-25T13:30:00.000Z",
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": null
   },
   {
     "id": "NFP-2026-12-04",
@@ -42,7 +55,8 @@
     "startsAtUtc": "2026-12-04T13:30:00.000Z",
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": null
   },
   {
     "id": "FOMC-2026-12-09",
@@ -51,7 +65,8 @@
     "startsAtUtc": "2026-12-09T19:00:00.000Z",
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": null
   },
   {
     "id": "CPI-2026-12-10",
@@ -60,7 +75,8 @@
     "startsAtUtc": "2026-12-10T13:30:00.000Z",
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": null
   },
   {
     "id": "PPI-2026-12-15",
@@ -69,7 +85,8 @@
     "startsAtUtc": "2026-12-15T13:30:00.000Z",
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": null
   },
   {
     "id": "PCE-2026-12-23",
@@ -78,7 +95,8 @@
     "startsAtUtc": "2026-12-23T13:30:00.000Z",
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": null
   },
   {
     "id": "NFP-2027-01-08",
@@ -87,7 +105,8 @@
     "startsAtUtc": "2027-01-08T13:30:00.000Z",
     "status": "a_confirmar",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": null
   },
   {
     "id": "CPI-2027-01-13",
@@ -96,6 +115,7 @@
     "startsAtUtc": "2027-01-13T13:30:00.000Z",
     "status": "a_confirmar",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
-    "lastChangedAt": "2026-10-31T16:19:52.086Z"
+    "lastChangedAt": "2026-10-31T16:19:52.086Z",
+    "values": null
   }
 ]
