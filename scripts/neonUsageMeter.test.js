@@ -257,6 +257,12 @@ describe('buildMessage — o texto do Telegram', () => {
     }
   });
 
+  it('histórico do GitHub cortado: a mensagem avisa que o consumo real é MAIOR; completo: nenhum aviso', () => {
+    expect(buildMessage(base(), { truncated: true })).toContain('Atenção: o histórico do GitHub veio incompleto; o consumo real é MAIOR que o mostrado.');
+    expect(buildMessage(base(), { truncated: false })).not.toMatch(/incompleto/);
+    expect(buildMessage(base())).not.toMatch(/incompleto/);
+  });
+
   it('neutro: nada de previsão de mercado nem de ordem', () => {
     expect(buildMessage(base())).not.toMatch(/compra|venda|vai subir|vai cair|probabilidade/i);
   });

@@ -150,8 +150,8 @@ const LEVEL_ADVICE = Object.freeze({
   critico: 'Perto do limite: se a cota acabar, o scan e o painel param até o próximo período. Feche as abas do painel e não dispare nada à mão.',
 });
 
-/** Mensagem em português simples para o Telegram (HTML; só texto fixo e números — nada vindo de fora). Sem emoji. */
-export function buildMessage(s) {
+/** Mensagem em português simples para o Telegram (HTML; só texto fixo e números — nada vindo de fora). Sem emoji. `truncated` = o histórico do GitHub veio incompleto. */
+export function buildMessage(s, { truncated = false } = {}) {
   const lines = [
     '<b>Neon: uso de computação do mês (estimado)</b>',
     `Situação: <b>${LEVEL_TEXT[s.level]}</b>`,
@@ -174,5 +174,6 @@ export function buildMessage(s) {
       ? 'Não inclui o painel aberto: ele mantém o banco acordado.'
       : `Não inclui o painel aberto: cada hora com ele aberto soma cerca de ${fmt2(s.panelHourCu)} CU-h.`,
   );
+  if (truncated) lines.push('Atenção: o histórico do GitHub veio incompleto; o consumo real é MAIOR que o mostrado.');
   return lines.join('\n');
 }

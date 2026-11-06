@@ -17,8 +17,17 @@ import { sendTelegram, describeSendFailure } from './contextTelegram.mjs';
 
 const GITHUB_API = 'https://api.github.com';
 const PER_PAGE = 100;
-/** O scan a cada 15 min gera ~2.900 execuções por mês = 29 páginas; 40 dá folga e ainda corta uma busca descontrolada. */
-export const MAX_PAGES = 40;
+/**
+ * Com o filtro `created`, a API do GitHub devolve NO MÁXIMO 1.000 resultados por consulta (documentado: 10 páginas de 100), mesmo que
+ * existam mais — o scan a cada 15 min passa disso em ~10 dias (achado do Codex, PR #548). Por isso o período é consultado por
+ * INTERVALOS de datas: se uma consulta chega perto do teto (`SPLIT_AT`), o intervalo é dividido ao meio e cada metade consultada à parte.
+ */
+export const API_RESULT_CAP = 1000;
+export const SPLIT_AT = 900;
+const MAX_PAGES_PER_QUERY = API_RESULT_CAP / PER_PAGE;
+const DAY_MS = 86400000;
+const dayNumber = (ms) => Math.floor(ms / DAY_MS);
+const dayIso = (n) => new Date(n * DAY_MS).toISOString().slice(0, 10);
 const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
 
 /**
@@ -42,17 +51,18 @@ export function listDatabaseWorkflows(dir) {
 }
 
 /**
- * Execuções de UM workflow desde `sinceMs`, da API do GitHub (paginada). Execução pulada ou que ainda nem começou não usou o banco e
- * fica de fora; em andamento entra sem `endMs`. Qualquer falha vira `Error('github_http_<código>')`/`github_rede` — SEM o corpo da
- * resposta nem a URL (o cabeçalho tem o token).
+ * Execuções de UM workflow entre `sinceMs` e `untilMs`, da API do GitHub, consultadas por intervalos de datas (ver `API_RESULT_CAP`).
+ * Execução pulada ou que ainda nem começou não usou o banco e fica de fora; em andamento entra sem `endMs`. `truncated` = algum
+ * um único dia tem mais execuções que o teto da API (não dá para dividir mais): o número real é MAIOR. Qualquer
+ * falha vira `Error('github_http_<código>')`/`github_rede`/`github_resposta` — SEM o corpo da resposta nem a URL (o cabeçalho tem o token).
  * @returns {Promise<{ runs: { workflow: string, startMs: number, endMs: number|null }[], truncated: boolean }>}
  */
-export async function fetchWorkflowRuns({ repo, workflow, sinceMs, token, fetchImpl = fetch, maxPages = MAX_PAGES }) {
-  const since = new Date(sinceMs).toISOString().slice(0, 10);
+export async function fetchWorkflowRuns({ repo, workflow, sinceMs, untilMs, token, fetchImpl = fetch }) {
   const runs = [];
   let truncated = false;
-  for (let page = 1; page <= maxPages; page += 1) {
-    const url = `${GITHUB_API}/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs?per_page=${PER_PAGE}&page=${page}&created=${encodeURIComponent(`>=${since}`)}`;
+
+  const getPage = async (fromDay, toDay, page) => {
+    const url = `${GITHUB_API}/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs?per_page=${PER_PAGE}&page=${page}&created=${encodeURIComponent(`${dayIso(fromDay)}..${dayIso(toDay)}`)}`;
     let res;
     try {
       res = await fetchImpl(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'sentinel-signals-neon-usage' } });
@@ -63,6 +73,12 @@ export async function fetchWorkflowRuns({ repo, workflow, sinceMs, token, fetchI
     let body;
     try { body = await res.json(); } catch { throw new Error('github_resposta'); }
     const list = Array.isArray(body?.workflow_runs) ? body.workflow_runs : [];
+    // Sem `total_count`, uma página cheia é tratada como "perto do teto" (divide; custa mais consultas, nunca perde execução).
+    const total = Number.isFinite(body?.total_count) ? body.total_count : (list.length < PER_PAGE ? list.length : SPLIT_AT);
+    return { list, total };
+  };
+
+  const consume = (list) => {
     for (const r of list) {
       if (r?.conclusion === 'skipped') continue;
       if (r?.status !== 'completed' && r?.status !== 'in_progress') continue;
@@ -71,9 +87,27 @@ export async function fetchWorkflowRuns({ repo, workflow, sinceMs, token, fetchI
       const endMs = r.status === 'completed' ? Date.parse(r.updated_at ?? '') : NaN;
       runs.push({ workflow, startMs, endMs: Number.isFinite(endMs) ? endMs : null });
     }
-    if (list.length < PER_PAGE) return { runs, truncated };
-    if (page === maxPages) truncated = true;
+  };
+
+  async function range(a, b) {
+    const first = await getPage(a, b, 1);
+    if (first.total >= SPLIT_AT && a < b) {
+      const mid = Math.floor((a + b) / 2);
+      await range(a, mid);
+      await range(mid + 1, b);
+      return;
+    }
+    // Um único dia (não dá para dividir mais) é lido até o teto de páginas; só se passar dele é que algo se perde (flag abaixo).
+    consume(first.list);
+    let list = first.list;
+    for (let page = 2; list.length === PER_PAGE; page += 1) {
+      if (page > MAX_PAGES_PER_QUERY) { truncated = true; break; }
+      ({ list } = await getPage(a, b, page));
+      consume(list);
+    }
   }
+
+  await range(dayNumber(sinceMs), dayNumber(untilMs));
   return { runs, truncated };
 }
 
@@ -115,7 +149,7 @@ export async function main({
   let truncated = false;
   try {
     for (const workflow of workflows) {
-      const r = await fetchWorkflowRuns({ repo, workflow, sinceMs: startMs, token, fetchImpl });
+      const r = await fetchWorkflowRuns({ repo, workflow, sinceMs: startMs, untilMs: nowMs, token, fetchImpl });
       truncated = truncated || r.truncated;
       runs.push(...r.runs);
       runsByWorkflow[workflow] = {
@@ -129,7 +163,7 @@ export async function main({
   }
 
   const summary = summarize({ runs, nowMs, billingDay, baseline: parseBaseline(env) });
-  const message = buildMessage(summary);
+  const message = buildMessage(summary, { truncated });
   const trigger = env.NEON_TRIGGER === 'schedule' ? 'schedule' : 'manual';
   const wantsSend = env.ENVIAR === 'true';
 

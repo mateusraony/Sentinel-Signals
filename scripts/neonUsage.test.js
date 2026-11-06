@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { main, fetchWorkflowRuns, listDatabaseWorkflows, usesNeonDatabase, formatReport, MAX_PAGES } from './neon-usage.mjs';
+import { main, fetchWorkflowRuns, listDatabaseWorkflows, usesNeonDatabase, formatReport, API_RESULT_CAP, SPLIT_AT } from './neon-usage.mjs';
 import { summarize } from './neonUsageMeter.mjs';
 
 const GH_TOKEN = 'ghs_TOKENsecreto0123456789abcdefghij';
@@ -30,8 +30,12 @@ function workflowsDir(files = {}) {
   return dir;
 }
 
-/** fetch falso: GitHub responde `porWorkflow[nome]` (lista de execuções, paginada); Telegram responde `telegram`. */
-function fakeFetch({ porWorkflow = {}, ghStatus = 200, telegram = 200 } = {}) {
+/**
+ * fetch falso: GitHub responde `porWorkflow[nome]` filtrando pelo intervalo `created=AAAA-MM-DD..AAAA-MM-DD` (dias UTC, inclusivo) e
+ * paginando de 100 em 100; `cap` imita o teto do GitHub (no máximo `cap` resultados por consulta com `created`); `totalMode` diz o que
+ * vai em `total_count`: 'real' (a contagem verdadeira), 'capped' (já cortada no teto) ou 'ausente' (sem o campo). Telegram responde `telegram`.
+ */
+function fakeFetch({ porWorkflow = {}, ghStatus = 200, telegram = 200, cap = Infinity, totalMode = 'real' } = {}) {
   const calls = { github: [], telegram: [] };
   const fn = async (url, init = {}) => {
     const u = String(url);
@@ -42,15 +46,24 @@ function fakeFetch({ porWorkflow = {}, ghStatus = 200, telegram = 200 } = {}) {
     calls.github.push({ url: u, headers: init.headers });
     if (ghStatus !== 200) return new Response('{"message":"erro com ghs_TOKENsecreto"}', { status: ghStatus });
     const nome = decodeURIComponent(/workflows\/([^/]+)\/runs/.exec(u)[1]);
-    const page = Number(new URL(u).searchParams.get('page'));
-    const todas = porWorkflow[nome] ?? [];
-    return new Response(JSON.stringify({ total_count: todas.length, workflow_runs: todas.slice((page - 1) * 100, page * 100) }), { status: 200 });
+    const params = new URL(u).searchParams;
+    const page = Number(params.get('page'));
+    const [de, ate] = String(params.get('created') ?? '0000-01-01..9999-12-31').split('..');
+    const dentro = (porWorkflow[nome] ?? []).filter((r) => {
+      const dia = String(r.created_at).slice(0, 10);
+      return dia >= de && dia <= ate;
+    });
+    const devolvidas = dentro.slice(0, cap);
+    const body = { workflow_runs: devolvidas.slice((page - 1) * 100, page * 100) };
+    if (totalMode === 'real') body.total_count = dentro.length;
+    if (totalMode === 'capped') body.total_count = devolvidas.length;
+    return new Response(JSON.stringify(body), { status: 200 });
   };
   return { fn, calls };
 }
 
-async function rodar({ env = {}, fetchEnv, now = Date.UTC(2026, 10, 5, 11, 17), files, porWorkflow, ghStatus, telegram } = {}) {
-  const { fn, calls } = fakeFetch({ porWorkflow: porWorkflow ?? { 'scan.yml': scan(10), 'backup-postgres.yaml': [] }, ghStatus, telegram });
+async function rodar({ env = {}, fetchEnv, now = Date.UTC(2026, 10, 5, 11, 17), files, porWorkflow, ghStatus, telegram, cap, totalMode } = {}) {
+  const { fn, calls } = fakeFetch({ porWorkflow: porWorkflow ?? { 'scan.yml': scan(10), 'backup-postgres.yaml': [] }, ghStatus, telegram, cap, totalMode });
   const out = [];
   const err = [];
   const code = await main({
@@ -86,12 +99,14 @@ describe('listDatabaseWorkflows', () => {
 });
 
 describe('fetchWorkflowRuns', () => {
+  const pedir = (fetchImpl, extra = {}) => fetchWorkflowRuns({ repo: REPO, workflow: 'scan.yml', sinceMs: T0, untilMs: T0 + 5 * 86400000, token: GH_TOKEN, fetchImpl, ...extra });
+
   it('pagina até a página incompleta; pula execução pulada e na fila; em andamento entra sem fim', async () => {
     const pagina1 = Array.from({ length: 100 }, (_, i) => run(T0 + i * MIN));
     const pagina2 = [run(T0 + 200 * MIN, 1, { conclusion: 'skipped' }), run(T0 + 201 * MIN, 1, { status: 'queued', conclusion: null }),
       run(T0 + 202 * MIN, 1, { status: 'in_progress', conclusion: null }), run(T0 + 203 * MIN)];
     const { fn, calls } = fakeFetch({ porWorkflow: { 'scan.yml': [...pagina1, ...pagina2] } });
-    const r = await fetchWorkflowRuns({ repo: REPO, workflow: 'scan.yml', sinceMs: T0, token: GH_TOKEN, fetchImpl: fn });
+    const r = await pedir(fn);
     expect(calls.github.length).toBe(2);
     expect(r.truncated).toBe(false);
     expect(r.runs.length).toBe(102); // 100 + andamento + completa; pulada e na fila ficaram de fora
@@ -99,25 +114,64 @@ describe('fetchWorkflowRuns', () => {
     expect(r.runs.every((x) => x.workflow === 'scan.yml')).toBe(true);
   });
 
-  it('pede só o período (filtro created), 100 por página, o nome do arquivo codificado; o token vai só no cabeçalho', async () => {
+  it('pede o período como intervalo de datas (created=de..até), 100 por página, o nome do arquivo codificado; o token vai só no cabeçalho', async () => {
     const { fn, calls } = fakeFetch({ porWorkflow: { 'a b.yml': [] } });
-    await fetchWorkflowRuns({ repo: REPO, workflow: 'a b.yml', sinceMs: Date.UTC(2026, 10, 1, 13), token: GH_TOKEN, fetchImpl: fn });
+    await fetchWorkflowRuns({ repo: REPO, workflow: 'a b.yml', sinceMs: Date.UTC(2026, 10, 1, 13), untilMs: Date.UTC(2026, 10, 5, 11), token: GH_TOKEN, fetchImpl: fn });
     const { url, headers } = calls.github[0];
     expect(url).toContain(`/repos/${REPO}/actions/workflows/a%20b.yml/runs?`);
     expect(url).toContain('per_page=100');
-    expect(url).toContain('created=%3E%3D2026-11-01');
+    expect(url).toContain('created=2026-11-01..2026-11-05');
     expect(url).not.toContain(GH_TOKEN);
     expect(headers.Authorization).toBe(`Bearer ${GH_TOKEN}`);
   });
 
-  it('corta no limite de páginas e AVISA (truncated)', async () => {
-    const cheia = Array.from({ length: 300 }, (_, i) => run(T0 + i * MIN));
-    const { fn, calls } = fakeFetch({ porWorkflow: { 'scan.yml': cheia } });
-    const r = await fetchWorkflowRuns({ repo: REPO, workflow: 'scan.yml', sinceMs: T0, token: GH_TOKEN, fetchImpl: fn, maxPages: 2 });
-    expect(calls.github.length).toBe(2);
+  it('constantes do teto da API', () => {
+    expect([API_RESULT_CAP, SPLIT_AT]).toEqual([1000, 900]);
+  });
+
+  for (const totalMode of ['real', 'capped', 'ausente']) {
+    it(`REGRESSÃO (Codex, PR #548): com o teto de 1.000 do GitHub, 20 dias a cada 15 min (1.920 execuções) vêm COMPLETOS dividindo o período — total_count ${totalMode}`, async () => {
+      const todas = Array.from({ length: 1920 }, (_, i) => run(T0 + i * 15 * MIN));
+      const { fn, calls } = fakeFetch({ porWorkflow: { 'scan.yml': todas }, cap: API_RESULT_CAP, totalMode });
+      const r = await pedir(fn, { untilMs: T0 + 19 * 86400000 + 23 * 3600000 });
+      expect(r.runs.length).toBe(1920);
+      expect(new Set(r.runs.map((x) => x.startMs)).size).toBe(1920); // nenhuma execução repetida
+      expect(r.truncated).toBe(false);
+      expect(calls.github.length).toBeLessThan(80); // dividir custa poucas consultas
+    });
+  }
+
+  it('o mês inteiro do scan a cada 15 min (2.880 execuções) também vem completo', async () => {
+    const todas = Array.from({ length: 2880 }, (_, i) => run(T0 + i * 15 * MIN));
+    const { fn } = fakeFetch({ porWorkflow: { 'scan.yml': todas }, cap: API_RESULT_CAP });
+    const r = await pedir(fn, { untilMs: T0 + 29 * 86400000 + 23 * 3600000 });
+    expect(r.runs.length).toBe(2880);
+    expect(r.truncated).toBe(false);
+  });
+
+  it('um ÚNICO dia com mais execuções que o teto não dá para dividir: avisa (truncated) em vez de fingir que está completo', async () => {
+    const todas = Array.from({ length: 1200 }, (_, i) => run(T0 + i * 20000)); // 1.200 execuções no mesmo dia
+    const { fn } = fakeFetch({ porWorkflow: { 'scan.yml': todas }, cap: API_RESULT_CAP, totalMode: 'capped' });
+    const r = await pedir(fn, { untilMs: T0 + 3600000 });
     expect(r.truncated).toBe(true);
-    expect(r.runs.length).toBe(200);
-    expect(MAX_PAGES).toBe(40);
+    expect(r.runs.length).toBeLessThanOrEqual(API_RESULT_CAP);
+  });
+
+  it('um dia com 950 execuções (perto do teto, mas abaixo dele): vem TODO e NÃO é marcado como cortado', async () => {
+    const dia = Array.from({ length: 950 }, (_, i) => run(T0 + i * 60000));
+    for (const totalMode of ['real', 'capped', 'ausente']) {
+      const { fn } = fakeFetch({ porWorkflow: { 'scan.yml': dia }, cap: API_RESULT_CAP, totalMode });
+      const r = await pedir(fn, { untilMs: T0 + 3600000 });
+      expect(r.runs.length, totalMode).toBe(950);
+      expect(r.truncated, totalMode).toBe(false);
+    }
+  });
+
+  it('poucas execuções (abaixo do limite de divisão): UMA consulta só para o período todo', async () => {
+    const { fn, calls } = fakeFetch({ porWorkflow: { 'scan.yml': scan(50) } });
+    const r = await pedir(fn);
+    expect(calls.github.length).toBe(1);
+    expect(r.runs.length).toBe(50);
   });
 
   it('erro do GitHub, rede e resposta ruim viram só um CÓDIGO (sem corpo, sem URL, sem token)', async () => {
@@ -127,7 +181,7 @@ describe('fetchWorkflowRuns', () => {
       [async () => new Response('<html>', { status: 200 }), 'github_resposta'],
     ]) {
       let erro;
-      try { await fetchWorkflowRuns({ repo: REPO, workflow: 'scan.yml', sinceMs: T0, token: GH_TOKEN, fetchImpl }); } catch (e) { erro = e; }
+      try { await pedir(fetchImpl); } catch (e) { erro = e; }
       expect(erro?.message).toBe(codigo);
       expect(erro.message).not.toContain(GH_TOKEN);
     }
@@ -135,10 +189,8 @@ describe('fetchWorkflowRuns', () => {
 
   it('corpo sem a lista e data inválida não quebram: simplesmente não contam', async () => {
     const fetchImpl = async () => new Response(JSON.stringify({ workflow_runs: [{ status: 'completed', run_started_at: 'ontem' }, null, {}] }), { status: 200 });
-    const r = await fetchWorkflowRuns({ repo: REPO, workflow: 'scan.yml', sinceMs: T0, token: GH_TOKEN, fetchImpl });
-    expect(r.runs).toEqual([]);
-    const vazio = await fetchWorkflowRuns({ repo: REPO, workflow: 'x.yml', sinceMs: T0, token: GH_TOKEN, fetchImpl: async () => new Response('{}', { status: 200 }) });
-    expect(vazio.runs).toEqual([]);
+    expect((await pedir(fetchImpl)).runs).toEqual([]);
+    expect((await pedir(async () => new Response('{}', { status: 200 }))).runs).toEqual([]);
   });
 });
 
@@ -190,7 +242,7 @@ describe('main — simulação, envio e política', () => {
 
   it('o dia de cobrança muda o período lido (filtro created da API e texto)', async () => {
     const r = await rodar({ env: { NEON_BILLING_DAY: '10' } });
-    expect(r.calls.github[0].url).toContain('created=%3E%3D2026-10-10');
+    expect(r.calls.github[0].url).toContain('created=2026-10-10..2026-11-05');
     expect(r.out).toContain('Período: 2026-10-10 a 2026-11-10 (UTC)');
   });
 
@@ -231,6 +283,24 @@ describe('main — simulação, envio e política', () => {
       expect(t).not.toContain(GH_TOKEN);
       expect(t).not.toContain(TG_TOKEN);
     }
+  });
+});
+
+describe('main — histórico cortado pelo GitHub', () => {
+  it('um dia com mais execuções que o teto: o relatório E o aviso do Telegram dizem que o número real é MAIOR', async () => {
+    const dia = Array.from({ length: 1200 }, (_, i) => run(Date.UTC(2026, 10, 5, 0, 0, 0) + i * 20000));
+    const r = await rodar({
+      now: Date.UTC(2026, 10, 5, 11, 17), cap: API_RESULT_CAP, totalMode: 'capped', porWorkflow: { 'scan.yml': dia },
+      env: { ENVIAR: 'true', NEON_TRIGGER: 'schedule', TELEGRAM_BOT_TOKEN: TG_TOKEN, TELEGRAM_CHAT_ID: TG_CHAT },
+    });
+    expect(r.out).toContain('o número real é MAIOR');
+    expect(r.calls.telegram[0].body.text).toContain('o histórico do GitHub veio incompleto; o consumo real é MAIOR');
+  });
+
+  it('histórico completo: nenhum aviso de corte', async () => {
+    const r = await rodar({ env: { ENVIAR: 'true', NEON_TRIGGER: 'schedule', TELEGRAM_BOT_TOKEN: TG_TOKEN, TELEGRAM_CHAT_ID: TG_CHAT } });
+    expect(r.out).not.toContain('MAIOR');
+    expect(r.calls.telegram[0].body.text).not.toContain('incompleto');
   });
 });
 

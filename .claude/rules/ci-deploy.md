@@ -409,6 +409,7 @@ paths:
     GitHub e `scripts/neonUsageMeter.mjs` estima os CU-h do período (execução + 5 min de ociosidade, × 0,25 CU, sem contar sobreposição). **É um MÍNIMO**: não vê o
     painel aberto nem o Render.
   - **Avisos no Telegram:** resumo diário (manhã); à noite só se o nível não for OK; ATENÇÃO ≥ 60% do limite ou projeção ≥ 100; CRÍTICO ≥ 80%.
+  - **Teto da API do GitHub:** o filtro `created` devolve no máximo 1.000 resultados por consulta; por isso o período é lido por INTERVALOS de datas, divididos ao meio quando chegam a 900 (achado do Codex no PR #548). Histórico cortado = aviso "o consumo real é MAIOR".
   - **Sem banco:** nenhum `DATABASE_URL` (senão gastaria a cota que mede). `contents: read` + `actions: read`; segredos só `GITHUB_TOKEN` e os 2 do Telegram
     (estes só quando há envio). Travado por `scripts/neonUsageTripwire.test.js`.
   - **Calibração opcional** (variáveis do repositório): `NEON_BASELINE_CU_HOURS` + `NEON_BASELINE_AT`; `NEON_BILLING_DAY`.
