@@ -122,6 +122,7 @@ const ARQUIVOS_DA_FAIXA = [
   'src/lib/marketContextSource.js',
   'src/hooks/useMarketContext.js',
   'src/components/dashboard/MarketContextBand.jsx',
+  'src/lib/reactionStats.js', // Agenda 4d, etapa 2 (addendum 18): textos de "como o BTC se mexeu", só leitura de um arquivo de agregados
 ];
 const PROIBIDO_NA_FAIXA = [
   { nome: 'adaptador de entidades (banco)', re: /@\/api\/entities|api\/entities|adminEntities/ },
@@ -160,7 +161,7 @@ describe('tripwire: a faixa de eventos do painel só lê a branch pública (item
     expect(dash).toMatch(/import MarketContextBand from '@\/components\/dashboard\/MarketContextBand'/);
     for (const rel of MOTOR) {
       const texto = lerSeExiste(rel);
-      if (texto !== null) expect(texto, rel).not.toMatch(/MarketContextBand|useMarketContext|marketContext(Band|Source)/);
+      if (texto !== null) expect(texto, rel).not.toMatch(/MarketContextBand|useMarketContext|marketContext(Band|Source)|reactionStats/);
     }
   });
 });

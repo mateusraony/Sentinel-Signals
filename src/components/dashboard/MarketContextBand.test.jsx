@@ -470,3 +470,61 @@ describe('MarketContextBand — resultado', () => {
     expect(screen.queryByRole('article', { name: 'Resultado' })).toBeNull();
   });
 });
+
+// Agenda 4d, etapa 2 (addendum 18 do item 285): "Como o BTC se mexeu nas últimas divulgações" — medido, não previsto.
+describe('MarketContextBand — como o BTC se mexeu nas últimas divulgações', () => {
+  const BLOCO = { name: 'Como o BTC se mexeu nas últimas divulgações' };
+  const saiu = (id, kind, ago, values) => ({ ...ev(id, kind, iso(NOW - ago)), values });
+
+  it('CPI (próximo evento) passa do critério: mostra tamanho do movimento, a razão, o número de casos e a data da medição', async () => {
+    dados([ev('CPI-x', 'CPI', '2026-11-10T13:30:00.000Z')]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Próximo evento' });
+    const bloco = screen.getByRole('complementary', BLOCO);
+    expect(within(bloco).getByText('Costuma mexer mais que num dia normal')).toBeTruthy();
+    expect(within(bloco).getByText('0,65%')).toBeTruthy();
+    expect(within(bloco).getByText(/dia normal: 0,22% · 3,0× mais/)).toBeTruthy();
+    expect(within(bloco).getByText('0,44%')).toBeTruthy();
+    expect(within(bloco).getByText(/34 divulgações desde jan\/2024 · medido em 06\/11\/2026/)).toBeTruthy();
+    expect(within(bloco).getByText(/não indica para onde o BTC vai/)).toBeTruthy();
+  });
+
+  it('PPI não passa do critério: "Perto de um dia normal", sem dizer "vezes mais"', async () => {
+    dados([ev('PPI-x', 'PPI', '2026-11-13T13:30:00.000Z')]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Próximo evento' });
+    const bloco = screen.getByRole('complementary', BLOCO);
+    expect(within(bloco).getByText('Perto de um dia normal')).toBeTruthy();
+    expect(within(bloco).getByText('0,28%')).toBeTruthy();
+    expect(bloco.textContent).not.toMatch(/× mais/);
+    expect(bloco.textContent).not.toMatch(/Costuma mexer mais/);
+  });
+
+  it('FOMC não tem medição: nenhum bloco', async () => {
+    dados([ev('FOMC-x', 'FOMC', '2026-12-09T19:00:00.000Z', 'confirmada')]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Próximo evento' });
+    expect(screen.queryByRole('complementary', BLOCO)).toBeNull();
+  });
+
+  it('o resultado do Payroll que acabou de sair também mostra o bloco do tipo dele, logo abaixo do cartão de resultado', async () => {
+    dados([saiu('NFP-b', 'NFP', 20 * 60000, { previous: '+29 mil', actual: '+165 mil', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const resultado = await screen.findByRole('article', { name: 'Resultado' });
+    const bloco = screen.getByRole('complementary', BLOCO);
+    expect(within(bloco).getByText('0,44%')).toBeTruthy(); // Payroll, não CPI
+    expect(within(bloco).getByText(/35 divulgações/)).toBeTruthy();
+    // vem DEPOIS do cartão de resultado, no mesmo bloco da tela
+    expect(resultado.compareDocumentPosition(bloco) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('um CPI e um PPI na tela: cada um mostra o bloco do PRÓPRIO tipo (não o do vizinho)', async () => {
+    dados([saiu('CPI-a', 'CPI', 20 * 60000, { previous: '+0,6% m/m · +3,7% a/a', actual: '+0,4% m/m · +3,5% a/a', source: 'BLS' }), ev('PPI-x', 'PPI', '2026-11-13T13:30:00.000Z')]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Resultado' });
+    const blocos = screen.getAllByRole('complementary', BLOCO);
+    expect(blocos).toHaveLength(2);
+    expect(blocos[0].textContent).toMatch(/0,65%/);
+    expect(blocos[1].textContent).toMatch(/0,28%/);
+  });
+});

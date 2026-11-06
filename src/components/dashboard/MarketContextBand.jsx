@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   CalendarClock, Eye, EyeOff, Briefcase, ShoppingCart, Factory, Wallet, Landmark, BadgeCheck, Clock,
-  ChevronDown, ChevronUp, ArrowUp, ArrowDown, Equal, History,
+  ChevronDown, ChevronUp, ArrowUp, ArrowDown, Equal, History, Activity,
 } from 'lucide-react';
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { useNow } from '@/hooks/useNow';
@@ -11,6 +11,7 @@ import {
   splitValueText, resultRows, resultEvents, releaseHistory, brtDayDiff, relativeDayLabel,
   formatCountdown, formatCountdownBare, formatEventWhen, formatEventClock, formatAge, isBandEnabled, setBandEnabled,
 } from '@/lib/marketContextBand';
+import { reactionNote } from '@/lib/reactionStats';
 
 const BOX = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' };
 const SOFT = { background: 'rgba(255,255,255,0.025)' };
@@ -179,6 +180,52 @@ function DirectionTag({ direction }) {
 function releasedWhen(e, now) {
   const day = relativeDayLabel(brtDayDiff(e.startMs, now)).toLowerCase();
   return `Saiu ${day} às ${formatEventClock(e.startsAtUtc)}`;
+}
+
+/**
+ * "Como o BTC se mexeu nas últimas divulgações" (Agenda 4d, addendum 18 do item 285): o TAMANHO do movimento do BTC na 1ª hora e nos 5 primeiros
+ * minutos das divulgações passadas do mesmo tipo, contra o mesmo horário num dia normal. Medido, não previsto: sempre com o número de casos e a
+ * data da medição, sem sinal de alta/baixa, sem verde/vermelho e sem previsão. Só aparece para o tipo que tem medição (CPI, Payroll, PPI e PCE).
+ */
+function ReactionNote({ kind }) {
+  const n = reactionNote(kind);
+  if (!n) return null;
+  const strong = n.verdict === 'maior';
+  return (
+    <aside aria-label="Como o BTC se mexeu nas últimas divulgações" className="rounded-lg px-3 py-2.5 space-y-2"
+      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <h4 className="flex items-center gap-1.5 text-10px font-mono uppercase tracking-wider text-muted-foreground">
+          <Activity className="w-3 h-3 shrink-0" aria-hidden="true" />
+          Como o BTC se mexeu nas últimas divulgações
+        </h4>
+        <span className="text-10px font-mono font-bold rounded-full px-2 py-0.5"
+          style={{ color: strong ? '#e2e8f0' : '#94a3b8', border: `1px solid ${strong ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.12)'}` }}>
+          {n.chip}
+        </span>
+      </div>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 font-mono tabular-nums">
+        <div>
+          <dt className="text-10px text-muted-foreground">Na 1ª hora (mediana)</dt>
+          <dd className="flex flex-wrap items-baseline gap-x-2">
+            <span className="text-lg font-bold text-foreground leading-tight">{n.hour.value}</span>
+            <span className="text-10px text-muted-foreground">dia normal: {n.hour.normal}{n.hour.times ? ` · ${n.hour.times} mais` : ''}</span>
+          </dd>
+        </div>
+        <div>
+          <dt className="text-10px text-muted-foreground">Nos 5 primeiros minutos</dt>
+          <dd className="flex flex-wrap items-baseline gap-x-2">
+            <span className="text-lg font-bold text-foreground leading-tight">{n.first5.value}</span>
+            <span className="text-10px text-muted-foreground">dia normal: {n.first5.normal}</span>
+          </dd>
+        </div>
+      </dl>
+      <p className="text-10px font-mono text-muted-foreground leading-relaxed">
+        {n.cases} · medido em {n.measuredAt}. Tamanho do movimento, sem direção: um retrato do passado, que não indica para onde o BTC vai.
+        O mercado reage ao que surpreende, e este painel não tem a expectativa.
+      </p>
+    </aside>
+  );
 }
 
 /**
@@ -486,12 +533,22 @@ function MarketContextBandInner() {
           </span>
         </p>
       )}
-      {results.map((r) => <ResultCard key={r.id} e={r} now={now} checkedAtMs={checkedAtMs} />)}
+      {results.map((r) => (
+        <div key={r.id} className="space-y-2">
+          <ResultCard e={r} now={now} checkedAtMs={checkedAtMs} />
+          <ReactionNote kind={r.kind} />
+        </div>
+      ))}
       {rows.length === 0 ? (
         results.length === 0 && <p className="text-11px font-mono text-muted-foreground">Nenhum evento à frente na agenda.</p>
       ) : (
         <>
-          {featured && <NextEventCard e={featured} now={now} />}
+          {featured && (
+            <div className="space-y-2">
+              <NextEventCard e={featured} now={now} />
+              <ReactionNote kind={featured.kind} />
+            </div>
+          )}
           {groups.length > 0 && (
             <div className="space-y-2">
               {featured && <h3 className="text-10px font-mono uppercase tracking-wider text-muted-foreground">Nos próximos dias</h3>}
