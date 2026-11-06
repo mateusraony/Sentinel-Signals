@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   OFFSETS_MIN, WINDOW_CANDLES, SMALL_SAMPLE, MIN_NORMAL_DAYS, parseKlines, releaseInstants, normalDayInstants, reactionAt, median, percentRank,
-  summarizeGroup, compareToNormal, formatReport, formatEventList, toJson, REPORT_NOTE,
+  summarizeGroup, compareToNormal, formatReport, formatEventList, formatYearTable, monthsWithTwoDates, toJson, REPORT_NOTE,
 } from './contextReaction.mjs';
 import { main, fetchWindow, fetchPastFredDates, NORMAL_DAYS } from './context-reaction.mjs';
 
@@ -89,18 +89,31 @@ describe('releaseInstants', () => {
 
 describe('normalDayInstants', () => {
   const NOW = Date.UTC(2026, 10, 6, 15, 0); // sexta
-  it('só dias úteis sem divulgação, os mais recentes, sem o dia de hoje ainda sem janela completa', () => {
-    const out = normalDayInstants({ eventDates: ['2026-11-05'], nowMs: NOW, count: 5 });
-    const dates = out.map((x) => x.date);
-    expect(dates).toEqual(['2026-10-29', '2026-10-30', '2026-11-02', '2026-11-03', '2026-11-04']);
-    for (const x of out) {
+  it('só dias úteis sem divulgação; com mais dias elegíveis que o pedido, ESPALHA do mais antigo ao mais recente (inclui os dois extremos)', () => {
+    // elegíveis desde 01/10: 24 dias úteis (22 de outubro sem o dia 14 + 3 de novembro até o dia 04, o dia 05 é divulgação)
+    const out = normalDayInstants({ eventDates: ['2026-10-14', '2026-11-05'], nowMs: NOW, count: 3, sinceDate: '2026-10-01' });
+    expect(out.map((x) => x.date)).toEqual(['2026-10-01', '2026-10-19', '2026-11-04']);
+    const all = normalDayInstants({ eventDates: ['2026-10-14', '2026-11-05'], nowMs: NOW, count: 100, sinceDate: '2026-10-01' });
+    expect(all).toHaveLength(24);
+    for (const x of all) {
       expect([0, 6]).not.toContain(new Date(`${x.date}T12:00:00Z`).getUTCDay());
+      expect(['2026-10-14', '2026-11-05']).not.toContain(x.date);
       expect(x.kind).toBe('NORMAL');
     }
+    expect(all.map((x) => x.ms)).toEqual([...all.map((x) => x.ms)].sort((p, q) => p - q));
+  });
+  it('o resultado espalhado cobre o período inteiro e não repete dia', () => {
+    const out = normalDayInstants({ eventDates: [], nowMs: NOW, count: 120, sinceDate: '2024-01-01' });
+    expect(out).toHaveLength(120);
+    expect(new Set(out.map((x) => x.date)).size).toBe(120);
+    expect(out[0].date <= '2024-01-05').toBe(true); // o 1º dia útil elegível do período
+    expect(out[out.length - 1].date).toBe('2026-11-05'); // o último elegível (hoje nunca entra)
+    // cobre os 3 anos (não só os meses mais recentes)
+    expect(new Set(out.map((x) => x.date.slice(0, 4)))).toEqual(new Set(['2024', '2025', '2026']));
   });
   it('o dia de hoje nunca entra: a lista começa em ontem, mesmo com a janela de hoje já fechada', () => {
-    expect(normalDayInstants({ eventDates: ['2026-11-06'], nowMs: Date.UTC(2026, 10, 6, 14, 0), count: 1 })[0].date).toBe('2026-11-05');
-    expect(normalDayInstants({ eventDates: [], nowMs: Date.UTC(2026, 10, 6, 14, 40), count: 1 })[0].date).toBe('2026-11-05');
+    expect(normalDayInstants({ eventDates: ['2026-11-06'], nowMs: Date.UTC(2026, 10, 6, 14, 0), count: 1, sinceDate: '2026-10-01' })[0].date).toBe('2026-11-05');
+    expect(normalDayInstants({ eventDates: [], nowMs: Date.UTC(2026, 10, 6, 14, 40), count: 1, sinceDate: '2026-10-01' })[0].date).toBe('2026-11-05');
   });
 });
 
@@ -150,6 +163,24 @@ describe('summarizeGroup / compareToNormal', () => {
   });
 });
 
+describe('por ano e meses com 2 datas', () => {
+  const rx = (m60) => ({ moves: { 5: m60 / 3, 30: m60 / 2, 60: m60 }, rangePct: Math.abs(m60) * 2 });
+  const mk = (dates, m) => dates.map((date) => ({ date, reaction: rx(m) }));
+  it('tabela por ano: casos e medianas dos dois lados do MESMO ano, razão só com pelo menos 5 casos de cada lado', () => {
+    const ev = [...mk(['2024-01-05', '2024-02-02', '2024-03-08', '2024-04-05', '2024-05-03'], 1), ...mk(['2025-01-10', '2025-02-07'], 0.5)];
+    const no = [...mk(['2024-01-08', '2024-01-09', '2024-01-10', '2024-01-11', '2024-01-12'], 0.25), ...mk(['2025-01-13'], 0.2)];
+    const txt = formatYearTable(ev, no);
+    expect(txt).toContain('| 2024 | 5 | 1,00% | 5 | 0,25% | 4,0x |');
+    expect(txt).toContain('| 2025 | 2 | 0,50% | 1 | 0,20% | poucos casos |');
+  });
+  it('acha meses com 2 datas do mesmo tipo (e não confunde tipos diferentes no mesmo mês)', () => {
+    const rowsByKind = { CPI: mk(['2024-02-09', '2024-02-13', '2024-03-12'], 1), PPI: mk(['2024-02-14'], 1), NFP: mk(['2024-02-02', '2024-03-08'], 1) };
+    expect(monthsWithTwoDates(rowsByKind)).toEqual(['CPI 2024-02']);
+    expect(formatEventList(rowsByKind)).toMatch(/Meses com 2 datas do mesmo tipo.*CPI 2024-02/);
+    expect(formatEventList({ NFP: mk(['2024-02-02', '2024-03-08'], 1) })).not.toMatch(/Meses com 2 datas/);
+  });
+});
+
 describe('relatório', () => {
   const rx = (m60) => ({ moves: { 5: m60 / 3, 30: m60 / 2, 60: m60 }, rangePct: Math.abs(m60) * 2 });
   function build(nEvents, nNormal = 40) {
@@ -161,7 +192,7 @@ describe('relatório', () => {
   it('mostra o N de cada tipo e do dia normal, a razão e a posição, e avisa "amostra pequena" abaixo de 30 casos', () => {
     const txt = formatReport(build(12));
     expect(txt).toContain('Payroll (emprego) | 12 / 12 (amostra pequena)');
-    expect(txt).toContain('Dia normal (mesmo horário, dia útil sem divulgação) | 40 / 40');
+    expect(txt).toContain('Dia normal (mesmo horário, dia útil sem divulgação, espalhado pelo mesmo período) | 40 / 40');
     expect(txt).toMatch(/\| 2,1x \| maior que 100% dos dias normais \|/); // 0,75 / 0,35 = 2,14
     expect(formatReport(build(SMALL_SAMPLE))).not.toContain('amostra pequena');
     expect(SMALL_SAMPLE).toBe(30);
@@ -232,7 +263,9 @@ describe('context-reaction.mjs (entrada)', () => {
       const text = out.join('\n');
       expect(text).toContain('Como o BTC se mexeu nas divulgações passadas dos EUA');
       expect(text).toContain('Payroll (emprego) | 3 / 3');
-      expect(text).toContain(`Dia normal (mesmo horário, dia útil sem divulgação) | ${NORMAL_DAYS} / ${NORMAL_DAYS}`);
+      expect(text).toContain('### Por ano (todos os tipos juntos)');
+      expect(text).toContain('### Divulgações medidas');
+      expect(text).toContain(`Dia normal (mesmo horário, dia útil sem divulgação, espalhado pelo mesmo período) | ${NORMAL_DAYS} / ${NORMAL_DAYS}`);
       const json = readFileSync(jsonPath, 'utf8');
       expect(JSON.parse(json).kinds.NFP.n).toBe(3);
       expect(`${text}\n${json}`).not.toContain(KEY);
@@ -252,6 +285,10 @@ describe('context-reaction.mjs (entrada)', () => {
     const bin = calls.filter((c) => !c.includes('stlouisfed.org'));
     expect(bin.length).toBe(6 + NORMAL_DAYS); // 6 divulgações passadas (3 Payroll + CPI + PPI + PCE) + os dias normais
     for (const c of bin) expect(c).toMatch(/^https:\/\/data-api\.binance\.vision\/api\/v3\/klines\?symbol=BTCUSDT&interval=1m&startTime=\d+&limit=61$/);
+    // os dias normais ficam DENTRO do período medido (desde 01/01/2024) e cobrem os anos, não só os meses mais recentes
+    const starts = bin.map((c) => Number(new URL(c).searchParams.get('startTime')));
+    expect(Math.min(...starts)).toBeGreaterThanOrEqual(Date.UTC(2024, 0, 1));
+    expect(Math.min(...starts)).toBeLessThan(Date.UTC(2024, 1, 1));
   });
 
   it('sem FRED_API_KEY, sem resposta do FRED ou sem velas: sai com 1 e diz o motivo', async () => {
