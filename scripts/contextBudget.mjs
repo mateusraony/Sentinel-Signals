@@ -122,3 +122,31 @@ export function formatBudgetTable(estimate) {
   lines.push(`- Branch de dados: ${estimate.storage.mbPerYear} MB/ano (teto interno ${estimate.storage.internalCapMB}) — ${estimate.storage.ok ? 'OK' : 'ACIMA DO TETO'}`);
   return lines.join('\n');
 }
+
+/**
+ * Modo "janela" do coletor (addendum 15): um 4º job do cron-job.org (a cada 10 min, das 12h às 14h50 UTC, de segunda a sexta; o cron exato está em docs/claude/external-cron-setup.md) que só trabalha quando algum
+ * evento do BLS saiu há ≤ 4 h e ainda não tem o "Atual"; nos demais disparos o coletor sai sem rede e sem gravar. As 12h-14h UTC cobrem
+ * 8:30 de Nova York no horário de verão (12:30 UTC) e no de inverno (13:30 UTC). É um orçamento À PARTE (não entra em `estimateBudget`):
+ * o das 3 coletas diárias segue valendo como está.
+ */
+export const RELEASE_WINDOW = Object.freeze({
+  runsPerDay: 18, // 6 por hora x 3 horas (12h, 13h e 14h UTC)
+  daysPerMonth: 22, // dias úteis (segunda a sexta)
+  minutesPerRun: 1, // disparo sem trabalho: ~20 s, cobrado como 1 min
+  blsCallsPerWorkingRun: 5, // as 5 séries do BLS
+  maxWorkingRunsPerDay: 18, // pior caso: o BLS demora a trazer o mês e TODOS os disparos do dia trabalham
+  baseBlsCallsPerDay: 15, // as 3 coletas diárias x 5 séries
+  blsDailyLimit: 500, // limite diário da chave v2 do BLS
+  internalCapBlsRatio: 0.5, // aceitamos usar até metade
+  internalCapMinutesPerMonth: 600,
+});
+
+/** Conta do modo "janela" no pior caso: minutos de Actions por mês e consultas ao BLS por dia. */
+export function estimateReleaseWindow(w = RELEASE_WINDOW) {
+  const runsPerMonth = w.runsPerDay * w.daysPerMonth;
+  const minutesPerMonth = runsPerMonth * w.minutesPerRun;
+  const blsCallsPerDay = w.baseBlsCallsPerDay + w.maxWorkingRunsPerDay * w.blsCallsPerWorkingRun;
+  const minutesOk = minutesPerMonth <= w.internalCapMinutesPerMonth;
+  const blsOk = blsCallsPerDay <= w.blsDailyLimit * w.internalCapBlsRatio;
+  return { runsPerMonth, minutesPerMonth, blsCallsPerDay, minutesOk, blsOk, ok: minutesOk && blsOk };
+}

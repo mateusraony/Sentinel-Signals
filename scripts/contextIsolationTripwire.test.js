@@ -195,6 +195,12 @@ function problemasDoColetor(yml) {
   if (/TELEGRAM/.test(codigo)) p.push('Telegram (só na Fase 4, com remetente sem banco)');
   if (!/workflow_dispatch/.test(codigo)) p.push('sem disparo manual (o cron-job.org usa workflow_dispatch)');
   if (!/node scripts\/context-collect\.mjs/.test(codigo)) p.push('não roda o coletor');
+  // Modo "janela" (addendum 15): a ÚNICA entrada lida do workflow é `mode`, e só como variável de ambiente do passo que roda o coletor.
+  // Entrada dentro do texto de um `run:` seria injeção de comando (quem dispara o workflow controla o valor).
+  for (const l of codigo.split('\n').filter((x) => /\binputs\./.test(x))) {
+    if (!/^\s*COLLECT_MODE:\s*\$\{\{\s*github\.event\.inputs\.mode\s*\}\}\s*$/.test(l)) p.push(`entrada do workflow fora do permitido (só COLLECT_MODE por variável de ambiente): ${l.trim()}`);
+  }
+  if (!/^\s*COLLECT_MODE:\s*\$\{\{\s*github\.event\.inputs\.mode\s*\}\}\s*$/m.test(codigo)) p.push('falta COLLECT_MODE vindo de github.event.inputs.mode (o modo janela não chegaria ao coletor)');
   return p;
 }
 
@@ -340,6 +346,30 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
     // Os três vêm do mesmo bloco `env:` do passo "Coletar as datas" (que roda o coletor), nunca de outro passo.
     const passo = real.slice(real.indexOf('- name: Coletar as datas'), real.indexOf('- name: Publicar na branch context-data'));
     for (const l of linhasComSegredo) expect(passo, l).toContain(l);
+  });
+
+  it('o modo "janela" (addendum 15) chega ao coletor SÓ por variável de ambiente do passo que o roda — nunca dentro de um `run:`', () => {
+    const real = readFileSync(join(ROOT, COLETOR), 'utf8');
+    const usos = real.split('\n').filter((l) => /\binputs\./.test(l) && !/^\s*#/.test(l)).map((l) => l.trim());
+    expect(usos).toEqual(['COLLECT_MODE: ${{ github.event.inputs.mode }}']);
+    const passo = real.slice(real.indexOf('- name: Coletar as datas'), real.indexOf('- name: Publicar na branch context-data'));
+    expect(passo).toContain('COLLECT_MODE: ${{ github.event.inputs.mode }}');
+    expect(problemasDoColetor(real)).toEqual([]);
+  });
+
+  it('prova: pega a entrada do workflow interpolada no script, em outro lugar, uma entrada a mais ou o modo sem chegar ao coletor', () => {
+    const real = readFileSync(join(ROOT, COLETOR), 'utf8');
+    const env = 'COLLECT_MODE: ${{ github.event.inputs.mode }}';
+    expect(real).toContain(env);
+    const plantados = [
+      real.replace('node scripts/context-collect.mjs --dir data', 'node scripts/context-collect.mjs --dir data ${{ github.event.inputs.mode }}'),
+      real.replace('node scripts/context-collect.mjs --dir data', 'echo "${{ inputs.mode }}"\n          node scripts/context-collect.mjs --dir data'),
+      real.replace(env, 'COLLECT_MODE: ${{ inputs.outra }}'),
+      real.replace(env, `${env}\n          OUTRA: \${{ github.event.inputs.extra }}`),
+      real.replace(`          ${env}\n`, ''),
+      real.replace(env, 'COLLECT_MODE: janela'),
+    ];
+    for (const yml of plantados) expect(problemasDoColetor(yml).length, yml.slice(-260)).toBeGreaterThan(0);
   });
 
   it('prova: pega workflow de contexto sem bloco `permissions:`', () => {

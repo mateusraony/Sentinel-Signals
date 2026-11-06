@@ -13,9 +13,18 @@ name: Coletor de contexto — datas dos eventos (Sentinel Signals)
 # `context-data` (cria na 1ª vez, sem --force). Disparo principal: cron-job.org (07h, 12h e 21h de
 # Brasília, via workflow_dispatch — docs/claude/external-cron-setup.md). O `schedule` é só reserva
 # diária, fora do minuto :00 (o GitHub desliga `schedule` após 60 dias sem atividade no repositório).
+# Modo "janela" (addendum 15): um 4º job do cron-job.org (a cada 10 min nas horas das divulgações) manda `{"ref":"main","inputs":{"mode":"janela"}}`.
+# Nesse modo o coletor só trabalha se algum evento do BLS saiu há ≤ 4 h e ainda não tem o "Atual"; senão sai sem rede e sem gravar.
+# O valor chega ao script SÓ por variável de ambiente (nunca dentro do texto do `run:`).
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Modo da coleta (deixe em branco; \"janela\" é usado só pelo agendador externo)"
+        required: false
+        default: ""
+        type: string
   schedule:
     - cron: "41 11 * * *"
 
@@ -68,6 +77,7 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
           CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}
+          COLLECT_MODE: ${{ github.event.inputs.mode }}
         run: |
           set -o pipefail
           node scripts/context-collect.mjs --dir data | tee -a "$GITHUB_STEP_SUMMARY"

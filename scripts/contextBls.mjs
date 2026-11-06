@@ -98,17 +98,15 @@ export function formatJobs(thousands) {
   return `${r > 0 ? '+' : '-'}${String(Math.abs(r)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')} mil`;
 }
 
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
 /**
- * O texto do "Anterior" de um evento, ou null se não dá para calcular com segurança.
- * @param {string} kind 'CPI' | 'PPI' | 'NFP'
- * @param {Record<string, Map<string, number>|null>} seriesById séries lidas, por código
- * @param {string|null} reference mês que o evento mede ('AAAA-MM'); sem ele não há "Anterior"
+ * O texto do número de UM mês (variação no mês e em 12 meses; Payroll: vagas do mês), ou null se faltar dado ou se o valor sair
+ * da faixa de plausibilidade. Base do "Anterior" (mês anterior ao que o evento mede) e do "Atual" (o próprio mês).
  */
-export function previousValueText(kind, seriesById, reference) {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(reference ?? '')) return null;
+function monthValueText(kind, seriesById, period) {
   const spec = BLS_SERIES[kind];
-  if (!spec) return null;
-  const period = shiftMonth(reference, -1);
+  if (!spec || !MONTH_RE.test(period ?? '')) return null;
 
   if (kind === 'NFP') {
     const s = seriesById?.[spec.jobs];
@@ -128,7 +126,31 @@ export function previousValueText(kind, seriesById, reference) {
   return PREVIOUS_TEXT_RE.test(text) ? text : null;
 }
 
-/** O objeto público `values` de um evento: `{ previous, source }` ou null. */
+/**
+ * O texto do "Anterior" de um evento, ou null se não dá para calcular com segurança.
+ * @param {string} kind 'CPI' | 'PPI' | 'NFP'
+ * @param {Record<string, Map<string, number>|null>} seriesById séries lidas, por código
+ * @param {string|null} reference mês que o evento mede ('AAAA-MM'); sem ele não há "Anterior"
+ */
+export function previousValueText(kind, seriesById, reference) {
+  if (!MONTH_RE.test(reference ?? '')) return null;
+  return monthValueText(kind, seriesById, shiftMonth(reference, -1));
+}
+
+/**
+ * O texto do "Atual" de um evento: o número do PRÓPRIO mês que ele mede. Fica null enquanto o BLS não publicou aquele mês
+ * (antes da divulgação a série termina no mês anterior, então nunca há "Atual" falso).
+ */
+export function actualValueText(kind, seriesById, reference) {
+  if (!MONTH_RE.test(reference ?? '')) return null;
+  const text = monthValueText(kind, seriesById, reference);
+  // O "Atual" congela no primeiro instante em que aparece: CPI/PPI só valem COMPLETOS (no mês E em 12 meses). Metade publicada
+  // (uma das duas séries ainda sem o mês) espera a próxima coleta em vez de ficar congelada pela metade.
+  if (text !== null && kind !== 'NFP' && !text.includes(' · ')) return null;
+  return text;
+}
+
+/** O objeto público `values` de um evento ainda NÃO divulgado: `{ previous, source }` ou null. */
 export function previousValues(kind, seriesById, reference) {
   const previous = previousValueText(kind, seriesById, reference);
   return previous ? { previous, source: BLS_SOURCE } : null;
