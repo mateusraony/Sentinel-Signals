@@ -544,3 +544,64 @@ describe('prova do guard: pega o que deve e não acusa o inocente', () => {
     expect(violacoes('x', '// adminTelegram acorda o Neon via DATABASE_URL\n# scanner não\nconst a = 1;')).toEqual([]);
   });
 });
+
+// Agenda 4d, etapa 1 (addendum 18): a MEDIÇÃO da reação do BTC. Só manual, só leitura (nenhuma escrita no repositório, nem na branch de dados),
+// sem banco, sem Telegram; só os segredos do FRED (datas passadas) e do contato do robô.
+const MEDICAO = '.github/workflows/context-reaction.yml';
+const SEGREDOS_DA_MEDICAO = new Set(['FRED_API_KEY', 'CONTEXT_CONTACT_EMAIL']);
+
+function problemasDaMedicao(yml) {
+  const codigo = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  const p = [];
+  if (!/permissions:\s*\n\s*contents:\s*read\s*\n/.test(codigo)) p.push('permissões: esperado só `contents: read`');
+  if (/:\s*write\b/.test(codigo)) p.push('permissões: há escrita');
+  if (/^\s*(schedule|workflow_run|pull_request|pull_request_target|push|issue_comment|repository_dispatch):/m.test(codigo)) p.push('gatilho além do botão manual (a medição é só manual)');
+  if (!/^on:\s*\n\s*workflow_dispatch:\s*\n/m.test(codigo)) p.push('sem disparo manual como único gatilho');
+  if (/\binputs\./.test(codigo) || /^\s*inputs:/m.test(codigo)) p.push('tem campos de entrada ou lê entrada do workflow (a medição não tem campos)');
+  if (/\bgit\b.*\b(push|commit|worktree)\b/.test(codigo)) p.push('mexe no git');
+  if (/TELEGRAM/.test(codigo)) p.push('Telegram');
+  for (const [, nome] of codigo.matchAll(/secrets\.([A-Za-z0-9_]+)/g)) if (!SEGREDOS_DA_MEDICAO.has(nome.toUpperCase())) p.push(`segredo não permitido: ${nome}`);
+  if (/\bsecrets\b(?!\.[A-Za-z0-9_])/.test(codigo)) p.push('uso indireto de `secrets` (só secrets.NOME é permitido)');
+  if (!/node scripts\/context-reaction\.mjs/.test(codigo)) p.push('não roda a medição');
+  const usesUpload = [...codigo.matchAll(/uses:\s*([^\s]+)/g)].map((m) => m[1]);
+  for (const u of usesUpload) if (!/^actions\/(checkout|setup-node|upload-artifact)@/.test(u)) p.push(`ação fora da lista: ${u}`);
+  return p;
+}
+
+describe('tripwire: a medição da reação do BTC é só manual e só de leitura (item 285, addendum 18)', () => {
+  it('o workflow real passa nas regras e usa os dois segredos permitidos', () => {
+    const real = readFileSync(join(ROOT, MEDICAO), 'utf8');
+    expect(problemasDaMedicao(real)).toEqual([]);
+    const segredos = real.split('\n').filter((l) => /secrets\./.test(l) && !/^\s*#/.test(l)).map((l) => l.trim());
+    expect(segredos).toEqual(['FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}']);
+  });
+
+  it('o script da medição não escreve no repositório (só o arquivo JSON pedido) e só fala com o FRED e a Binance', () => {
+    const codigo = readFileSync(join(ROOT, 'scripts/context-reaction.mjs'), 'utf8').split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    const hosts = [...codigo.matchAll(/https?:\/\/([a-z0-9.-]+)/g)].map((m) => m[1]);
+    expect([...new Set(hosts)].sort()).toEqual(['api.stlouisfed.org', 'data-api.binance.vision']);
+    expect(codigo).not.toMatch(/child_process|execSync|spawn|mkdir|appendFile|unlink|rmSync/);
+    expect([...codigo.matchAll(/writeFileSync\(([^,]+),/g)].map((m) => m[1].trim())).toEqual(['opts.json']);
+  });
+
+  it('prova: pega escrita, gatilho agendado, banco/Telegram, 3º segredo, ação de fora e git plantados', () => {
+    const real = readFileSync(join(ROOT, MEDICAO), 'utf8');
+    const plantados = [
+      real.replace('permissions:\n  contents: read', 'permissions:\n  contents: write'),
+      real.replace('on:\n  workflow_dispatch:', "on:\n  schedule:\n    - cron: '0 * * * *'\n  workflow_dispatch:"),
+      real.replace('on:\n  workflow_dispatch:', 'on:\n  workflow_dispatch:\n  push:'),
+      real.replace('on:\n  workflow_dispatch:', 'on:\n  workflow_dispatch:\n    inputs:\n      x:\n        type: string'),
+      real.replace('node scripts/context-reaction.mjs', 'node scripts/context-reaction.mjs ${{ inputs.x }}'),
+      real.replace('CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}', 'CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}\n          DATABASE_URL: ${{ secrets.DATABASE_URL }}'),
+      real.replace('CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}', 'CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}\n          TELEGRAM_BOT_TOKEN: ${{ secrets.FRED_API_KEY }}'),
+      real.replace('CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}', 'CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}\n          X: ${{ toJSON(secrets) }}'),
+      real.replace('uses: actions/upload-artifact@v4', 'uses: alguem/acao-de-fora@v1'),
+      real.replace('node scripts/context-reaction.mjs --json reaction-result.json', 'git push origin HEAD:refs/heads/context-data\n          node scripts/context-reaction.mjs --json reaction-result.json'),
+      real.replace('node scripts/context-reaction.mjs', 'node scripts/outra-coisa.mjs'),
+    ];
+    plantados.forEach((yml, i) => {
+      expect(yml, `variante plantada nº ${i} não mudou o arquivo`).not.toBe(real);
+      expect(problemasDaMedicao(yml).length, `variante plantada nº ${i}`).toBeGreaterThan(0);
+    });
+  });
+});

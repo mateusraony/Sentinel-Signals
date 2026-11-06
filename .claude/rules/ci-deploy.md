@@ -376,6 +376,10 @@ paths:
   - **Travado por** `scripts/contextIsolationTripwire.test.js` (`problemasDoNotificador`, com variantes plantadas) e pelos
     testes `contextTelegram`/`contextMessages`/`contextNotify`.
 
+- `context-reaction.yml` — **medição da reação do BTC nas divulgações passadas** (Agenda 4d, etapa 1, `docs/known-risks.md` item 285, addendum 18). Disparo **manual** (`workflow_dispatch` só, sem campos).
+  - **O que faz:** `scripts/context-reaction.mjs` lê as DATAS passadas de Payroll/CPI/PPI/PCE no FRED (nunca valor de série), baixa as velas de 1 min do BTC/USDT (`data-api.binance.vision`) e imprime no resumo do job o tamanho do movimento em +5/+30/+60 min contra o mesmo horário em dias úteis sem divulgação. **Medido, não previsto:** sempre com o N, sem texto de direção.
+  - **Só leitura:** `contents: read`, nada gravado no repositório (só o JSON de artefato), sem banco, sem Telegram. Segredos só `FRED_API_KEY` (na URL da requisição) e `CONTEXT_CONTACT_EMAIL` (no User-Agent). Travado por `scripts/contextIsolationTripwire.test.js` (`problemasDaMedicao`, com variantes plantadas).
+
 - `recovery.yml` — disparo **manual** (`workflow_dispatch` só), com 2 campos ("O que fazer" = `teste-a-seco`/`aplicar`
   e "Só para aplicar: o número do teste a seco…"): **teste a seco** do replay de
   recuperação depois de queda longa do banco (`docs/known-risks.md` item 288).

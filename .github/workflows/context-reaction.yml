@@ -1,0 +1,47 @@
+name: Medição da reação do BTC nas divulgações dos EUA (Sentinel Signals)
+
+# docs/known-risks.md item 285, addendum 18 — Agenda 4d, etapa 1. SÓ MEDE: baixa as velas de 1 minuto do BTC/USDT (Binance Spot) em volta das
+# divulgações passadas de Payroll, CPI, PPI e PCE (datas do FRED) e imprime, no resumo do job, quanto o BTC se mexeu nos 5/30/60 min seguintes,
+# comparado ao mesmo horário em dias úteis sem divulgação. Medido, não previsto: o relatório sempre mostra o número de casos e não diz para onde
+# o BTC vai. Serve para decidir se vale publicar isso na tela (etapa 2); por isso nada é gravado no repositório.
+#
+# Disparo MANUAL (botão Run workflow, sem campos). Só leitura de dados públicos: `contents: read`, SEM escrita, SEM banco (não acorda o Neon),
+# SEM Telegram, NENHUMA ordem. Segredos só FRED_API_KEY (só na URL da requisição) e CONTEXT_CONTACT_EMAIL (só no User-Agent). Sem `npm ci`.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: context-reaction
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Medir a reação do BTC
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}
+        run: |
+          set -o pipefail
+          node scripts/context-reaction.mjs --json reaction-result.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar o resultado em JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-reaction-result
+          path: reaction-result.json
+          if-no-files-found: ignore
+          retention-days: 30
