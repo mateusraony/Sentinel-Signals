@@ -403,6 +403,17 @@ paths:
     mensagem e relatório ("tempo esgotado… NÃO rode de novo"). Auditoria de 31/10: `docs/known-risks.md` item 288.
   - Roteiro para o usuário: `docs/claude/recovery-runbook.md`.
 
+- `neon-usage.yml` — **medidor do uso de computação do Neon** (`docs/known-risks.md` item 294). 2x/dia (11:17 e 23:17 UTC, `schedule`) + botão manual
+  ("Enviar de verdade?", padrão não).
+  - **O que faz:** `scripts/neon-usage.mjs` lê as execuções dos workflows que usam o Neon (`DATABASE_URL` sem prefixo; **não** o `TEST_DATABASE_URL` do CI) na API do
+    GitHub e `scripts/neonUsageMeter.mjs` estima os CU-h do período (execução + 5 min de ociosidade, × 0,25 CU, sem contar sobreposição). **É um MÍNIMO**: não vê o
+    painel aberto nem o Render.
+  - **Avisos no Telegram:** resumo diário (manhã); à noite só se o nível não for OK; ATENÇÃO ≥ 60% do limite ou projeção ≥ 100; CRÍTICO ≥ 80%.
+  - **Teto da API do GitHub:** o filtro `created` devolve no máximo 1.000 resultados por consulta; por isso o período é lido por INTERVALOS de datas, divididos ao meio quando chegam a 900 (achado do Codex no PR #548). Histórico cortado = aviso "o consumo real é MAIOR".
+  - **Sem banco:** nenhum `DATABASE_URL` (senão gastaria a cota que mede). `contents: read` + `actions: read`; segredos só `GITHUB_TOKEN` e os 2 do Telegram
+    (estes só quando há envio). Travado por `scripts/neonUsageTripwire.test.js`.
+  - **Calibração opcional** (variáveis do repositório): `NEON_BASELINE_CU_HOURS` + `NEON_BASELINE_AT`; `NEON_BILLING_DAY`.
+
 - **Orçamento de computação do Neon (item 286, travado por
   `scripts/neonComputeBudget.test.js`):** todo workflow com `schedule:` que
   cita `DATABASE_URL` é descoberto sozinho e somado ao disparo externo

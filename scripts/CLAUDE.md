@@ -20,6 +20,10 @@ regex no ponto de entrada (`docs/known-risks.md` item 162); a mensagem de
 **só contagens e códigos** — o repositório é público e o log do Actions é legível sem login (nada de preço, lado+símbolo, id nem texto
 de erro). Módulo **puro** (sem import: travado por `scanSummary.test.mjs`); o contador de operações embrulha `backend.tradeOps`
 DENTRO de `main()` e só observa o retorno (não toca `scanner.js`, não faz consulta extra). Não mexa na linha sem rodar esse teste.
+`neon-usage.mjs` + `neonUsageMeter.mjs` (item 294, `neon-usage.yml`) são o **medidor do uso do Neon**: estimam os CU-h do mês pelo histórico de execuções do GitHub e avisam no
+Telegram. **SEM BANCO, de propósito** (um medidor que acordasse o Neon gastaria a cota que mede): nada de `DATABASE_URL`, `pg`, `adminEntities` nem `adminTelegram`
+(importa o banco e grava log no Postgres) — o envio usa `contextTelegram.mjs`. Travado por `neonUsageTripwire.test.js`. A regra "usa o Neon" é `usesNeonDatabase`
+(não o `workflowTouchesDatabase`, que contaria o `TEST_DATABASE_URL` do CI).
 `health-audit.mjs` (diária às 04:40 UTC + manual, `health-audit.yml`) é a
 auditoria de saúde read-only dos itens 164/165 — teto de leitura explícito, o
 job falha se ela escrever, e ela avisa no Telegram só quando acha algo.

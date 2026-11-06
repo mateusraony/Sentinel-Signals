@@ -1,0 +1,60 @@
+name: Medidor do Neon — uso estimado de computação (Sentinel Signals)
+
+# docs/known-risks.md item 294. Estima quanto da cota grátis de computação do Neon (100 CU-h/mês) já foi usada, pelo histórico de
+# execuções dos workflows que usam o banco, e AVISA no Telegram: um resumo por dia (execução da manhã) e, quando o nível passa de
+# 60% (ATENÇÃO) ou 80% (CRÍTICO) do limite, também na da noite. É um MÍNIMO (não vê o painel aberto nem o Render): ver o cabeçalho
+# de scripts/neonUsageMeter.mjs.
+#
+# SEM BANCO: não tem DATABASE_URL (não acorda o Neon — senão o medidor gastaria a cota que mede). Só lê a API do GitHub (token do
+# próprio workflow, `actions: read`) e fala com o Telegram. `contents: read`; o checkout não deixa o token no disco; os 2 segredos do
+# Telegram só chegam ao passo quando há envio (agendado ou "Enviar de verdade?" marcado). As regras estão travadas por
+# scripts/neonUsageTripwire.test.js.
+#
+# Calibração opcional (Settings → Secrets and variables → Actions → aba Variables): NEON_BASELINE_CU_HOURS (valor lido no painel
+# "Usage" do Neon) + NEON_BASELINE_AT (quando, ex.: 2026-11-06T12:00:00Z) — o medidor passa a somar só o que vem depois.
+# NEON_BILLING_DAY (1..28) se o período de cobrança do Neon não recomeçar no dia 1.
+
+on:
+  workflow_dispatch:
+    inputs:
+      enviar:
+        description: "Enviar de verdade ao Telegram? Desmarcado = só mostra o relatório e não manda nada"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 11,23 * * *"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: neon-usage
+  cancel-in-progress: false
+
+jobs:
+  medir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Medir e (se for o caso) avisar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEON_TRIGGER: ${{ github.event_name }}
+          ENVIAR: ${{ github.event_name == 'schedule' || inputs.enviar }}
+          NEON_BILLING_DAY: ${{ vars.NEON_BILLING_DAY }}
+          NEON_BASELINE_CU_HOURS: ${{ vars.NEON_BASELINE_CU_HOURS }}
+          NEON_BASELINE_AT: ${{ vars.NEON_BASELINE_AT }}
+          TELEGRAM_BOT_TOKEN: ${{ (github.event_name == 'schedule' || inputs.enviar) && secrets.TELEGRAM_BOT_TOKEN || '' }}
+          TELEGRAM_CHAT_ID: ${{ (github.event_name == 'schedule' || inputs.enviar) && secrets.TELEGRAM_CHAT_ID || '' }}
+        run: |
+          set -o pipefail
+          node scripts/neon-usage.mjs | tee -a "$GITHUB_STEP_SUMMARY"
