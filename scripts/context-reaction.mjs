@@ -92,6 +92,10 @@ export async function main({ argv = process.argv.slice(2), env = process.env, fe
 
   const datesByKind = await fetchPastFredDates({ fetchImpl, env });
   if (!Object.values(datesByKind).some((d) => Array.isArray(d) && d.length)) { log('O FRED não respondeu com datas; nada foi medido.'); return 1; }
+  // Os 4 calendários são necessários: as datas de TODOS os tipos tiram os dias com divulgação da comparação ("dia normal"). Com um tipo faltando,
+  // as divulgações dele entrariam nos dias normais e distorceriam a razão e a posição dos outros tipos (achado do Codex no PR #551).
+  const faltando = Object.entries(datesByKind).filter(([, d]) => !Array.isArray(d) || !d.length).map(([kind]) => kind);
+  if (faltando.length) { log(`Calendário incompleto no FRED (faltou: ${faltando.join(', ')}); nada foi medido. Rode de novo.`); return 1; }
 
   const events = releaseInstants(datesByKind, { sinceDate: opts.since, nowMs });
   const eventDates = Object.values(datesByKind).flatMap((d) => (Array.isArray(d) ? d : []));

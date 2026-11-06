@@ -277,6 +277,22 @@ describe('context-reaction.mjs (entrada)', () => {
     expect(out.join('\n')).toMatch(/Dado insuficiente: 6 divulgação\(ões\) e 0 dia\(s\) normal\(is\)/);
   });
 
+  it('se o FRED falhar em UM tipo, não mede (as divulgações dele entrariam nos "dias normais"); diz qual tipo faltou, sem a chave', async () => {
+    const base = fakeFetch({ fredBody: FRED });
+    const calls = [];
+    const cpiFora = async (url) => {
+      calls.push(String(url));
+      if (String(url).includes('release_id=10&')) return { status: 503, text: async () => '' };
+      return base(url);
+    };
+    const out = [];
+    const code = await main({ argv: [], env: { FRED_API_KEY: KEY }, fetchImpl: cpiFora, nowMs: NOW, log: (m) => out.push(m), sleep: async () => {} });
+    expect(code).toBe(1);
+    expect(out.join('\n')).toMatch(/calendário incompleto.*CPI/i);
+    expect(out.join('\n')).not.toContain(KEY);
+    expect(calls.filter((c) => c.includes('binance')).length).toBe(0); // nem chega a baixar velas
+  });
+
   it('recusa data inicial fora do formato', async () => {
     const out = [];
     expect(await main({ argv: ['--since', '2024/01/01'], env: { FRED_API_KEY: KEY }, fetchImpl: fakeFetch({ fredBody: FRED }), nowMs: NOW, log: (m) => out.push(m) })).toBe(1);
