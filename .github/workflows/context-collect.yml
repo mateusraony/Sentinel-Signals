@@ -62,9 +62,11 @@ jobs:
           fi
 
       - name: Coletar as datas
-        # FRED_API_KEY vai só na URL da requisição; CONTEXT_CONTACT_EMAIL só no User-Agent.
+        # FRED_API_KEY e BLS_API_KEY vão só na URL da requisição; CONTEXT_CONTACT_EMAIL só no User-Agent.
+        # BLS_API_KEY (opcional) alimenta o "Anterior" dos números oficiais; sem ela, ou se o BLS a recusar, a coleta usa a versão sem chave.
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
           CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}
         run: |
           set -o pipefail

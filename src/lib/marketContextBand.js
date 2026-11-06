@@ -91,9 +91,9 @@ function cleanValueText(v) {
 }
 
 /**
- * Números oficiais do evento, se o coletor um dia os trouxer: `{ previous, actual, source }` (textos curtos). Hoje o arquivo
- * público NÃO tem esse campo — a tela só desenha o espaço quando ele existe (nada de "—" permanente). Não existe "projeção":
- * não há fonte gratuita e licenciada, e o painel não inventa número.
+ * Números oficiais do evento: `{ previous, actual, source }` (textos curtos). O coletor passou a gravar só `previous` e
+ * `source: 'BLS'` (addendum 14 do item 285; `actual` ainda não existe) — a tela só desenha o espaço quando o campo existe (nada
+ * de "—" permanente). Não existe "projeção": não há fonte gratuita e licenciada, e o painel não inventa número.
  */
 export function parseEventValues(raw) {
   if (!raw || typeof raw !== 'object') return null;

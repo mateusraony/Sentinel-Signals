@@ -4,8 +4,10 @@
 //   status.json : quando checou, se o FRED respondeu, quantos eventos, até quando há cobertura.
 //
 // O que NUNCA vai para lá (repositório público; lição do item 25): URL, chave, mensagem de
-// erro, valor de CPI/Payroll (termos do FRED) ou volatilidade (termos da Deribit). A trava é
-// `assertPublicShape`: lista FECHADA de campos e formato de cada valor — texto livre não passa.
+// erro, valor vindo do FRED (termos do FRED) ou volatilidade (termos da Deribit). ÚNICA exceção
+// (addendum 14): o "Anterior" oficial do BLS (domínio público, "Fonte: BLS"), em `values`, no
+// formato único `PREVIOUS_TEXT_RE`. A trava é `assertPublicShape`: lista FECHADA de campos e
+// formato de cada valor — texto livre não passa.
 //
 // Fontes: as datas do FRED (CPI, Payroll, PPI, PCE) são a fonte principal; a lista fixa
 // (`contextCalendar.mjs`) é a reserva e a única fonte do FOMC. A hora vem de `KIND_TIMES`.
@@ -14,12 +16,15 @@ import { createHash } from 'node:crypto';
 import { KINDS, KIND_TIMES, STATUS, US_RELEASES } from './contextCalendar.mjs';
 import { nyToUtc } from './contextTime.mjs';
 import { buildUserAgent, MAX_BODY_BYTES } from './contextProbe.mjs';
+import { previousValues, PREVIOUS_TEXT_RE, BLS_SOURCE } from './contextBls.mjs';
 
 /** Releases do FRED, conferidos pelo nome na sonda (runs 5-8). FOMC não está aqui: vem da lista fixa. */
 export const FRED_RELEASES = Object.freeze({ CPI: 10, NFP: 50, PPI: 46, PCE: 54 });
 
 export const PUBLIC_VERSION = 1;
-export const EVENT_KEYS = Object.freeze(['id', 'kind', 'reference', 'startsAtUtc', 'status', 'firstSeenAt', 'lastChangedAt']);
+// `values` (addendum 14): o "Anterior" oficial do BLS — `null` ou `{ previous, source }`; ver `sanitizeValues`.
+export const EVENT_KEYS = Object.freeze(['id', 'kind', 'reference', 'startsAtUtc', 'status', 'firstSeenAt', 'lastChangedAt', 'values']);
+export const VALUES_KEYS = Object.freeze(['previous', 'source']);
 export const STATUS_KEYS = Object.freeze(['version', 'checkedAt', 'fred', 'eventsCount', 'coverageUntil', 'hash']);
 export const FRED_STATES = Object.freeze(['ok', 'parcial', 'falhou']);
 
@@ -62,6 +67,16 @@ const instant = (kind, date) => {
 };
 
 /**
+ * O `values` de uma linha (do arquivo anterior ou recém-calculado): exatamente `{ previous, source: 'BLS' }`, com o texto no formato
+ * único (`PREVIOUS_TEXT_RE`). Qualquer outra coisa vira `null` — o arquivo anterior vem da rede e não é confiável.
+ */
+export function sanitizeValues(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  if (!sameKeys(v, VALUES_KEYS) || v.source !== BLS_SOURCE || typeof v.previous !== 'string' || !PREVIOUS_TEXT_RE.test(v.previous)) return null;
+  return { previous: v.previous, source: v.source };
+}
+
+/**
  * Monta os eventos públicos.
  * @param {object} p
  * @param {Record<string, string[]|null|undefined>} p.fredDatesByKind datas do FRED por tipo;
@@ -84,8 +99,12 @@ const instant = (kind, date) => {
  *    também esteja na lista fixa — a lista só decide evento novo. Sem isso, uma queda do FRED
  *    depois de uma remarcação publicaria os dois dias como oficiais (achado do Codex no PR #529).
  * 5. Só de ontem em diante.
+ * 6. `values` (o "Anterior" do BLS): calculado só para evento que ainda NÃO começou e que tem mês de referência; se o BLS não
+ *    respondeu, vale o que já estava publicado. Depois que o evento sai, o número FICA CONGELADO (a API passa a trazer o mês
+ *    novo e revisa o anterior: recalcular mudaria o número depois do fato). Sem número calculável nem publicado: `null`.
+ * @param {Record<string, Map<string, number>|null>} [p.blsSeries] séries do BLS por código (`fetchBlsSeries().series`)
  */
-export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, previous = [], nowMs }) {
+export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, previous = [], nowMs, blsSeries = null }) {
   const nowIso = new Date(nowMs).toISOString();
   const cutoffMs = nowMs - DAY_MS;
   const cand = new Map(); // id → { kind, date, reference, status }
@@ -136,8 +155,10 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     const utc = instant(c.kind, c.date);
     if (!utc || utc.ms < cutoffMs) continue;
     const p = prevById.get(id);
-    // Mudou = situação, hora OU mês de referência (antes a referência era ignorada).
+    // Mudou = situação, hora OU mês de referência (antes a referência era ignorada). O número do BLS NÃO entra: não é remarcação.
     const changed = !p || p.status !== c.status || p.startsAtUtc !== utc.iso || (p.reference ?? null) !== (c.reference ?? null);
+    const published = sanitizeValues(p?.values);
+    const fresh = blsSeries ? previousValues(c.kind, blsSeries, c.reference) : null;
     out.push({
       id,
       kind: c.kind,
@@ -146,6 +167,7 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
       status: c.status,
       firstSeenAt: typeof p?.firstSeenAt === 'string' && ISO_RE.test(p.firstSeenAt) ? p.firstSeenAt : nowIso,
       lastChangedAt: changed ? nowIso : (ISO_RE.test(p.lastChangedAt ?? '') ? p.lastChangedAt : nowIso),
+      values: utc.ms > nowMs ? (fresh ?? published) : published,
     });
   }
   return out.sort((a, b) => (a.startsAtUtc === b.startsAtUtc ? a.id.localeCompare(b.id) : a.startsAtUtc.localeCompare(b.startsAtUtc)));
@@ -176,7 +198,8 @@ const sameKeys = (obj, keys) => obj && typeof obj === 'object' && !Array.isArray
 
 /**
  * Trava do que vai para o repositório público. Lança se houver campo fora da lista ou valor fora
- * do formato esperado (nada de texto livre: URL, mensagem de erro e valor de série não passam).
+ * do formato esperado (nada de texto livre: URL, mensagem de erro e valor de série do FRED não passam;
+ * `values` só aceita `null` ou o "Anterior" do BLS no formato único).
  */
 export function assertPublicShape(events, status) {
   const problems = [];
@@ -189,6 +212,8 @@ export function assertPublicShape(events, status) {
     if (!(e.reference === null || /^\d{4}-\d{2}$/.test(e.reference))) problems.push(`${tag}: referência inválida`);
     for (const k of ['startsAtUtc', 'firstSeenAt', 'lastChangedAt']) if (!ISO_RE.test(e[k] ?? '')) problems.push(`${tag}: ${k} inválido`);
     if (!Object.values(STATUS).includes(e.status)) problems.push(`${tag}: situação inválida`);
+    // `values`: null OU exatamente { previous, source: 'BLS' } no formato único — nada de número solto, texto livre, URL ou outra fonte.
+    if (!(e.values === null || sanitizeValues(e.values) !== null)) problems.push(`${tag}: values inválido`);
   }
   if (!sameKeys(status, STATUS_KEYS)) problems.push(`status: campos diferentes de ${STATUS_KEYS.join(', ')}`);
   else {
