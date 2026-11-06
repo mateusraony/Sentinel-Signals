@@ -165,6 +165,18 @@ took too long and timed out").
 > ping em `/health` a cada 10 min (gratuito, GitHub Actions) para manter
 > o serviço sempre acordado.
 
+> **Addendum (2026-11-06) — a mitigação não funcionava: o `schedule` do GitHub atrasa HORAS.** Fato: os disparos do `keep-warm.yml` em 05-06/11
+> foram às 22:58, 03:04, 10:42 e 17:40 UTC (intervalos de 4 a 8 h, não de 10 min), então o servidor hibernava quase o tempo todo. Fato (print do
+> usuário, 16:03 de Brasília): o Dashboard mostrou "Saúde indisponível" (é o estado de ERRO da consulta dos ativos, `assetsError`) enquanto a Agenda de
+> eventos, que lê a branch pública do GitHub e não o servidor, carregou normal; os scans seguiam verdes a cada 15 min até 19:00 UTC, então o banco estava
+> de pé. Fato (código): `src/lib/query-client.js` faz só 1 nova tentativa (`failureCount < 1`, ~1 s depois), menos que os 30-60 s de acordar do Render.
+> **Hipótese (não verificada: a sessão não alcança o servidor):** o painel abre com o servidor dormindo, as duas tentativas falham e blocos que dependem do
+> servidor (cartões dos ativos, Análise Preditiva) ficam sem dado até o servidor acordar e a próxima atualização rodar.
+> **Correção:** `keep-warm.yml` ganhou o gatilho do FIM do "Scheduled scan" (`workflow_run`, mesmo molde e filtro de origem do coletor, item 285 addendum 17)
+> e `permissions: contents: read`; o ping de 10 min continua. **Limite:** pings a cada ~15 min ainda podem deixar o Render dormir em intervalos curtos
+> (ele dorme com 15 min sem tráfego); o job GET opcional de 10 min no cron-job.org (`docs/claude/external-cron-setup.md`) fecha a lacuna. Travado por
+> `scripts/keepWarmTripwire.test.js` (14 variantes plantadas). Não mexi na política de tentativas do painel (mudaria todas as consultas): fica como opção.
+
 ## 7. Webhook do TradingView grava mas não executa ordens
 
 `POST /webhook/tradingview` (`server/index.js`) só registra o alerta em
@@ -34129,7 +34141,10 @@ Pedido do usuário ("onde consulto o resultado depois que sair?" → "dá para d
 - **Aplicando o critério escrito ANTES (posição ≥ 75% e razão ≥ 1,3×):** só o **CPI** passa. Payroll tem razão 1,9× mas posição 69% (< 75%), PPI e PCE ficam perto do dia normal. O critério não foi mexido depois de ver o número.
 - **Defeito da minha comparação, achado ao ler o resultado:** os 34 casos de cada tipo cobrem quase 3 anos, mas os 90 dias normais eram só os mais recentes (o trecho de 28/62 de queda mostra um período específico). A volatilidade do BTC muda com o período, então a razão pode estar inflada ou diminuída pelo período e não pela divulgação. Isto é correção de DESENHO (a comparação não era justa), não ajuste de critério: dias normais passam a ser 120 espalhados por todo o período, o relatório ganhou a tabela "Por ano" (divulgações × dias normais do mesmo ano) e a lista marca meses com 2 datas do mesmo tipo (o FRED traz, por exemplo, CPI em 09/02/2024 e 13/02/2024; podem ser revisão anual ou remarcação; tendem a diluir a mediana). **Os números acima NÃO valem como conclusão até a 2ª execução.**
 - **Limites que continuam:** 34 casos por tipo é pouco para provar diferença pequena; a contagem subiu/caiu (21/13 no CPI) não distingue de acaso; sem a expectativa dos analistas não se separa "acima/abaixo do esperado".
-- **Passo manual do usuário (pedido explícito, não nota):** rodar de novo "Medição da reação do BTC nas divulgações dos EUA (Sentinel Signals)" depois do merge desta correção; eu leio e só então decido a etapa 2.
+- **Resultado da 2ª execução real (06/11/2026, 19:02 UTC, run 42276097915; comparação CORRIGIDA: 120 dias normais espalhados pelos 3 anos; 34-35 casos com dado por tipo):** mediana do tamanho do movimento em 60 min / razão contra o dia normal (0,22%) / posição entre os dias normais — **CPI 0,65% / 3,0× / 87%** · **Payroll 0,44% / 2,0× / 79%** (35 casos; entrou o de hoje, −0,54% em 60 min) · PPI 0,28% / 1,3× / 62% · PCE 0,27% / 1,2× / 59%. Em 5 min: CPI 0,44% e Payroll 0,28% contra 0,09% do dia normal. Subiu/caiu em 60 min: Payroll 17/18, CPI 21/13, PPI 20/14, PCE 16/18; dias normais 50/70 (o período inclinou para queda). **Por ano (todos os tipos juntos), divulgações × dias normais do mesmo ano:** 2024 0,32% × 0,22% = 1,4× · 2025 0,33% × 0,16% = 2,1× · 2026 0,46% × 0,23% = 2,0× — a razão é maior que 1 nos 3 anos, então a diferença não é artefato de um período só. Meses com 2 datas do mesmo tipo: NFP 2024-01, CPI 2024-02, PPI 2024-02, PPI 2026-01, PCE 2025-12, PCE 2026-04 (efeito esperado: diluir um pouco; não corrigido).
+- **Aplicando o critério escrito ANTES (posição ≥ 75% e razão ≥ 1,3×) à comparação corrigida:** **CPI e Payroll passam**; PPI (62%) e PCE (59%) não. O Payroll estava em 69% na 1ª comparação (não passava) e foi para 79% com os dias normais espalhados: a correção de desenho moveu um tipo para o outro lado do limiar, por isso o limiar não foi tocado e o resultado fica com a ressalva de que são 35 casos. Direção (subiu/caiu) segue sem nada que se distinga de acaso.
+- **Etapa 2 (o usuário ainda confirma a tela, com imagens antes do merge):** mostrar na Agenda, só para os tipos que passaram (CPI e Payroll), "nas últimas N divulgações o BTC mexeu mediana X% na 1ª hora; num dia normal, Y% (Z vezes)", com N, "medido em AAAA-MM-DD" e "retrato do passado, não previsão". Para PPI e PCE a frase honesta é "sem diferença clara de um dia normal". Fonte dos números: arquivo de agregados no próprio repositório, atualizado por PR depois de uma nova execução da medição (muda ~1 caso por mês); sem novo escritor de arquivos e sem banco.
+- **Passo manual do usuário:** nenhum pendente para a medição.
 
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 

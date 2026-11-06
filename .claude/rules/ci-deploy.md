@@ -81,7 +81,7 @@ paths:
   compartilhada com produção nem a atenção recorrente de sessão.
   Reversível — descomentar o `schedule:` nos dois arquivos religa; nenhuma
   coleção nem código foi apagado.
-- `keep-warm.yml` — ping `/health` a cada 10 min (Render free não hibernar).
+- `keep-warm.yml` — ping `/health` (Render free não hibernar). Dispara por `schedule` a cada 10 min E no fim de cada "Scheduled scan" (`workflow_run`, filtro de origem; item 6 addendum de 06/11/2026: o `schedule` sozinho chegou com 4 a 8 h de intervalo e o servidor hibernava). Travado por `scripts/keepWarmTripwire.test.js`.
 - `backup.yml` — backup diário das coleções de negócio → branch `backups`. Como os outros dois que leem o secret
   `BACKUP_DEPLOY_KEY` (`backup-postgres.yml`, `restore-postgres.yml`), grava a chave por
   `scripts/write-backup-deploy-key.sh`, que confere com `ssh-keygen -y` ANTES de qualquer fetch/push e para com

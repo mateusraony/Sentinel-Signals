@@ -245,8 +245,25 @@ o coletor ganhou o modo **janela**. É um 4º job no cron-job.org, igual aos 3 d
 Como funciona: a cada disparo o coletor confere o `events.json` já publicado. **Só se** algum evento do BLS (CPI, PPI ou Payroll) saiu
 há até 4 horas e ainda não tem o "Atual" é que ele consulta o BLS; senão termina em segundos, sem rede e sem gravar nada (o histórico
 da branch `context-data` não cresce). Assim que o BLS traz o mês, o "Atual" entra, o "Revisado" também (se o BLS corrigiu o mês
-anterior) e o disparo seguinte já não tem o que fazer. Custo no pior caso: `scripts/contextBudget.mjs` (`RELEASE_WINDOW`) — 396 min/mês de
-Actions e 105 consultas/dia ao BLS (chave v2: 500/dia).
+anterior) e o disparo seguinte já não tem o que fazer. Custo no pior caso: `scripts/contextBudget.mjs` (`RELEASE_WINDOW`) — 360 min/mês de
+Actions e 75 consultas/dia ao BLS (chave v2: 500/dia).
 
 **Sem este job nada quebra:** as 3 coletas diárias (07h, 12h e 21h de Brasília) também gravam o "Atual"; ele só demora mais a aparecer.
 O modo só liga com o valor exato `janela`; qualquer outro texto (ou o botão *Run workflow* deixado em branco) é a coleta normal.
+
+## Servidor do painel sempre acordado — job GET OPCIONAL (item 6, addendum de 06/11/2026)
+
+> **Não é obrigatório.** O `keep-warm.yml` já faz um ping a cada ~15 min no fim de cada scan (e a cada 10 min pelo agendador do GitHub, que
+> atrasa horas). O servidor gratuito do Render dorme com 15 min sem acesso, então esses pings ainda podem deixá-lo dormir por alguns minutos.
+> Este job é o jeito de fechar a lacuna, e é bem mais simples que os de coletor: **não tem corpo, nem cabeçalho, nem token**, só um endereço.
+
+No cron-job.org, **Create cronjob**:
+
+- **Title**: `Manter servidor acordado`
+- **URL**: `https://sentinel-signals-api.onrender.com/health`
+- **Execution schedule**: a cada **10 minutos**
+- Todo o resto fica como está (método GET, sem Advanced). Salve.
+
+Custo: nenhum. O ping só responde `ok` (não toca o banco, então não gasta a cota do Neon). Se a tela do cron-job.org for diferente do que está descrito
+aqui, mande um print que eu ajusto o passo a passo.
+
