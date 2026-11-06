@@ -405,7 +405,7 @@ describe('valor "Anterior" do BLS (addendum 14)', () => {
     expect(byId(ev)['CPI-2026-11-10'].firstSeenAt).toBe('2026-10-31T12:00:00.000Z');
   });
 
-  it('trava pública: aceita null e { previous, source: "BLS" }; recusa campo ausente, extra, outra fonte, texto livre, URL e tipo errado', () => {
+  it('trava pública: aceita null e { previous, source: "BLS" }; recusa campo ausente, extra, outra fonte, texto livre, URL e tipo errado (o addendum 15 acrescenta actual/revised)', () => {
     const ev = build();
     const st = buildStatus({ events: ev, fredDatesByKind: FRED, nowMs: NOW });
     expect(() => assertPublicShape(ev, st)).not.toThrow();
@@ -424,7 +424,7 @@ describe('valor "Anterior" do BLS (addendum 14)', () => {
       (({ values: _v, ...resto }) => resto)(cpi), // o campo some
     ];
     for (const e of plantados) expect(() => assertPublicShape([e], st), JSON.stringify(e.values)).toThrow(/conteúdo público recusado/);
-    expect(VALUES_KEYS).toEqual(['previous', 'source']);
+    expect(VALUES_KEYS).toEqual(['previous', 'actual', 'revised', 'source']); // addendum 15 (contextResult.test.js)
   });
 
   describe('coleta ponta a ponta (main)', () => {
@@ -468,9 +468,9 @@ describe('valor "Anterior" do BLS (addendum 14)', () => {
         expect(m['CPI-2026-11-10'].values).toEqual(CPI);
         expect(m['NFP-2026-11-06'].values).toEqual({ previous: '+119 mil', source: 'BLS' });
         expect(r.logs).toMatch(/BLS \(valor "Anterior"\): 5 de 5 séries lidas \(v2 com chave: 5 · v1 sem chave: 0 · sem resposta: 0\)/);
-        expect(r.logs).toContain('| Evento | Hora (UTC) | Situação | Anterior (BLS) |');
-        expect(r.logs).toContain('| CPI-2026-11-10 | 2026-11-10 13:30 | oficial | +0,3% m/m · +3,0% a/a |');
-        expect(r.logs).toContain('| FOMC-2026-12-09 | 2026-12-09 19:00 | oficial | — |');
+        expect(r.logs).toContain('| Evento | Hora (UTC) | Situação | Anterior (BLS) | Atual (BLS) | Revisado (BLS) |');
+        expect(r.logs).toContain('| CPI-2026-11-10 | 2026-11-10 13:30 | oficial | +0,3% m/m · +3,0% a/a | — | — |');
+        expect(r.logs).toContain('| FOMC-2026-12-09 | 2026-12-09 19:00 | oficial | — | — | — |');
         for (const texto of [r.raw, r.status, r.logs]) {
           expect(texto).not.toContain(BKEY);
           expect(texto).not.toContain(FKEY);

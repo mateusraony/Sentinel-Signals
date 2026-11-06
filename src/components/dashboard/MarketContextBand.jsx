@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import {
   CalendarClock, Eye, EyeOff, Briefcase, ShoppingCart, Factory, Wallet, Landmark, BadgeCheck, Clock,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, ArrowUp, ArrowDown, Equal, History,
 } from 'lucide-react';
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { useNow } from '@/hooks/useNow';
 import {
-  BAND_STATES, CATEGORY_META, EVENT_META, IMPACT_LABELS, MAX_EVENTS_SHOWN,
+  BAND_STATES, CATEGORY_META, EVENT_META, IMPACT_LABELS, MAX_EVENTS_SHOWN, HISTORY_SHOWN,
   bandState, upcomingEvents, splitFeatured, groupEventsByDay, eventUrgency, approachFraction, eventValueSlots,
+  splitValueText, resultRows, resultEvents, releaseHistory, brtDayDiff, relativeDayLabel,
   formatCountdown, formatCountdownBare, formatEventWhen, formatEventClock, formatAge, isBandEnabled, setBandEnabled,
 } from '@/lib/marketContextBand';
 
@@ -67,8 +68,10 @@ class BandBoundary extends React.Component {
  *
  * Desenho: um cartão para o PRÓXIMO evento (contagem regressiva grande, importância, barra de aproximação) e, abaixo, uma
  * COLUNA por dia com evento (Hoje / Amanhã / SEX 13), lado a lado. A cor identifica o TIPO da notícia (emprego / inflação /
- * juros), nunca "bom/ruim"; a urgência fica no fundo e na contagem. Os números oficiais (Anterior/Atual) aparecem só quando o
- * evento os traz; hoje a agenda pública tem só data, hora e situação.
+ * juros), nunca "bom/ruim"; a urgência fica no fundo e na contagem. Os números oficiais do BLS (Anterior, Atual e Revisado) aparecem só
+ * quando o evento os traz. Evento do BLS que JÁ saiu (até 24 h) vira um cartão de RESULTADO (Anterior × Atual, com comparação NEUTRA:
+ * acima/abaixo/igual, sem verde nem vermelho); depois disso fica na lista "Últimas divulgações". O texto é por extenso ("no mês",
+ * "em 12 meses"). Nada aqui prevê direção: a comparação é com o mês anterior, não com a expectativa do mercado.
  */
 export default function MarketContextBand() {
   return (
@@ -117,9 +120,19 @@ function CategoryTag({ category, Icon }) {
   );
 }
 
+/** O texto do coletor por extenso, uma medida por linha: "+0,3% no mês" / "+3,0% em 12 meses". Formato desconhecido aparece como veio. */
+function ValueLines({ text }) {
+  return splitValueText(text).map((p, i) => (
+    <span key={`${p.key}-${i}`} className="block">
+      {p.value}
+      {p.label && <span className="ml-1 text-10px font-normal text-muted-foreground">{p.label}</span>}
+    </span>
+  ));
+}
+
 /**
- * Números oficiais (Anterior / Atual), só quando o evento os traz — hoje o arquivo público não tem esse campo, então nada
- * aparece (sem "—" permanente). Não existe "Projeção": sem fonte gratuita e licenciada, o painel não inventa número.
+ * Números oficiais (Anterior / Atual) de um evento que AINDA não saiu (ou sem cartão de resultado), só quando o evento os traz.
+ * Não existe "Projeção": sem fonte gratuita e licenciada, o painel não inventa número.
  */
 function ValueSlots({ e, compact = false }) {
   // Compacto (cartão da coluna): só o que já tem número. O "Atual: aguardando" fica só no cartão do próximo evento —
@@ -133,13 +146,170 @@ function ValueSlots({ e, compact = false }) {
           <div key={s.key} className={compact ? '' : 'rounded-lg px-3 py-1.5'} style={compact ? undefined : SOFT}>
             <dt className="text-10px font-mono uppercase tracking-wider text-muted-foreground">{s.label}</dt>
             <dd className={compact ? 'text-11px font-mono font-bold text-foreground tabular-nums' : 'text-base font-bold font-mono text-foreground tabular-nums'}>
-              {s.text ?? <span className="text-10px font-normal text-muted-foreground">aguardando</span>}
+              {s.text === null ? <span className="text-10px font-normal text-muted-foreground">aguardando</span> : <ValueLines text={s.text} />}
             </dd>
           </div>
         ))}
       </dl>
       {e.values?.source && <span className="text-10px font-mono text-muted-foreground">Fonte: {e.values.source}</span>}
     </div>
+  );
+}
+
+const DIRECTION_META = {
+  acima: { Icon: ArrowUp, text: 'acima' },
+  abaixo: { Icon: ArrowDown, text: 'abaixo' },
+  igual: { Icon: Equal, text: 'igual' },
+};
+
+/** Seta NEUTRA (cor do texto, nunca verde/vermelho) + a palavra: só diz se o número ficou acima, abaixo ou igual ao anterior. */
+function DirectionTag({ direction }) {
+  const meta = DIRECTION_META[direction];
+  if (!meta) return null;
+  const { Icon } = meta;
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-mono font-bold text-foreground whitespace-nowrap">
+      <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+      {meta.text}
+    </span>
+  );
+}
+
+/** "Saiu hoje às 10:30 · há 12 min" (ou "ontem"). */
+function releasedWhen(e, now) {
+  const day = relativeDayLabel(brtDayDiff(e.startMs, now)).toLowerCase();
+  return `Saiu ${day} às ${formatEventClock(e.startsAtUtc)}`;
+}
+
+/**
+ * Cartão de RESULTADO: evento do BLS que acabou de sair. Tabela com uma linha por medida (no mês, em 12 meses ou vagas do mês):
+ * Anterior, Atual e a comparação neutra; "Anterior revisado" só se o BLS corrigiu o mês anterior. Sem o "Atual" ainda, mostra
+ * "aguardando" (o número entra na próxima coleta). Não prevê nada: compara com o MÊS ANTERIOR, não com a expectativa do mercado.
+ */
+function ResultCard({ e, now, checkedAtMs }) {
+  const meta = EVENT_META[e.kind];
+  const Icon = KIND_ICONS[e.kind];
+  const rows = resultRows(e.values);
+  const hasActual = rows.some((r) => r.actual !== null);
+  const hasRevised = rows.some((r) => r.revised !== null);
+  const age = formatAge(checkedAtMs, now);
+  return (
+    <article aria-label="Resultado" className="rounded-xl p-3 sm:p-4 space-y-3"
+      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderTop: `2px solid ${CATEGORY_COLORS[meta.category]}` }}>
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div className="flex items-start gap-3 min-w-0 flex-1 basis-56">
+          <span className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: 'rgba(255,255,255,0.06)', color: CATEGORY_COLORS[meta.category] }}>
+            <Icon className="w-5 h-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 space-y-1">
+            <CategoryTag category={meta.category} Icon={Icon} />
+            <h3 className="text-base font-bold text-foreground leading-tight tracking-tight">
+              {meta.title}
+              <span className="ml-2 text-xs font-mono font-normal text-muted-foreground">({meta.short})</span>
+            </h3>
+            <p className="text-11px font-mono text-muted-foreground">
+              <time dateTime={e.startsAtUtc} className="text-foreground">{releasedWhen(e, now)}</time>
+              {' · '}{formatAge(e.startMs, now)}
+            </p>
+          </div>
+        </div>
+        <span className="inline-flex items-center gap-1 text-10px font-mono font-bold uppercase tracking-wider shrink-0"
+          style={{ color: hasActual ? '#00ff80' : '#94a3b8' }}>
+          {hasActual
+            ? <BadgeCheck className="w-3 h-3" aria-hidden="true" />
+            : <span className="w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none" style={{ background: '#94a3b8' }} aria-hidden="true" />}
+          {hasActual ? 'Resultado oficial' : 'Aguardando o número'}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full sm:w-auto sm:min-w-[30rem] text-left border-separate border-spacing-y-1">
+          <caption className="sr-only">{`${meta.title}: número anterior e número atual`}</caption>
+          <thead>
+            <tr className="text-10px font-mono uppercase tracking-wider text-muted-foreground">
+              <th scope="col" className="font-normal pr-3"><span className="sr-only">Medida</span></th>
+              <th scope="col" className="font-normal pr-3 sm:pr-6">Anterior</th>
+              {hasRevised && <th scope="col" className="font-normal pr-3 sm:pr-6">Anterior revisado</th>}
+              <th scope="col" className="font-normal">Atual</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} className="font-mono tabular-nums">
+                <th scope="row" className="text-xs font-normal text-muted-foreground pr-3 whitespace-nowrap py-1 align-top">{r.label}</th>
+                <td className="text-sm text-muted-foreground pr-3 sm:pr-6 py-1 align-top">{r.previous ?? '—'}</td>
+                {hasRevised && <td className="text-sm text-muted-foreground pr-3 sm:pr-6 py-1 align-top">{r.revised ?? '—'}</td>}
+                <td className="py-1 align-top">
+                  {/* O valor e a comparação ficam juntos: no celular a seta desce para baixo do número em vez de ficar numa 5ª coluna cortada. */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                    <span className="text-lg font-bold text-foreground leading-tight">
+                      {r.actual ?? <span className="text-10px font-normal text-muted-foreground">aguardando</span>}
+                    </span>
+                    <DirectionTag direction={r.direction} />
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-10px font-mono text-muted-foreground">
+        {e.values?.source ? `Fonte: ${e.values.source}. ` : ''}
+        {hasActual
+          ? 'Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).'
+          : `O número entra na próxima coleta${age ? ` (última checagem ${age})` : ''}.`}
+      </p>
+    </article>
+  );
+}
+
+/** Uma divulgação da lista "Últimas divulgações": dia, nome, "anterior → atual" da medida principal e a comparação neutra. */
+function HistoryRow({ e, now }) {
+  const meta = EVENT_META[e.kind];
+  const g = groupEventsByDay([e], now)[0];
+  const main = resultRows(e.values)[0];
+  return (
+    <li className="rounded-lg px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1" style={SOFT}>
+      <span className="text-10px font-mono font-bold tracking-wider text-muted-foreground whitespace-nowrap">{g.weekday} {g.dayMonth}</span>
+      <span className="text-xs font-semibold text-foreground">
+        {meta.title}
+        <span className="ml-1.5 text-10px font-mono font-normal text-muted-foreground">({meta.short})</span>
+      </span>
+      {main && (
+        <span className="text-xs font-mono tabular-nums text-foreground">
+          {main.previous ?? '—'} <span aria-label="para" className="text-muted-foreground">→</span> <span className="font-bold">{main.actual}</span>
+          <span className="ml-1.5 text-10px text-muted-foreground">{main.label.toLowerCase()}</span>
+        </span>
+      )}
+      {main && <DirectionTag direction={main.direction} />}
+      {resultRows(e.values).some((r) => r.revised !== null) && <span className="text-10px font-mono text-muted-foreground">anterior revisado</span>}
+    </li>
+  );
+}
+
+/** "Últimas divulgações": só eventos com o "Atual" oficial (de mais de 24 h atrás). Some inteira enquanto não há nenhuma. */
+function ReleaseHistory({ items, now }) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
+  const shown = open ? items : items.slice(0, HISTORY_SHOWN);
+  return (
+    <section aria-label="Últimas divulgações" className="space-y-2">
+      <h3 className="flex items-center gap-1.5 text-10px font-mono uppercase tracking-wider text-muted-foreground">
+        <History className="w-3 h-3" aria-hidden="true" />
+        Últimas divulgações
+      </h3>
+      <ul className="flex flex-col gap-1.5">
+        {shown.map((e) => <HistoryRow key={e.id} e={e} now={now} />)}
+      </ul>
+      <p className="text-10px font-mono text-muted-foreground">Fonte: BLS. Compara com o mês anterior.</p>
+      {items.length > HISTORY_SHOWN && (
+        <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
+          className="flex items-center gap-1 text-10px font-mono text-muted-foreground hover:text-foreground transition-colors">
+          {open ? <ChevronUp className="w-3 h-3" aria-hidden="true" /> : <ChevronDown className="w-3 h-3" aria-hidden="true" />}
+          {open ? 'Mostrar menos' : `Ver todas (${items.length})`}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -296,10 +466,15 @@ function MarketContextBandInner() {
     );
   }
 
-  const total = upcomingEvents(events, now, 1000).length;
-  const rows = upcomingEvents(events, now, expanded ? 1000 : MAX_EVENTS_SHOWN);
+  // Evento do BLS que já saiu (≤ 24 h) vira o cartão de RESULTADO e sai do fluxo "próximos" (não aparece duas vezes).
+  const results = resultEvents(events, now).slice(0, 3);
+  const inResult = new Set(results.map((r) => r.id));
+  const notShown = (list) => list.filter((e) => !inResult.has(e.id));
+  const total = notShown(upcomingEvents(events, now, 1000)).length;
+  const rows = notShown(upcomingEvents(events, now, 1000)).slice(0, expanded ? 1000 : MAX_EVENTS_SHOWN);
   const { featured, rest } = splitFeatured(rows);
   const groups = groupEventsByDay(rest, now);
+  const history = releaseHistory(events, now);
   return (
     <section aria-label="Agenda de eventos dos EUA" className="rounded-xl px-4 py-3 space-y-3" style={BOX}>
       {header}
@@ -311,8 +486,9 @@ function MarketContextBandInner() {
           </span>
         </p>
       )}
+      {results.map((r) => <ResultCard key={r.id} e={r} now={now} checkedAtMs={checkedAtMs} />)}
       {rows.length === 0 ? (
-        <p className="text-11px font-mono text-muted-foreground">Nenhum evento à frente na agenda.</p>
+        results.length === 0 && <p className="text-11px font-mono text-muted-foreground">Nenhum evento à frente na agenda.</p>
       ) : (
         <>
           {featured && <NextEventCard e={featured} now={now} />}
@@ -336,6 +512,7 @@ function MarketContextBandInner() {
           )}
         </>
       )}
+      <ReleaseHistory items={history} now={now} />
       <p className="text-10px font-mono text-muted-foreground">
         Só informação — não altera sinais nem operações.
       </p>

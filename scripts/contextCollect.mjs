@@ -5,9 +5,9 @@
 //
 // O que NUNCA vai para lá (repositório público; lição do item 25): URL, chave, mensagem de
 // erro, valor vindo do FRED (termos do FRED) ou volatilidade (termos da Deribit). ÚNICA exceção
-// (addendum 14): o "Anterior" oficial do BLS (domínio público, "Fonte: BLS"), em `values`, no
-// formato único `PREVIOUS_TEXT_RE`. A trava é `assertPublicShape`: lista FECHADA de campos e
-// formato de cada valor — texto livre não passa.
+// (addenda 14 e 15): os números oficiais do BLS (domínio público, "Fonte: BLS") em `values` —
+// "Anterior", "Atual" e "Revisado", todos no formato único `PREVIOUS_TEXT_RE`. A trava é
+// `assertPublicShape`: lista FECHADA de campos e formato de cada valor — texto livre não passa.
 //
 // Fontes: as datas do FRED (CPI, Payroll, PPI, PCE) são a fonte principal; a lista fixa
 // (`contextCalendar.mjs`) é a reserva e a única fonte do FOMC. A hora vem de `KIND_TIMES`.
@@ -16,19 +16,23 @@ import { createHash } from 'node:crypto';
 import { KINDS, KIND_TIMES, STATUS, US_RELEASES } from './contextCalendar.mjs';
 import { nyToUtc } from './contextTime.mjs';
 import { buildUserAgent, MAX_BODY_BYTES } from './contextProbe.mjs';
-import { previousValues, PREVIOUS_TEXT_RE, BLS_SOURCE } from './contextBls.mjs';
+import { previousValues, previousValueText, actualValueText, PREVIOUS_TEXT_RE, BLS_SOURCE, BLS_SERIES } from './contextBls.mjs';
 
 /** Releases do FRED, conferidos pelo nome na sonda (runs 5-8). FOMC não está aqui: vem da lista fixa. */
 export const FRED_RELEASES = Object.freeze({ CPI: 10, NFP: 50, PPI: 46, PCE: 54 });
 
 export const PUBLIC_VERSION = 1;
-// `values` (addendum 14): o "Anterior" oficial do BLS — `null` ou `{ previous, source }`; ver `sanitizeValues`.
+// `values` (addenda 14 e 15): os números oficiais do BLS — `null` ou `{ previous?, actual?, revised?, source }`; ver `sanitizeValues`.
 export const EVENT_KEYS = Object.freeze(['id', 'kind', 'reference', 'startsAtUtc', 'status', 'firstSeenAt', 'lastChangedAt', 'values']);
-export const VALUES_KEYS = Object.freeze(['previous', 'source']);
+export const VALUES_KEYS = Object.freeze(['previous', 'actual', 'revised', 'source']);
 export const STATUS_KEYS = Object.freeze(['version', 'checkedAt', 'fred', 'eventsCount', 'coverageUntil', 'hash']);
 export const FRED_STATES = Object.freeze(['ok', 'parcial', 'falhou']);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Evento já divulgado COM o número oficial fica este tempo no arquivo (alimenta "Últimas divulgações"); sem número, só 1 dia. */
+export const HISTORY_DAYS = 45;
+/** O modo "janela" só trabalha enquanto algum evento do BLS saiu há até isto e ainda não tem o "Atual". */
+export const RESULT_WATCH_MS = 4 * 60 * 60 * 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const ALERTABLE = new Set([STATUS.OFICIAL, STATUS.CONFIRMADA]);
@@ -67,13 +71,57 @@ const instant = (kind, date) => {
 };
 
 /**
- * O `values` de uma linha (do arquivo anterior ou recém-calculado): exatamente `{ previous, source: 'BLS' }`, com o texto no formato
- * único (`PREVIOUS_TEXT_RE`). Qualquer outra coisa vira `null` — o arquivo anterior vem da rede e não é confiável.
+ * O `values` de uma linha (do arquivo anterior ou recém-calculado): `{ previous?, actual?, revised?, source: 'BLS' }`, cada texto no
+ * formato único (`PREVIOUS_TEXT_RE`). Tem de haver "Anterior" ou "Atual"; "Revisado" só existe junto do "Atual" (é a correção do
+ * mês anterior feita na própria divulgação). Chave fora da lista, texto livre ou outra fonte viram `null` — o arquivo anterior vem
+ * da rede e não é confiável. A saída tem sempre a mesma ordem de chaves (previous, actual, revised, source).
  */
 export function sanitizeValues(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
-  if (!sameKeys(v, VALUES_KEYS) || v.source !== BLS_SOURCE || typeof v.previous !== 'string' || !PREVIOUS_TEXT_RE.test(v.previous)) return null;
-  return { previous: v.previous, source: v.source };
+  if (Object.keys(v).some((k) => !VALUES_KEYS.includes(k)) || v.source !== BLS_SOURCE) return null;
+  const out = {};
+  for (const k of ['previous', 'actual', 'revised']) {
+    if (!Object.prototype.hasOwnProperty.call(v, k)) continue;
+    if (typeof v[k] !== 'string' || !PREVIOUS_TEXT_RE.test(v[k])) return null;
+    out[k] = v[k];
+  }
+  if (!out.previous && !out.actual) return null;
+  if (out.revised && !out.actual) return null;
+  out.source = BLS_SOURCE;
+  return out;
+}
+
+/** A hora do evento já passou? (evento sem hora calculável conta como futuro: nunca é tratado como "já divulgado"). */
+const hasHappened = (kind, date, nowMs) => {
+  const utc = instant(kind, date);
+  return utc !== null && utc.ms <= nowMs;
+};
+
+/**
+ * Os números oficiais de um evento naquele instante (regra 6 de `buildEvents`). Pura.
+ * - Ainda NÃO divulgado: o "Anterior" recalculado a cada coleta (o BLS pode revisá-lo antes); sem resposta do BLS, o publicado.
+ * - Já divulgado (e com data firme): enquanto o BLS não trouxe o mês que o evento mede, mantém o publicado. No PRIMEIRO instante em que traz,
+ *   grava o "Atual"; se o "Anterior" recalculado agora difere do congelado, grava também o "Revisado". Daí em diante tudo fica
+ *   CONGELADO (uma revisão posterior do mês não troca o número que saiu na divulgação).
+ */
+function eventValues({ kind, reference, status, released, published, blsSeries }) {
+  if (published?.actual) return published;
+  // Data a confirmar (adiada, retirada) que já passou NÃO é uma divulgação: nunca ganha "Atual" (o mês que o BLS traz é o do evento remarcado).
+  if (released && status === STATUS.A_CONFIRMAR) return published;
+  if (!released) {
+    const fresh = blsSeries ? previousValues(kind, blsSeries, reference) : null;
+    return fresh ?? published;
+  }
+  const actual = blsSeries ? actualValueText(kind, blsSeries, reference) : null;
+  if (!actual) return published;
+  const fresh = previousValueText(kind, blsSeries, reference);
+  const previous = published?.previous ?? fresh ?? null;
+  const out = {};
+  if (previous) out.previous = previous;
+  out.actual = actual;
+  if (published?.previous && fresh && fresh !== published.previous) out.revised = fresh;
+  out.source = BLS_SOURCE;
+  return sanitizeValues(out) ?? published;
 }
 
 /**
@@ -98,16 +146,18 @@ export function sanitizeValues(v) {
  * 4. FRED sem resposta para um tipo: evento JÁ publicado mantém a situação publicada, mesmo que
  *    também esteja na lista fixa — a lista só decide evento novo. Sem isso, uma queda do FRED
  *    depois de uma remarcação publicaria os dois dias como oficiais (achado do Codex no PR #529).
- * 5. Só de ontem em diante.
- * 6. `values` (o "Anterior" do BLS): calculado só para evento que ainda NÃO começou e que tem mês de referência; se o BLS não
- *    respondeu, vale o que já estava publicado. Depois que o evento sai, o número FICA CONGELADO (a API passa a trazer o mês
- *    novo e revisa o anterior: recalcular mudaria o número depois do fato). Sem número calculável nem publicado: `null`.
+ * 5. Só de ontem em diante — exceto o evento JÁ DIVULGADO com o número oficial ("Atual"), que fica `HISTORY_DAYS` dias (lista "Últimas
+ *    divulgações"). Evento que já aconteceu nunca é rebaixado para 'a_confirmar'.
+ * 6. `values` (números oficiais do BLS): ver `eventValues` — "Anterior" recalculado até a hora do evento; depois da divulgação,
+ *    "Atual" (e "Revisado", se o BLS corrigiu o mês anterior) gravados no 1º instante em que o BLS traz o mês e CONGELADOS.
+ *    Sem número calculável nem publicado: `null`.
  * @param {Record<string, Map<string, number>|null>} [p.blsSeries] séries do BLS por código (`fetchBlsSeries().series`)
  */
 export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, previous = [], nowMs, blsSeries = null }) {
   const nowIso = new Date(nowMs).toISOString();
   const cutoffMs = nowMs - DAY_MS;
   const cand = new Map(); // id → { kind, date, reference, status }
+  const prevById = new Map(sanitizePrevious(previous).map((p) => [p.id, p]));
 
   for (const e of fixedList) {
     if (!Object.prototype.hasOwnProperty.call(KINDS, e?.kind) || !DATE_RE.test(e?.date ?? '')) continue;
@@ -126,11 +176,16 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
       cand.set(id, { kind, date: d, reference: prev?.reference ?? null, status: STATUS.OFICIAL });
     }
     for (const [id, c] of cand) {
-      if (c.kind === kind && !set.has(c.date)) cand.set(id, { ...c, status: STATUS.A_CONFIRMAR });
+      if (c.kind !== kind || set.has(c.date)) continue;
+      // Data que o FRED não traz = "a confirmar". Exceção: a hora dela JÁ passou e ela foi publicada antes — vale o status PUBLICADO.
+      // Assim um evento que de fato aconteceu e saiu da janela de 20 datas do FRED continua "oficial", e uma data ADIADA (já rebaixada
+      // antes da hora) continua "a confirmar" em vez de voltar a "oficial" quando a hora original passa (achado do Codex, PR #547).
+      const published = prevById.get(id)?.status;
+      const keep = hasHappened(c.kind, c.date, nowMs) && Object.values(STATUS).includes(published);
+      cand.set(id, { ...c, status: keep ? published : STATUS.A_CONFIRMAR });
     }
   }
 
-  const prevById = new Map(sanitizePrevious(previous).map((p) => [p.id, p]));
   for (const [id, c] of cand) {
     const p = prevById.get(id);
     if (!p || !(c.kind in FRED_RELEASES) || fredAnswered.has(c.kind) || !Object.values(STATUS).includes(p.status)) continue;
@@ -146,19 +201,22 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
       kind,
       date: m[2],
       reference: typeof p.reference === 'string' ? p.reference : null,
-      status: sourceAnswered ? STATUS.A_CONFIRMAR : p.status,
+      status: sourceAnswered && !hasHappened(kind, m[2], nowMs) ? STATUS.A_CONFIRMAR : p.status,
     });
   }
 
   const out = [];
   for (const [id, c] of cand) {
     const utc = instant(c.kind, c.date);
-    if (!utc || utc.ms < cutoffMs) continue;
+    if (!utc) continue;
     const p = prevById.get(id);
+    const values = eventValues({
+      kind: c.kind, reference: c.reference, status: c.status, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries,
+    });
+    // Só de ontem em diante; o já divulgado COM "Atual" fica HISTORY_DAYS dias (alimenta "Últimas divulgações").
+    if (utc.ms < cutoffMs && !(values?.actual && utc.ms >= nowMs - HISTORY_DAYS * DAY_MS)) continue;
     // Mudou = situação, hora OU mês de referência (antes a referência era ignorada). O número do BLS NÃO entra: não é remarcação.
     const changed = !p || p.status !== c.status || p.startsAtUtc !== utc.iso || (p.reference ?? null) !== (c.reference ?? null);
-    const published = sanitizeValues(p?.values);
-    const fresh = blsSeries ? previousValues(c.kind, blsSeries, c.reference) : null;
     out.push({
       id,
       kind: c.kind,
@@ -167,7 +225,7 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
       status: c.status,
       firstSeenAt: typeof p?.firstSeenAt === 'string' && ISO_RE.test(p.firstSeenAt) ? p.firstSeenAt : nowIso,
       lastChangedAt: changed ? nowIso : (ISO_RE.test(p.lastChangedAt ?? '') ? p.lastChangedAt : nowIso),
-      values: utc.ms > nowMs ? (fresh ?? published) : published,
+      values,
     });
   }
   return out.sort((a, b) => (a.startsAtUtc === b.startsAtUtc ? a.id.localeCompare(b.id) : a.startsAtUtc.localeCompare(b.startsAtUtc)));
@@ -176,6 +234,19 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
 /** Impressão digital dos eventos (sem a hora da checagem): muda só quando algum evento muda. */
 export function eventsHash(events) {
   return createHash('sha256').update(JSON.stringify(events)).digest('hex');
+}
+
+/**
+ * Há evento do BLS (CPI, PPI, Payroll) com mês de referência que saiu há até `RESULT_WATCH_MS` e ainda não tem o "Atual"?
+ * É o que decide se o modo "janela" do coletor tem trabalho a fazer (senão sai sem rede e sem gravar nada).
+ * @param {object[]} events eventos já validados (`sanitizePrevious`)
+ */
+export function needsResultCheck(events, nowMs) {
+  return (Array.isArray(events) ? events : []).some((e) => {
+    if (!Object.prototype.hasOwnProperty.call(BLS_SERIES, e?.kind) || !/^\d{4}-\d{2}$/.test(e?.reference ?? '')) return false;
+    const ms = Date.parse(e.startsAtUtc);
+    return Number.isFinite(ms) && ms <= nowMs && nowMs - ms <= RESULT_WATCH_MS && !sanitizeValues(e.values)?.actual;
+  });
 }
 
 /** O `status.json`. `fred`: 'ok' (os 4 tipos), 'parcial' ou 'falhou' (nenhum). */
@@ -212,7 +283,7 @@ export function assertPublicShape(events, status) {
     if (!(e.reference === null || /^\d{4}-\d{2}$/.test(e.reference))) problems.push(`${tag}: referência inválida`);
     for (const k of ['startsAtUtc', 'firstSeenAt', 'lastChangedAt']) if (!ISO_RE.test(e[k] ?? '')) problems.push(`${tag}: ${k} inválido`);
     if (!Object.values(STATUS).includes(e.status)) problems.push(`${tag}: situação inválida`);
-    // `values`: null OU exatamente { previous, source: 'BLS' } no formato único — nada de número solto, texto livre, URL ou outra fonte.
+    // `values`: null OU { previous?, actual?, revised?, source: 'BLS' } no formato único — nada de número solto, texto livre, URL ou outra fonte.
     if (!(e.values === null || sanitizeValues(e.values) !== null)) problems.push(`${tag}: values inválido`);
   }
   if (!sameKeys(status, STATUS_KEYS)) problems.push(`status: campos diferentes de ${STATUS_KEYS.join(', ')}`);

@@ -11,6 +11,12 @@ export const CONTEXT_DATA_BASE = 'https://raw.githubusercontent.com/mateusraony/
 export const STALE_AFTER_MS = 36 * 60 * 60 * 1000;
 /** Evento que começou há até isto ainda aparece, como "acabou de sair". */
 export const JUST_RELEASED_MS = 30 * 60 * 1000;
+/** Evento do BLS com números que saiu há até isto vira cartão de RESULTADO (Anterior × Atual); depois passa para "Últimas divulgações". */
+export const RESULT_CARD_MS = 24 * 60 * 60 * 1000;
+/** Tipos que o BLS publica (têm "Anterior"/"Atual"); PCE e FOMC não têm número neste painel. */
+export const RESULT_KINDS = Object.freeze(['CPI', 'PPI', 'NFP']);
+/** Quantas divulgações a lista "Últimas divulgações" mostra de início. */
+export const HISTORY_SHOWN = 5;
 /** Quantos eventos a faixa mostra de início (1 em destaque + a linha do tempo); "Ver todos" mostra o resto. */
 export const MAX_EVENTS_SHOWN = 6;
 /** Horizonte da barra de aproximação do evento em destaque: ela enche nos 7 dias antes da hora. */
@@ -91,16 +97,17 @@ function cleanValueText(v) {
 }
 
 /**
- * Números oficiais do evento: `{ previous, actual, source }` (textos curtos). O coletor passou a gravar só `previous` e
- * `source: 'BLS'` (addendum 14 do item 285; `actual` ainda não existe) — a tela só desenha o espaço quando o campo existe (nada
- * de "—" permanente). Não existe "projeção": não há fonte gratuita e licenciada, e o painel não inventa número.
+ * Números oficiais do evento: `{ previous, actual, revised, source }` (textos curtos). O coletor grava o "Anterior" antes da divulgação e,
+ * depois dela, o "Atual" e — se o BLS corrigiu o mês anterior — o "Revisado" (addenda 14 e 15 do item 285). A tela só desenha o espaço
+ * quando o campo existe (nada de "—" permanente). Não existe "projeção": não há fonte gratuita e licenciada, e o painel não inventa número.
+ * "Revisado" sem "Atual" é descartado (só existe junto da divulgação).
  */
 export function parseEventValues(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const previous = cleanValueText(raw.previous);
   const actual = cleanValueText(raw.actual);
   if (!previous && !actual) return null;
-  return { previous, actual, source: cleanValueText(raw.source) };
+  return { previous, actual, revised: actual ? cleanValueText(raw.revised) : null, source: cleanValueText(raw.source) };
 }
 
 /**
@@ -114,6 +121,89 @@ export function eventValueSlots(e) {
   if (v.previous) slots.push({ key: 'previous', label: 'Anterior', text: v.previous });
   slots.push({ key: 'actual', label: 'Atual', text: v.actual ?? null });
   return slots;
+}
+
+const MEASURE_ORDER = ['mom', 'yoy', 'jobs', 'raw'];
+const MEASURE_ROW_LABELS = Object.freeze({ mom: 'No mês', yoy: 'Em 12 meses', jobs: 'No mês', raw: 'Valor' });
+
+/**
+ * Parte o texto do coletor em medidas, com o nome POR EXTENSO: "+0,3% m/m · +3,0% a/a" → [{ key: 'mom', label: 'no mês', value: '+0,3%' },
+ * { key: 'yoy', label: 'em 12 meses', value: '+3,0%' }]; "+119 mil" → [{ key: 'jobs', label: 'no mês', value: '+119 mil' }]. Formato que não
+ * é nenhum desses vira uma medida 'raw' sem rótulo (a tela mostra o texto como veio, nunca quebra). Texto vazio ou não-texto: [].
+ */
+export function splitValueText(text) {
+  if (typeof text !== 'string' || !text.trim()) return [];
+  return text.split(' · ').map((part) => {
+    const t = part.trim();
+    let m = /^(.+?)\s+m\/m$/.exec(t);
+    if (m) return { key: 'mom', label: 'no mês', value: m[1] };
+    m = /^(.+?)\s+a\/a$/.exec(t);
+    if (m) return { key: 'yoy', label: 'em 12 meses', value: m[1] };
+    if (/\smil$/.test(t)) return { key: 'jobs', label: 'no mês', value: t };
+    return { key: 'raw', label: null, value: t };
+  }).filter((x) => x.value);
+}
+
+/** "+0,3%" → 0.3; "-0,2%" → -0.2; "+1.234 mil" → 1234; "151 mil" → 151. null se não começa por um número. */
+export function valueNumber(value) {
+  const m = /^([+-]?)(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?/.exec(String(value ?? '').trim());
+  if (!m) return null;
+  const n = Number(`${m[1]}${m[2].replace(/\./g, '')}.${m[3] ?? '0'}`);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Compara o "Atual" com o "Anterior" (os dois textos de uma medida). 'acima' | 'abaixo' | 'igual', ou null se faltar um dos lados ou algum
+ * não for número. É um FATO sobre os dois números — não diz se é bom ou ruim, nem o que o mercado vai fazer.
+ */
+export function compareValues(actual, previous) {
+  const a = valueNumber(actual);
+  const p = valueNumber(previous);
+  if (a === null || p === null) return null;
+  if (Math.abs(a - p) < 1e-9) return 'igual';
+  return a > p ? 'acima' : 'abaixo';
+}
+
+/**
+ * As linhas do cartão de resultado: uma por medida (no mês, em 12 meses ou vagas do mês), com Anterior, Atual, Revisado e a comparação.
+ * Cada lado pode faltar (`null`): o "Atual" some até o BLS divulgar; o "Revisado" só existe se o BLS corrigiu aquela medida.
+ */
+export function resultRows(values) {
+  if (!values) return [];
+  const sides = { previous: splitValueText(values.previous), actual: splitValueText(values.actual), revised: splitValueText(values.revised) };
+  const pick = (list, key) => list.find((x) => x.key === key)?.value ?? null;
+  const rows = [];
+  for (const key of MEASURE_ORDER) {
+    const previous = pick(sides.previous, key);
+    const actual = pick(sides.actual, key);
+    const revisedRaw = pick(sides.revised, key);
+    // "Revisado" só aparece onde o BLS de fato mudou aquela medida (no CPI, o 12 meses pode ficar igual enquanto o mês muda).
+    const revised = revisedRaw !== null && revisedRaw !== previous ? revisedRaw : null;
+    if (previous === null && actual === null && revised === null) continue;
+    rows.push({ key, label: MEASURE_ROW_LABELS[key], previous, actual, revised, direction: compareValues(actual, previous) });
+  }
+  return rows;
+}
+
+/**
+ * Eventos do BLS que JÁ saíram (há até 24 h) e trazem números: viram o cartão de RESULTADO (mais recente primeiro). Evento sem número fica
+ * no fluxo antigo ("acabou de sair" por 30 min); data "a confirmar" nunca entra.
+ */
+export function resultEvents(events, nowMs) {
+  return (Array.isArray(events) ? events : [])
+    .filter((e) => RESULT_KINDS.includes(e?.kind) && e.status !== 'a_confirmar' && Number.isFinite(e.startMs)
+      && e.startMs <= nowMs && nowMs - e.startMs <= RESULT_CARD_MS && (e.values?.previous || e.values?.actual))
+    .sort((a, b) => (a.startMs === b.startMs ? String(a.id).localeCompare(String(b.id)) : b.startMs - a.startMs));
+}
+
+/**
+ * "Últimas divulgações": eventos que JÁ têm o "Atual" e saíram há mais de 24 h (os de menos de 24 h estão no cartão de resultado). Mais
+ * recente primeiro. Evento sem "Atual" não entra (a lista só mostra o que tem número oficial) e data "a confirmar" também não.
+ */
+export function releaseHistory(events, nowMs) {
+  return (Array.isArray(events) ? events : [])
+    .filter((e) => e?.status !== 'a_confirmar' && Number.isFinite(e?.startMs) && e.startMs < nowMs - RESULT_CARD_MS && e.values?.actual)
+    .sort((a, b) => (a.startMs === b.startMs ? String(a.id).localeCompare(String(b.id)) : b.startMs - a.startMs));
 }
 
 /** Hora da última checagem do coletor (`status.json`), em ms; null se o corpo não serve. */

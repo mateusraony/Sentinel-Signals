@@ -224,3 +224,22 @@ item 285, addendum 9) grava as datas de CPI, Payroll, PPI, PCE e FOMC na branch 
 3. O token do scan já serve (permissão `Actions: Read and write` no repositório; o coletor não precisa de mais nada).
 
 O workflow também tem uma reserva própria 1x/dia (11:41 UTC), só para o caso do cron-job.org falhar.
+
+## Coletor de contexto — 4º job: "janela de divulgação" (addendum 15 do item 285, 2026-11-06)
+
+Para o **resultado** (o número "Atual" do BLS) aparecer no painel minutos depois da divulgação — e não só na próxima das 3 coletas do dia —
+o coletor ganhou o modo **janela**. É um 4º job no cron-job.org, igual aos 3 do coletor, trocando só o horário e o corpo:
+
+- **URL**: a mesma do coletor (`.../actions/workflows/context-collect.yml/dispatches`), mesmo token, mesmos headers.
+- **Horário** (fuso UTC no cron-job.org): `*/10 12-14 * * 1-5` — de segunda a sexta, a cada 10 minutos, das 09h às 11h50 de Brasília.
+  Cobre as divulgações das 8:30 de Nova York no horário de verão (09:30 de Brasília) e no de inverno (10:30).
+- **Corpo da requisição**: `{"ref":"main","inputs":{"mode":"janela"}}` (os outros jobs usam só `{"ref":"main"}`).
+
+Como funciona: a cada disparo o coletor confere o `events.json` já publicado. **Só se** algum evento do BLS (CPI, PPI ou Payroll) saiu
+há até 4 horas e ainda não tem o "Atual" é que ele consulta o BLS; senão termina em segundos, sem rede e sem gravar nada (o histórico
+da branch `context-data` não cresce). Assim que o BLS traz o mês, o "Atual" entra, o "Revisado" também (se o BLS corrigiu o mês
+anterior) e o disparo seguinte já não tem o que fazer. Custo no pior caso: `scripts/contextBudget.mjs` (`RELEASE_WINDOW`) — 396 min/mês de
+Actions e 105 consultas/dia ao BLS (chave v2: 500/dia).
+
+**Sem este job nada quebra:** as 3 coletas diárias (07h, 12h e 21h de Brasília) também gravam o "Atual"; ele só demora mais a aparecer.
+O modo só liga com o valor exato `janela`; qualquer outro texto (ou o botão *Run workflow* deixado em branco) é a coleta normal.

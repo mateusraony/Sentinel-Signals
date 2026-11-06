@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_CONFIG, estimateBudget, stress, exceedsProviderLimit, formatBudgetTable, DAYS_PER_MONTH,
-  COLLECTOR_WORST_CASE_RUNS_PER_DAY,
+  COLLECTOR_WORST_CASE_RUNS_PER_DAY, RELEASE_WINDOW, estimateReleaseWindow,
 } from './contextBudget.mjs';
 
 const bySource = (est, id) => est.sources.find((s) => s.id === id);
@@ -105,5 +105,35 @@ describe('tabela para o resumo do job', () => {
     expect(table).toContain('OK');
     expect(table).toMatch(/GitHub Actions: 270 min\/mês/);
     expect(/\p{Extended_Pictographic}/u.test(table)).toBe(false);
+  });
+});
+
+// Addendum 15 — o modo "janela" do coletor (4º job do cron-job.org). Orçamento à parte; o teste que importa é o de FALHA.
+describe('modo "janela" do coletor (addendum 15)', () => {
+  it('cabe: 396 min/mês de Actions e 105 consultas/dia ao BLS no pior caso (teto 600 min e 250 consultas)', () => {
+    const e = estimateReleaseWindow();
+    expect(e.runsPerMonth).toBe(396);
+    expect(e.minutesPerMonth).toBe(396);
+    expect(e.blsCallsPerDay).toBe(105); // 15 das 3 coletas + 18 disparos x 5 séries
+    expect(e.ok).toBe(true);
+  });
+
+  it('reprova quando o consumo passa do teto (disparo a cada minuto estoura os minutos; trabalho em todo disparo com mais séries estoura o BLS)', () => {
+    const aCadaMinuto = estimateReleaseWindow({ ...RELEASE_WINDOW, runsPerDay: 180 });
+    expect(aCadaMinuto.minutesOk).toBe(false);
+    expect(aCadaMinuto.ok).toBe(false);
+    const muitasSeries = estimateReleaseWindow({ ...RELEASE_WINDOW, blsCallsPerWorkingRun: 15 });
+    expect(muitasSeries.blsOk).toBe(false);
+    expect(muitasSeries.ok).toBe(false);
+  });
+
+  it('o horário do guia do cron-job.org dá exatamente os disparos que o orçamento conta (18 por dia, só dias úteis)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const guia = readFileSync('docs/claude/external-cron-setup.md', 'utf8');
+    const m = /\*\/(\d+) (\d+)-(\d+) \* \* 1-5/.exec(guia);
+    expect(m, 'o guia precisa trazer o cron da janela').not.toBeNull();
+    const [passo, de, ate] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    expect(((ate - de + 1) * 60) / passo).toBe(RELEASE_WINDOW.runsPerDay);
+    expect(guia).toContain('"inputs":{"mode":"janela"}');
   });
 });

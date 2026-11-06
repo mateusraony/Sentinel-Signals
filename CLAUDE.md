@@ -80,7 +80,7 @@ Outras decisões permanentes: **não** reintroduzir Base44; **não** usar Vercel
 Netlify (manter GitHub + Render + Firebase); **não** habilitar trading real;
 **não** alterar algo funcional sem necessidade demonstrada.
 **Contexto de Mercado (itens 284/285):** Fases 1–3 e 4a feitas (sonda, coletor `context-data`, faixa no
-Dashboard, Telegram manual sem banco); 4b–6 pendentes. Só informativa — nunca toca motor/score; sem Neon.
+Dashboard, Telegram manual sem banco; números do BLS — Anterior/Atual/Revisado, addenda 14-15); 4b–6 pendentes. Só informativa — nunca toca motor/score; sem Neon.
 
 ## Scan agendado (GitHub Actions) — roda sem navegador
 
