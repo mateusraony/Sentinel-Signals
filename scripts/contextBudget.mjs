@@ -124,7 +124,7 @@ export function formatBudgetTable(estimate) {
 }
 
 /**
- * Modo "janela" do coletor (addendum 15): um 4º job do cron-job.org (a cada 10 min, das 12h às 14h50 UTC, de segunda a sexta; o cron exato está em docs/claude/external-cron-setup.md) que só trabalha quando algum
+ * Modo "janela" do coletor (addenda 15/16): um agendamento do próprio GitHub (a cada ~10 min, das 12h às 14h57 UTC, de segunda a sexta; o cron exato está em `context-collect.yml`; um job do cron-job.org com `mode: janela` é OPCIONAL e, ligado junto, DOBRA os disparos) que só trabalha quando algum
  * evento do BLS saiu há ≤ 4 h e ainda não tem o "Atual"; nos demais disparos o coletor sai sem rede e sem gravar. As 12h-14h UTC cobrem
  * 8:30 de Nova York no horário de verão (12:30 UTC) e no de inverno (13:30 UTC). É um orçamento À PARTE (não entra em `estimateBudget`):
  * o das 3 coletas diárias segue valendo como está.

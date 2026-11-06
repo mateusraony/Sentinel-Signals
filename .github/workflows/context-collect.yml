@@ -11,11 +11,15 @@ name: Coletor de contexto — datas dos eventos (Sentinel Signals)
 #
 # Escrita: é o ÚNICO workflow de contexto com `contents: write`, e só dá push na branch
 # `context-data` (cria na 1ª vez, sem --force). Disparo principal: cron-job.org (07h, 12h e 21h de
-# Brasília, via workflow_dispatch — docs/claude/external-cron-setup.md). O `schedule` é só reserva
-# diária, fora do minuto :00 (o GitHub desliga `schedule` após 60 dias sem atividade no repositório).
-# Modo "janela" (addendum 15): um 4º job do cron-job.org (a cada 10 min nas horas das divulgações) manda `{"ref":"main","inputs":{"mode":"janela"}}`.
-# Nesse modo o coletor só trabalha se algum evento do BLS saiu há ≤ 4 h e ainda não tem o "Atual"; senão sai sem rede e sem gravar.
-# O valor chega ao script SÓ por variável de ambiente (nunca dentro do texto do `run:`).
+# Brasília, via workflow_dispatch — docs/claude/external-cron-setup.md). O `schedule` tem 2 entradas:
+# uma reserva diária e a "janela de divulgação" (abaixo). Ambas fora do minuto :00 (o GitHub atrasa os
+# agendamentos sob carga e desliga `schedule` após 60 dias sem atividade no repositório).
+# Modo "janela" (addendum 15/16): nas horas das divulgações dos EUA (12h-14h UTC = 09h-11h50 de Brasília, cobre o horário de
+# verão e o de inverno), de segunda a sexta, a cada ~10 min. Nesse modo o coletor só trabalha se algum evento do BLS saiu há ≤ 4 h
+# e ainda não tem o "Atual"; senão sai sem rede e sem gravar. Quem liga o modo: a entrada `mode` = "janela" (um job do cron-job.org,
+# opcional) OU o próprio agendamento da janela (`github.event.schedule` igual ao texto dessa entrada). O valor chega ao script SÓ
+# por variável de ambiente (nunca dentro do texto do `run:`). O agendador do GitHub é menos pontual que o cron-job.org (atrasa
+# sob carga): o "Atual" aparece na 1ª janela depois da divulgação, não no minuto exato.
 
 on:
   workflow_dispatch:
@@ -27,6 +31,7 @@ on:
         type: string
   schedule:
     - cron: "41 11 * * *"
+    - cron: "7,17,27,37,47,57 12-14 * * 1-5"
 
 permissions:
   contents: write
@@ -77,7 +82,7 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
           CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}
-          COLLECT_MODE: ${{ github.event.inputs.mode }}
+          COLLECT_MODE: ${{ github.event.inputs.mode || (github.event.schedule == '7,17,27,37,47,57 12-14 * * 1-5' && 'janela') || '' }}
         run: |
           set -o pipefail
           node scripts/context-collect.mjs --dir data | tee -a "$GITHUB_STEP_SUMMARY"
