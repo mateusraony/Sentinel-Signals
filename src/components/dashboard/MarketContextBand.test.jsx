@@ -10,8 +10,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderPage } from '@/pages/__fixtures__/renderPage.jsx';
 
-const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
+const { fetchMock, btcMock } = vi.hoisted(() => ({ fetchMock: vi.fn(), btcMock: vi.fn() }));
 vi.mock('@/lib/marketContextSource', () => ({ fetchMarketContext: fetchMock }));
+// O BTC depois da divulgação (Agenda 4d, parte 2): a busca das velas nunca vai à rede nos testes.
+vi.mock('@/lib/btcAfterReleaseSource', () => ({ fetchBtcAfterRelease: btcMock }));
 
 import MarketContextBand from './MarketContextBand.jsx';
 
@@ -28,6 +30,8 @@ beforeEach(() => {
   mem.clear();
   vi.stubGlobal('localStorage', { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) });
   fetchMock.mockReset();
+  btcMock.mockReset();
+  btcMock.mockResolvedValue(null);
   fetchMock.mockImplementation(async () => new Promise(() => {}));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -468,5 +472,148 @@ describe('MarketContextBand — resultado', () => {
     renderPage(<MarketContextBand />);
     await screen.findByRole('article', { name: 'Próximo evento' });
     expect(screen.queryByRole('article', { name: 'Resultado' })).toBeNull();
+  });
+});
+
+// Agenda 4d, etapa 2 (addendum 18 do item 285): "Como o BTC se mexeu nas últimas divulgações" — medido, não previsto.
+describe('MarketContextBand — como o BTC se mexeu nas últimas divulgações', () => {
+  const BLOCO = { name: 'Como o BTC se mexeu nas últimas divulgações' };
+  const saiu = (id, kind, ago, values) => ({ ...ev(id, kind, iso(NOW - ago)), values });
+
+  it('CPI (próximo evento) passa do critério: mostra tamanho do movimento, a razão, o número de casos e a data da medição', async () => {
+    dados([ev('CPI-x', 'CPI', '2026-11-10T13:30:00.000Z')]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Próximo evento' });
+    const bloco = screen.getByRole('complementary', BLOCO);
+    expect(within(bloco).getByText('Costuma mexer mais que num dia normal')).toBeTruthy();
+    expect(within(bloco).getByText('0,65%')).toBeTruthy();
+    expect(within(bloco).getByText(/dia normal: 0,22% · 3,0× mais/)).toBeTruthy();
+    expect(within(bloco).getByText('0,44%')).toBeTruthy();
+    expect(within(bloco).getByText(/34 divulgações desde jan\/2024 · medido em 06\/11\/2026/)).toBeTruthy();
+    expect(within(bloco).getByText(/não indica para onde o BTC vai/)).toBeTruthy();
+  });
+
+  it('PPI não passa do critério: "Perto de um dia normal", sem dizer "vezes mais"', async () => {
+    dados([ev('PPI-x', 'PPI', '2026-11-13T13:30:00.000Z')]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Próximo evento' });
+    const bloco = screen.getByRole('complementary', BLOCO);
+    expect(within(bloco).getByText('Perto de um dia normal')).toBeTruthy();
+    expect(within(bloco).getByText('0,28%')).toBeTruthy();
+    expect(bloco.textContent).not.toMatch(/× mais/);
+    expect(bloco.textContent).not.toMatch(/Costuma mexer mais/);
+  });
+
+  it('FOMC não tem medição: nenhum bloco', async () => {
+    dados([ev('FOMC-x', 'FOMC', '2026-12-09T19:00:00.000Z', 'confirmada')]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Próximo evento' });
+    expect(screen.queryByRole('complementary', BLOCO)).toBeNull();
+  });
+
+  it('o resultado do Payroll que acabou de sair também mostra o bloco do tipo dele, logo abaixo do cartão de resultado', async () => {
+    dados([saiu('NFP-b', 'NFP', 20 * 60000, { previous: '+29 mil', actual: '+165 mil', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const resultado = await screen.findByRole('article', { name: 'Resultado' });
+    const bloco = screen.getByRole('complementary', BLOCO);
+    expect(within(bloco).getByText('0,44%')).toBeTruthy(); // Payroll, não CPI
+    expect(within(bloco).getByText(/35 divulgações/)).toBeTruthy();
+    // vem DEPOIS do cartão de resultado, no mesmo bloco da tela
+    expect(resultado.compareDocumentPosition(bloco) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('um CPI e um PPI na tela: cada um mostra o bloco do PRÓPRIO tipo (não o do vizinho)', async () => {
+    dados([saiu('CPI-a', 'CPI', 20 * 60000, { previous: '+0,6% m/m · +3,7% a/a', actual: '+0,4% m/m · +3,5% a/a', source: 'BLS' }), ev('PPI-x', 'PPI', '2026-11-13T13:30:00.000Z')]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Resultado' });
+    const blocos = screen.getAllByRole('complementary', BLOCO);
+    expect(blocos).toHaveLength(2);
+    expect(blocos[0].textContent).toMatch(/0,65%/);
+    expect(blocos[1].textContent).toMatch(/0,28%/);
+  });
+});
+
+// Agenda 4d, parte 2 (addendum 18 do item 285): "O BTC depois da divulgação" no cartão de resultado e na lista de últimas divulgações.
+describe('MarketContextBand — o BTC depois da divulgação', () => {
+  const MIN = 60000;
+  const saiu = (id, kind, ago, values) => ({ ...ev(id, kind, iso(NOW - ago)), values });
+  const VALORES = { previous: '+29 mil', actual: '+165 mil', source: 'BLS' };
+  /** Velas paradas em 100 de -1 min até +59 min; os fechamentos dos minutos pedidos mudam (+4 → +5 min, +29 → +30 min, +59 → +60 min). */
+  const velas = (t0, closes) => Array.from({ length: 61 }, (_, i) => {
+    const rel = i - 1;
+    const c = closes[rel] ?? 100;
+    return { t: t0 + rel * MIN, o: 100, h: Math.max(100, c), l: Math.min(100, c), c };
+  });
+  const COMPLETO = { 4: 100.12, 29: 99.8, 59: 99.46 }; // +0,12% / -0,20% / -0,54%
+  const comVelas = (closes) => btcMock.mockImplementation(async (t0) => velas(t0, closes));
+
+  it('resultado de 3 h atrás: os três horizontes, com sinal e sem cor de "bom/ruim", e a nota de que não prova causa', async () => {
+    comVelas(COMPLETO);
+    dados([saiu('NFP-b', 'NFP', 3 * 60 * MIN, VALORES)]);
+    const { container } = renderPage(<MarketContextBand />);
+    const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
+    expect(within(bloco).getByText('Em 5 min').nextSibling.textContent).toBe('+0,12%');
+    expect(within(bloco).getByText('Em 30 min').nextSibling.textContent).toBe('-0,20%');
+    expect(within(bloco).getByText('Em 1 h').nextSibling.textContent).toBe('-0,54%');
+    expect(bloco.textContent).toMatch(/não prova que a divulgação causou o movimento/);
+    expect(container.textContent).not.toMatch(/probabilidade|vai subir|vai cair|compra|venda|proje[cç]|previs[aã]o|bom|ruim/i);
+    expect(btcMock).toHaveBeenCalledWith(Date.parse(iso(NOW - 3 * 60 * MIN)));
+  });
+
+  it('resultado de 20 min atrás: só o horizonte de 5 min tem número; os outros mostram "—"', async () => {
+    comVelas(COMPLETO);
+    dados([saiu('NFP-b', 'NFP', 20 * MIN, VALORES)]);
+    renderPage(<MarketContextBand />);
+    const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
+    expect(within(bloco).getByText('Em 5 min').nextSibling.textContent).toBe('+0,12%');
+    expect(within(bloco).getByText('Em 30 min').nextSibling.textContent).toBe('—');
+    expect(within(bloco).getByText('Em 1 h').nextSibling.textContent).toBe('—');
+  });
+
+  it('última divulgação da lista (de dias atrás): linha curta "BTC em 1 h: -0,54%"', async () => {
+    comVelas(COMPLETO);
+    dados([saiu('NFP-b', 'NFP', 5 * 24 * 60 * MIN, VALORES)]);
+    renderPage(<MarketContextBand />);
+    const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
+    await waitFor(() => expect(within(lista).getByText(/BTC em 1 h:/)).toBeTruthy());
+    expect(within(lista).getByText('-0,54%')).toBeTruthy();
+    expect(within(lista).getByText(/só mostra o que aconteceu depois/)).toBeTruthy();
+  });
+
+  it('busca que falha (null): nada aparece e o resto da faixa segue igual', async () => {
+    btcMock.mockResolvedValue(null);
+    dados([saiu('NFP-b', 'NFP', 3 * 60 * MIN, VALORES)]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Resultado' });
+    await waitFor(() => expect(btcMock).toHaveBeenCalled());
+    expect(screen.queryByRole('complementary', { name: 'O BTC depois da divulgação' })).toBeNull();
+    expect(screen.getByText('+165 mil')).toBeTruthy();
+  });
+
+  it('divulgação de dias atrás é passado fechado: as velas são buscadas UMA vez, mesmo com a tela pedindo atualização', async () => {
+    comVelas(COMPLETO);
+    dados([saiu('NFP-b', 'NFP', 5 * 24 * 60 * MIN, VALORES)]);
+    const { queryClient } = renderPage(<MarketContextBand />);
+    await screen.findByRole('region', { name: 'Últimas divulgações' });
+    await waitFor(() => expect(btcMock).toHaveBeenCalledTimes(1));
+    await queryClient.refetchQueries({ stale: true }); // só o que está "velho" é rebuscado: passado fechado nunca fica velho
+    expect(btcMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('divulgação com menos de 5 min de vida: nem busca as velas', async () => {
+    comVelas(COMPLETO);
+    dados([saiu('NFP-b', 'NFP', 3 * MIN, VALORES)]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Resultado' });
+    expect(btcMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('complementary', { name: 'O BTC depois da divulgação' })).toBeNull();
+  });
+
+  it('evento que ainda vai sair (futuro) nunca busca velas', async () => {
+    comVelas(COMPLETO);
+    dados([ev('CPI-x', 'CPI', '2026-11-10T13:30:00.000Z')]);
+    renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Próximo evento' });
+    expect(btcMock).not.toHaveBeenCalled();
   });
 });
