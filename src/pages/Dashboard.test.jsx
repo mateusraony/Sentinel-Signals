@@ -45,11 +45,17 @@ vi.mock('@/api/entities', async () => {
         const sc = drawerScenario;
         fake.entities.MonitoredAsset.filter = async () => sc.assets();
         fake.entities.AssetState.list = async () => sc.states ?? [];
-        fake.entities.SignalEvent.list = async () => sc.signals ?? [];
-        fake.entities.TradeOperation.list = async () => sc.recentOps ?? [];
+        // `falhando` ('signals' | 'recentOps' | 'activeOps'): SÓ essa leitura rejeita (rede) até o teste pôr `recuperou = true`. Outros componentes
+        // leem as mesmas listas, por isso não vale "falha só na 1ª chamada".
+        const falha = (nome) => {
+          if (sc.falhando === nome && !sc.recuperou) throw new Error('Failed to fetch');
+        };
+        fake.entities.SignalEvent.list = async () => { falha('signals'); return sc.signals ?? []; };
+        fake.entities.TradeOperation.list = async () => { falha('recentOps'); return sc.recentOps ?? []; };
         fake.entities.TradeOperation.filter = async (q) => {
           if (Array.isArray(q?.status) && q.status.includes('RUNNER_ACTIVE')) {
             activeOpsCalls.push(q);
+            falha('activeOps');
             if (sc.activeOpsError) throw new Error('falha simulada');
             return sc.activeOps ?? [];
           }
@@ -411,6 +417,24 @@ describe('Dashboard — aviso com a CAUSA quando os dados do servidor não carre
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('button', { name: /BTC\/USDT — abrir detalhes/ })).toBeTruthy();
   });
+
+  // Achado do Codex no PR #555: o aviso nasce de 5 consultas, mas o botão só refazia 2. Falhando só uma das outras 3, o aviso não saía.
+  it.each([
+    ['signals', 'avisos recentes'],
+    ['recentOps', 'operações recentes'],
+    ['activeOps', 'operações ativas'],
+  ])('"Tentar de novo" refaz a consulta que falhou sozinha (%s: %s) e o aviso some', async (qual) => {
+    drawerScenario = {
+      assets: () => [{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', exchange: 'binance', is_active: true }],
+      states: [{ id: 's1', asset_id: 'a1', symbol: 'BTCUSDT' }], signals: [], recentOps: [], activeOps: [], falhando: qual, recuperou: false,
+    };
+    await abre();
+    const alerta = await screen.findByRole('alert', {}, { timeout: 3000 });
+    expect(within(alerta).getByText('O servidor não respondeu')).toBeTruthy();
+    drawerScenario.recuperou = true; // o servidor voltou; só o clique em "Tentar de novo" refaz a leitura que falhou
+    fireEvent.click(within(alerta).getByRole('button', { name: /Tentar de novo/ }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull(), { timeout: 3000 });
+  }, 10000);
 
   it('sem falha nenhuma: nenhum aviso', async () => {
     await abre();

@@ -27,6 +27,18 @@ export function parseKlines(body) {
 }
 
 /**
+ * Tira as velas que AINDA ESTAVAM ABERTAS no instante da busca (`nowMs`): o preço delas é provisório e, guardado em cache, passaria por fechamento
+ * definitivo só porque o relógio andou (achado do Codex no PR #555). Vela que termina exatamente em `nowMs` já fechou e fica. Sem velas (null) devolve null.
+ * @template {{ t: number }} T
+ * @param {T[] | null} candles
+ * @param {number} nowMs
+ * @returns {T[] | null}
+ */
+export function dropOpenCandles(candles, nowMs) {
+  return Array.isArray(candles) ? candles.filter((c) => c.t + MIN <= nowMs) : null;
+}
+
+/**
  * Movimento (%, com sinal) do BTC depois de `t0Ms`, por horizonte. `{ 5, 30, 60 }`: número, ou null se a vela daquele horizonte ainda não fechou
  * (`nowMs`) ou não veio. Devolve null se a vela de referência não veio (sem referência não há conta).
  * @param {{ t: number, c: number }[]} candles

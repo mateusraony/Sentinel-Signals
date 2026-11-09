@@ -69,13 +69,13 @@ export default function Dashboard() {
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: recentSignals = [], isError: recentSignalsError, error: recentSignalsErr } = useQuery({
+  const { data: recentSignals = [], isError: recentSignalsError, error: recentSignalsErr, refetch: refetchSignals } = useQuery({
     queryKey: ['recent-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: tradeOps = [], isError: tradeOpsError, error: tradeOpsErr } = useQuery({
+  const { data: tradeOps = [], isError: tradeOpsError, error: tradeOpsErr, refetch: refetchTradeOps } = useQuery({
     queryKey: ['trade-operations-dashboard'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: POLL_OPERATIONAL_MS,
@@ -86,7 +86,7 @@ export default function Dashboard() {
   // operação ativa?" (cards "Operações Ativas"/"Aguardando"/"Alta Prioridade", card
   // do ativo, Comparar, painel lateral) usa o conjunto completo de ativas — poucas
   // linhas, 1 leitura leve por poll (Codex #461 + achado do item 256).
-  const { data: activeOps = [], isPending: activeOpsPending, isError: activeOpsError, error: activeOpsErr } = useQuery({
+  const { data: activeOps = [], isPending: activeOpsPending, isError: activeOpsError, error: activeOpsErr, refetch: refetchActiveOps } = useQuery({
     queryKey: ['trade-operations-active'],
     queryFn: () => backend.entities.TradeOperation.filter({ status: ACTIVE_STATUSES }),
     refetchInterval: POLL_OPERATIONAL_MS,
@@ -256,7 +256,7 @@ export default function Dashboard() {
         </div>
 
         {/* Por que o painel não carregou, com a causa e o que fazer (item 6, correção de 08/11/2026). */}
-        <LoadFailureBanner cause={loadFailure} onPasteKey={() => setKeyDialogOpen(true)} onRetry={() => { refetchAssets(); refetchStates(); }} />
+        <LoadFailureBanner cause={loadFailure} onPasteKey={() => setKeyDialogOpen(true)} onRetry={() => { refetchAssets(); refetchStates(); refetchSignals(); refetchTradeOps(); refetchActiveOps(); }} />
         <OwnerKeySettings open={keyDialogOpen} onClose={() => setKeyDialogOpen(false)} />
 
         <Tabs defaultValue="overview">

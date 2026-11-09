@@ -1,7 +1,7 @@
 // Agenda 4d, parte 2 (addendum 18 do item 285): "o BTC depois da divulgação". Contas à mão; o que importa: a referência é a vela que TERMINA na divulgação (sem
 // deslocar 1 vela), horizonte cuja vela ainda não fechou fica vazio, buraco no dado nunca vira número e o sinal é só fato.
 import { describe, it, expect } from 'vitest';
-import { HORIZONS_MIN, WINDOW_CANDLES, parseKlines, afterRelease, formatMove, horizonLabel, movesCount, lastMove } from './btcAfterRelease';
+import { HORIZONS_MIN, WINDOW_CANDLES, parseKlines, dropOpenCandles, afterRelease, formatMove, horizonLabel, movesCount, lastMove } from './btcAfterRelease';
 
 const MIN = 60 * 1000;
 const T0 = Date.UTC(2026, 10, 6, 13, 30); // Payroll de 06/11 (13:30 UTC)
@@ -52,6 +52,37 @@ describe('afterRelease', () => {
     expect(afterRelease(candles(FULL).filter((v) => v.t !== T0 - MIN), T0, T0 + 61 * MIN)).toBeNull();
     expect(afterRelease([], T0, T0 + 61 * MIN)).toBeNull();
     expect(afterRelease(null, T0, T0 + 61 * MIN)).toBeNull();
+  });
+});
+
+// Achado do Codex no PR #555: a vela do minuto 29 ainda aberta, guardada em cache, virava "fechamento" dos 30 min só porque o relógio passou de T0 + 30 min.
+describe('dropOpenCandles', () => {
+  it('tira a vela que ainda estava aberta no instante da busca; a que fecha exatamente nele fica', () => {
+    const todas = candles(FULL);
+    const aos29e30 = dropOpenCandles(todas, T0 + 29 * MIN + 30 * 1000);
+    expect(aos29e30.at(-1).t).toBe(T0 + 28 * MIN);
+    expect(aos29e30).toHaveLength(todas.findIndex((v) => v.t === T0 + 29 * MIN));
+    expect(dropOpenCandles(todas, T0 + 30 * MIN).at(-1).t).toBe(T0 + 29 * MIN);
+    expect(dropOpenCandles(todas, T0 + 30 * MIN - 1).at(-1).t).toBe(T0 + 28 * MIN);
+    expect(dropOpenCandles(todas, T0 + 120 * MIN)).toHaveLength(todas.length); // passado fechado: nada some
+  });
+
+  it('o número provisório não vira fechamento quando o relógio avança: o horizonte fica vazio até a próxima busca', () => {
+    // busca aos 29 min e 30 s: a vela 29 (fechamento provisório 99) ainda estava aberta
+    const emCache = dropOpenCandles(candles(FULL), T0 + 29 * MIN + 30 * 1000);
+    expect(afterRelease(emCache, T0, T0 + 30 * MIN + 5 * 1000).moves[30]).toBeNull();
+    expect(afterRelease(emCache, T0, T0 + 30 * MIN + 5 * 1000).moves[5]).toBeCloseTo(1, 10);
+    // busca nova depois do fechamento: o número aparece
+    const nova = dropOpenCandles(candles(FULL), T0 + 30 * MIN + 20 * 1000);
+    expect(afterRelease(nova, T0, T0 + 30 * MIN + 20 * 1000).moves[30]).toBeCloseTo(-1, 10);
+  });
+
+  it('sem velas (null) devolve null; não altera a lista recebida', () => {
+    expect(dropOpenCandles(null, T0)).toBeNull();
+    const todas = candles(FULL);
+    const antes = JSON.stringify(todas);
+    dropOpenCandles(todas, T0 + 10 * MIN);
+    expect(JSON.stringify(todas)).toBe(antes);
   });
 });
 
