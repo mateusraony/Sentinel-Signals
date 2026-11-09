@@ -27,6 +27,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { POLL_OPERATIONAL_MS, SCAN_CADENCE_MIN } from '@/lib/pollingIntervals';
 import { ASSET_STALE_GRACE_MIN } from '@/lib/assetHealthcheck';
 import DataHealthChip from '@/components/layout/DataHealthChip';
+import LoadFailureBanner from '@/components/dashboard/LoadFailureBanner';
+import OwnerKeySettings from '@/components/settings/OwnerKeySettings';
+import { isOwnerKeyConfigured } from '@/lib/ownerKey';
+import { loadFailureCause } from '@/lib/loadFailure';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -53,25 +57,25 @@ export default function Dashboard() {
     return () => window.removeEventListener('app-reset-filters', handler);
   }, []);
 
-  const { data: assets = [], isLoading: loadingAssets, isError: assetsError, refetch: refetchAssets } = useQuery({
+  const { data: assets = [], isLoading: loadingAssets, isError: assetsError, error: assetsErr, refetch: refetchAssets } = useQuery({
     queryKey: ['monitored-assets'],
     queryFn: () => backend.entities.MonitoredAsset.filter({ is_active: true }),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: states = [], isError: statesError, refetch: refetchStates } = useQuery({
+  const { data: states = [], isError: statesError, error: statesErr, refetch: refetchStates } = useQuery({
     queryKey: ['asset-states'],
     queryFn: () => backend.entities.AssetState.list(),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: recentSignals = [], isError: recentSignalsError } = useQuery({
+  const { data: recentSignals = [], isError: recentSignalsError, error: recentSignalsErr } = useQuery({
     queryKey: ['recent-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: tradeOps = [], isError: tradeOpsError } = useQuery({
+  const { data: tradeOps = [], isError: tradeOpsError, error: tradeOpsErr } = useQuery({
     queryKey: ['trade-operations-dashboard'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: POLL_OPERATIONAL_MS,
@@ -82,7 +86,7 @@ export default function Dashboard() {
   // operação ativa?" (cards "Operações Ativas"/"Aguardando"/"Alta Prioridade", card
   // do ativo, Comparar, painel lateral) usa o conjunto completo de ativas — poucas
   // linhas, 1 leitura leve por poll (Codex #461 + achado do item 256).
-  const { data: activeOps = [], isPending: activeOpsPending, isError: activeOpsError } = useQuery({
+  const { data: activeOps = [], isPending: activeOpsPending, isError: activeOpsError, error: activeOpsErr } = useQuery({
     queryKey: ['trade-operations-active'],
     queryFn: () => backend.entities.TradeOperation.filter({ status: ACTIVE_STATUSES }),
     refetchInterval: POLL_OPERATIONAL_MS,
@@ -102,6 +106,14 @@ export default function Dashboard() {
   // Falha numa das duas consultas de operações sem nenhum dado em cache = não dá
   // para afirmar contagem/estado (fail-closed, item 193-196).
   const tradeOpsUnavailable = (tradeOpsError && tradeOps.length === 0) || activeOpsUnavailable;
+
+  // Por que não carregou (item 6, correção de 08/11/2026): só quando NÃO sobrou dado nenhum em cache, a causa vem do 1º erro que explica e o aviso
+  // diz o que fazer. Sem causa conhecida (null) a tela fica como sempre foi.
+  const [keyDialogOpen, setKeyDialogOpen] = useState(false);
+  const nothingLoaded = (assetsError && assets.length === 0) || statesUnavailable || signalsUnavailable || tradeOpsUnavailable;
+  const loadFailure = nothingLoaded
+    ? loadFailureCause(assetsErr ?? statesErr ?? recentSignalsErr ?? tradeOpsErr ?? activeOpsErr, { ownerKeyConfigured: isOwnerKeyConfigured() })
+    : null;
 
   // Operações = as 100 recentes + todas as ativas (a versão da query de ativas
   // prevalece em caso de mesmo id).
@@ -242,6 +254,10 @@ export default function Dashboard() {
             </button>
           </div>
         </div>
+
+        {/* Por que o painel não carregou, com a causa e o que fazer (item 6, correção de 08/11/2026). */}
+        <LoadFailureBanner cause={loadFailure} onPasteKey={() => setKeyDialogOpen(true)} onRetry={() => { refetchAssets(); refetchStates(); }} />
+        <OwnerKeySettings open={keyDialogOpen} onClose={() => setKeyDialogOpen(false)} />
 
         <Tabs defaultValue="overview">
           <TabsList>

@@ -20,6 +20,8 @@ let priorityOverride = null;
 // Cenário do painel lateral (Codex #461): sobrescreve ativos/estados/sinais/ops e
 // registra as chamadas de `TradeOperation.filter` com status ativo.
 let drawerScenario = null;
+// Cenário de falha (item 6, correção de 08/11/2026): TODAS as leituras do servidor rejeitam com este erro.
+let failureScenario = null;
 const activeOpsCalls = [];
 
 vi.mock('@/api/entities', async () => {
@@ -30,6 +32,14 @@ vi.mock('@/api/entities', async () => {
       if (priorityOverride) {
         fake.entities.SignalEvent.list = async () => priorityOverride.signalEvents ?? [];
         fake.entities.TradeOperation.list = async () => priorityOverride.tradeOps ?? [];
+      }
+      if (failureScenario) {
+        const reject = async () => { throw failureScenario.error; };
+        fake.entities.MonitoredAsset.filter = reject;
+        fake.entities.AssetState.list = reject;
+        fake.entities.SignalEvent.list = reject;
+        fake.entities.TradeOperation.list = reject;
+        fake.entities.TradeOperation.filter = reject;
       }
       if (drawerScenario) {
         const sc = drawerScenario;
@@ -76,6 +86,8 @@ afterEach(() => {
   cleanup();
   priorityOverride = null;
   drawerScenario = null;
+  failureScenario = null;
+  localStorage.removeItem('sentinel_owner_key');
   activeOpsCalls.length = 0;
 });
 
@@ -342,5 +354,67 @@ describe('Dashboard — contagens com operação ativa fora das 100 mais recente
     renderPage(<Dashboard />);
     await waitFor(() => expect(screen.getByText('Operações Ativas').nextElementSibling.textContent).toBe('—'), { timeout: 5000 });
     expect((await valueOf('Aguardando')).textContent).toBe('—');
+  });
+});
+
+describe('Dashboard — aviso com a CAUSA quando os dados do servidor não carregam (item 6, correção de 08/11/2026)', () => {
+  const forbidden = () => Object.assign(new Error('Chave de acesso ausente ou inválida.'), { status: 403 });
+  async function abre() {
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+  }
+
+  it('sem chave salva neste navegador: avisa "falta a chave" e o botão abre o diálogo da chave', async () => {
+    failureScenario = { error: forbidden() };
+    await abre();
+    const alerta = await screen.findByRole('alert', {}, { timeout: 5000 });
+    expect(within(alerta).getByText('Falta a chave de acesso neste navegador')).toBeTruthy();
+    fireEvent.click(within(alerta).getByRole('button', { name: /Colar a chave/ }));
+    expect(await screen.findByText('Chave de Acesso')).toBeTruthy();
+  });
+
+  it('com chave salva mas recusada (403): avisa que a chave salva não é aceita', async () => {
+    localStorage.setItem('sentinel_owner_key', 'chave-velha');
+    failureScenario = { error: forbidden() };
+    await abre();
+    const alerta = await screen.findByRole('alert', {}, { timeout: 5000 });
+    expect(within(alerta).getByText('A chave salva neste navegador não é aceita pelo servidor')).toBeTruthy();
+  });
+
+  it('servidor sem resposta: causa de rede, sem botão de colar a chave', async () => {
+    failureScenario = { error: new Error('Failed to fetch') };
+    await abre();
+    const alerta = await screen.findByRole('alert', {}, { timeout: 5000 });
+    expect(within(alerta).getByText('O servidor não respondeu')).toBeTruthy();
+    expect(within(alerta).queryByRole('button', { name: /Colar a chave/ })).toBeNull();
+  });
+
+  it('erro que não se sabe explicar e banco sem cota: nenhum aviso novo (a tela fica como sempre foi)', async () => {
+    failureScenario = { error: new Error('algo estranho') };
+    await abre();
+    await screen.findByText('Dashboard');
+    await waitFor(() => expect(screen.getAllByText(/Não foi possível carregar/).length).toBeGreaterThan(0), { timeout: 5000 });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('falha só ao ATUALIZAR, com os dados já na tela: nenhum aviso (o aviso vale só quando nada carregou)', async () => {
+    let chamadas = 0;
+    drawerScenario = {
+      assets: () => { chamadas += 1; if (chamadas > 1) throw forbidden(); return [{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', exchange: 'binance', is_active: true }]; },
+      states: [], signals: [], recentOps: [], activeOps: [],
+    };
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    const { queryClient } = renderPage(<Dashboard />);
+    await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ }, { timeout: 5000 });
+    await queryClient.invalidateQueries({ queryKey: ['monitored-assets'] }); // 2ª leitura: 403 com os ativos já em cache
+    await waitFor(() => expect(chamadas).toBeGreaterThan(1), { timeout: 5000 });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: /BTC\/USDT — abrir detalhes/ })).toBeTruthy();
+  });
+
+  it('sem falha nenhuma: nenhum aviso', async () => {
+    await abre();
+    await screen.findByText('Dashboard');
+    expect(screen.queryByText('Falta a chave de acesso neste navegador')).toBeNull();
   });
 });
