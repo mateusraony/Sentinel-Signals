@@ -102,6 +102,10 @@ jobs:
           set -euo pipefail
           cd data
           git add events.json status.json
+          # A base própria do BLS (addendum 21) só existe depois da 1ª coleta com números; sem o arquivo, o `git add` falharia.
+          if [ -e bls-base.json ]; then
+            git add bls-base.json
+          fi
           if git diff --cached --quiet; then
             echo "Nada mudou."
             exit 0

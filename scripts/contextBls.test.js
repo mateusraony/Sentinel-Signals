@@ -273,3 +273,70 @@ describe('busca no BLS (v2 com chave, v1 sem chave)', () => {
     expect(String(f.calls[0].headers['User-Agent'])).toContain('robo@exemplo.com');
   });
 });
+
+// Addendum 21 (base própria do BLS): a linha "-" que o BLS devolve para um mês que NUNCA foi publicado (ex.: outubro de 2025, paralisação do governo
+// dos EUA) vira uma LACUNA OFICIAL com o motivo em lista fechada. O texto do BLS nunca é guardado nem publicado: só o código do motivo.
+describe('lacunas oficiais (linha "-" do BLS)', () => {
+  const comNotas = (seriesID, linhas) => JSON.stringify({ status: 'REQUEST_SUCCEEDED', message: [], Results: { series: [{ seriesID, data: linhas }] } });
+  const linha = (year, period, value, footnotes = [{}]) => ({ year, period, periodName: period, value, footnotes });
+  const SHUTDOWN = [{ code: 'X', text: 'Data unavailable due to the 2025 lapse in appropriations.' }];
+
+  it('"-" vira lacuna com o motivo da nota de rodapé: paralisação de 2025, ou "não divulgado" sem nota', () => {
+    const r = parseBlsSeries(comNotas('CUUR0000SA0', [
+      linha('2026', 'M09', '103.000'),
+      linha('2025', 'M10', '-', SHUTDOWN),
+      linha('2025', 'M05', '-'),
+      linha('2025', 'M09', '100.000'),
+    ]), 'CUUR0000SA0');
+    expect([...r.gaps.entries()]).toEqual([['2025-10', 'paralisacao_2025'], ['2025-05', 'nao_divulgado']]);
+    expect([...r.values.keys()]).toEqual(['2026-09', '2025-09']);
+    expect(r.reason).toBe('ok');
+  });
+
+  it('só o CÓDIGO do motivo sai do parser: o texto do BLS nunca é guardado (nem outra nota vira motivo)', () => {
+    const r = parseBlsSeries(comNotas('X', [
+      linha('2025', 'M10', '-', [{ code: 'P', text: 'Preliminary. All indexes are subject to revision.' }]),
+      linha('2025', 'M11', '-', [{ code: 'S', text: 'federal government SHUTDOWN, see https://exemplo.invalido/?k=segredo' }]),
+    ]), 'X');
+    expect([...r.gaps.values()].sort()).toEqual(['nao_divulgado', 'paralisacao_2025']);
+    expect(JSON.stringify([...r.gaps.entries()])).not.toMatch(/segredo|https?:|Preliminary/);
+  });
+
+  it('valor corrompido ("1,5"), a média anual (M13) e mês mal formado NÃO são lacuna', () => {
+    const r = parseBlsSeries(comNotas('X', [linha('2026', 'M09', '1.5'), linha('2026', 'M08', '1,5'), linha('2026', 'M13', '-'), linha('26', 'M07', '-'), linha('2026', 'M06', '')]), 'X');
+    expect(r.gaps).toBeNull();
+  });
+
+  it('mês com valor E com "-" (resposta incoerente): o valor vence, não há lacuna', () => {
+    const r = parseBlsSeries(comNotas('X', [linha('2025', 'M10', '-', SHUTDOWN), linha('2025', 'M10', '100.000')]), 'X');
+    expect([...r.values.entries()]).toEqual([['2025-10', 100]]);
+    expect(r.gaps).toBeNull();
+  });
+
+  it('só lacunas, nenhum valor: continua "sem dados", mas as lacunas vêm junto', () => {
+    const r = parseBlsSeries(comNotas('X', [linha('2025', 'M10', '-', SHUTDOWN)]), 'X');
+    expect(r.values).toBeNull();
+    expect(r.reason).toBe('no_data');
+    expect([...r.gaps.entries()]).toEqual([['2025-10', 'paralisacao_2025']]);
+  });
+
+  it('sem nenhuma linha "-": `gaps` é null (e os erros do BLS seguem com o formato de antes)', () => {
+    expect(parseBlsSeries(resposta('X', [['2026', 'M09', '1.5']]), 'X').gaps).toBeNull();
+    expect(parseBlsSeries('lixo', 'X')).toEqual({ values: null, reason: 'format' });
+  });
+
+  it('fetchBlsSeries devolve as lacunas por série (v2 e v1), null onde não há, e a chave não vaza', async () => {
+    const corpo = (id) => (id === 'CUUR0000SA0'
+      ? comNotas(id, [linha('2026', 'M10', '104.000'), linha('2025', 'M10', '-', SHUTDOWN), linha('2025', 'M09', '100.000')])
+      : resposta(id, [['2026', 'M09', '1.5']]));
+    const impl = async (url) => new Response(corpo(url.slice(url.lastIndexOf('/') + 1).split('?')[0]), { status: 200 });
+    for (const env of [{ BLS_API_KEY: KEY }, {}]) {
+      const r = await fetchBlsSeries({ fetchImpl: impl, env });
+      expect([...r.gaps.CUUR0000SA0.entries()]).toEqual([['2025-10', 'paralisacao_2025']]);
+      for (const id of allSeriesIds().filter((x) => x !== 'CUUR0000SA0')) expect(r.gaps[id], id).toBeNull();
+      expect(JSON.stringify([...r.gaps.CUUR0000SA0])).not.toContain(KEY);
+    }
+    const falha = await fetchBlsSeries({ fetchImpl: async () => new Response('x', { status: 500 }), env: {} });
+    for (const id of allSeriesIds()) expect(falha.gaps[id], id).toBeNull();
+  });
+});

@@ -206,6 +206,13 @@ function problemasDoColetor(yml) {
     if (!/^\s*git push origin HEAD:refs\/heads\/context-data\s*$/.test(l)) p.push(`push fora do permitido: ${l.trim()}`);
   }
   if (/--force|\s-f\b|\+HEAD|\+refs\//.test(codigo)) p.push('push forçado');
+  // O que vai para a branch pública: SÓ os arquivos do coletor (eventos, estado e a base do BLS, addendum 21). Um `add` de pasta inteira ou de
+  // outro arquivo levaria para uma branch pública qualquer coisa que o runner tenha na pasta (ex.: algo gravado por um passo anterior).
+  const adds = codigo.split('\n').filter((l) => /\bgit\b(?!.*\bworktree\b).*\badd\b/.test(l)); // `git worktree add` abre a pasta da branch, não põe nada no commit
+  if (!adds.length) p.push('nenhum git add (a regra abaixo ficaria vazia)');
+  for (const l of adds) {
+    if (!/^\s*git add (events\.json status\.json|bls-base\.json)\s*$/.test(l)) p.push(`git add fora do permitido: ${l.trim()}`);
+  }
   // Nome de segredo não diferencia maiúscula de minúscula no GitHub: `secrets.database_url` é o DATABASE_URL.
   for (const [, nome] of codigo.matchAll(/secrets\.([A-Za-z0-9_]+)/g)) if (!SEGREDOS_DO_COLETOR.has(nome.toUpperCase())) p.push(`segredo não permitido: ${nome}`);
   // Qualquer outro jeito de pegar segredo (secrets['X'], toJSON(secrets), secrets: inherit) passaria batido.
@@ -355,8 +362,20 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
       real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ secrets.fred_api_key }}\n          X: ${{ secrets.database_url }}'),
       real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', "FRED_API_KEY: ${{ secrets['DATABASE_URL'] }}"),
       real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ toJSON(secrets) }}'),
+      // O que entra no commit da branch pública (addendum 21): só events.json, status.json e bls-base.json.
+      real.replace('git add events.json status.json', 'git add .'),
+      real.replace('git add events.json status.json', 'git add -A'),
+      real.replace('git add events.json status.json', 'git add events.json status.json scripts/x.json'),
+      real.replace('git add bls-base.json', ['git add bls-base.json ..', '/', 'arquivo-secreto'].join('')),
+      real.replace('git add bls-base.json', 'git add --all'),
     ];
     for (const yml of plantados) expect(problemasDoColetor(yml).length, yml.slice(-200)).toBeGreaterThan(0);
+  });
+
+  it('o coletor publica exatamente os arquivos da lista fechada (eventos, estado e a base do BLS)', () => {
+    const real = readFileSync(join(ROOT, COLETOR), 'utf8');
+    const adds = real.split('\n').filter((l) => /\bgit\b(?!.*\bworktree\b).*\badd\b/.test(l) && !/^\s*#/.test(l)).map((l) => l.trim());
+    expect(adds).toEqual(['git add events.json status.json', 'git add bls-base.json']);
   });
 
   it('prova: não acusa o coletor real nem o nome do segredo em minúscula quando é um permitido', () => {
