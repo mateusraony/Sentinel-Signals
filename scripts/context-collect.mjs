@@ -11,6 +11,8 @@
 // Variáveis de ambiente lidas: FRED_API_KEY e BLS_API_KEY (as duas vão só na URL da requisição),
 // CONTEXT_CONTACT_EMAIL (só no cabeçalho User-Agent) e COLLECT_MODE (só o valor exato "janela" muda algo). Nenhum banco, nenhum Telegram.
 // Os números do BLS (addenda 14 e 15) são opcionais: sem a chave ou sem resposta, o evento sai sem `values`, e a coleta das datas segue.
+// Base própria do BLS (addendum 21): `<dir>/bls-base.json` guarda os índices crus já lidos e as lacunas oficiais ("-" do BLS); a resposta da API só ACRESCENTA
+// (uma queda ou resposta parcial nunca apaga nada) e os números dos eventos saem de base + API. O arquivo só é criado quando há ao menos 1 valor.
 // Modo "janela" (addendum 15): disparado a cada ~10 min nas horas das divulgações; só trabalha se algum evento do BLS saiu há ≤ 4 h e
 // ainda não tem o "Atual" — senão sai logo, sem rede e sem gravar nada (o git não tem o que commitar).
 import fs from 'node:fs';
@@ -18,6 +20,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildEvents, buildStatus, assertPublicShape, fetchFredDates, sanitizePrevious, needsResultCheck, FRED_RELEASES } from './contextCollect.mjs';
 import { fetchBlsSeries, allSeriesIds } from './contextBls.mjs';
+import { mergeBase, baseToSeries, assertBaseShape, sanitizeBase, serializeBase, describeBase } from './contextBlsBase.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -38,6 +41,35 @@ export function readPrevious(file) {
   } catch {
     return [];
   }
+}
+
+/** A base do BLS anterior; arquivo ausente, ilegível ou fora da lista fechada = só o que presta (no limite, base vazia). Nunca lança. */
+export function readBase(file) {
+  try {
+    return sanitizeBase(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch {
+    return sanitizeBase(null);
+  }
+}
+
+/**
+ * Grava a base só se ela tem valores, passa na trava da lista fechada e mudou. Devolve o estado para o resumo: 'gravada' | 'inalterada' |
+ * 'não gravada (sem valores)' | 'NÃO gravada (a trava recusou)'. Nunca lança.
+ */
+export function writeBase(file, base) {
+  if (!Object.keys(base.values).length) return 'não gravada (sem valores)';
+  try {
+    assertBaseShape(base);
+  } catch (err) {
+    console.error(`[context-collect] ${err.message} — a base do BLS não foi gravada.`);
+    return 'NÃO gravada (a trava recusou)';
+  }
+  const texto = serializeBase(base);
+  let atual = null;
+  try { atual = fs.readFileSync(file, 'utf8'); } catch { atual = null; }
+  if (atual === texto) return 'inalterada';
+  fs.writeFileSync(file, texto);
+  return 'gravada';
 }
 
 /**
@@ -64,13 +96,14 @@ export function resolveMode(env) {
   return env?.COLLECT_MODE === 'janela' ? 'janela' : 'normal';
 }
 
-export function formatCollectMarkdown(status, events, fredDatesByKind, bls = null) {
+export function formatCollectMarkdown(status, events, fredDatesByKind, bls = null, baseLine = null) {
   const lines = ['## Coletor de contexto — datas dos eventos', ''];
   lines.push(`Checado em ${status.checkedAt} (UTC). FRED: **${status.fred}**${status.fred === 'ok' ? '' : ' — os tipos sem resposta usam a lista fixa'}.`);
   const porTipo = Object.keys(FRED_RELEASES).map((k) => `${k} ${Array.isArray(fredDatesByKind[k]) ? 'ok' : 'sem resposta'}`).join(' · ');
   lines.push(`Por tipo: ${porTipo}.`);
   const blsLine = describeBls(bls);
   if (blsLine) lines.push(blsLine);
+  if (baseLine) lines.push(baseLine);
   lines.push(`Eventos publicados: ${status.eventsCount}. Cobertura confirmada até: ${status.coverageUntil ?? '—'}.`);
   lines.push('');
   lines.push('| Evento | Hora (UTC) | Situação | Anterior (BLS) | Atual (BLS) | Revisado (BLS) |');
@@ -98,7 +131,12 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   const fredDatesByKind = await fetchFredDates({ fetchImpl, env });
   // O BLS é opcional: qualquer falha vira "sem número" e as datas seguem (fetchBlsSeries nunca lança nem devolve texto de erro).
   const bls = await fetchBlsSeries({ fetchImpl, env, ids: allSeriesIds() });
-  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: bls.series });
+  // A base própria (addendum 21): lê o que já estava guardado, acrescenta o que a API trouxe e calcula os números da base JÁ FUNDIDA.
+  // Se a API caiu ou veio parcial, a base completa o que falta; revisão pequena do BLS entra; salto acima de 5% é recusado e NÃO entra em conta alguma
+  // (por isso não se mistura a resposta crua da API por cima: foi o achado do Codex no PR #558).
+  const baseFile = path.join(args.dir, 'bls-base.json');
+  const merged = mergeBase(readBase(baseFile), { series: bls.series, gaps: bls.gaps });
+  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: baseToSeries(merged.base) });
   const status = buildStatus({ events, fredDatesByKind, nowMs });
   try {
     assertPublicShape(events, status);
@@ -109,7 +147,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   fs.mkdirSync(args.dir, { recursive: true });
   fs.writeFileSync(eventsFile, `${JSON.stringify(events, null, 2)}\n`);
   fs.writeFileSync(statusFile, `${JSON.stringify(status, null, 2)}\n`);
-  console.log(formatCollectMarkdown(status, events, fredDatesByKind, bls));
+  // A base é aditiva: se a trava recusar, os eventos já gravados seguem e só a base fica de fora (o log diz).
+  const baseState = writeBase(baseFile, merged.base);
+  console.log(formatCollectMarkdown(status, events, fredDatesByKind, bls, describeBase(merged.base, merged.stats, baseState)));
   return 0;
 }
 

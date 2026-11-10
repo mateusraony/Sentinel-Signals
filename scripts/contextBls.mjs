@@ -44,9 +44,21 @@ export const PREVIOUS_TEXT_RE = new RegExp(`^(?:${PCT} m/m(?: · ${PCT} a/a)?|${
 const PERIOD_RE = /^M(0[1-9]|1[0-2])$/;
 
 /**
+ * Motivos (lista FECHADA) de um mês que o BLS marcou com "-" (nunca publicado). O texto da nota do BLS nunca é guardado nem publicado: só estes códigos.
+ *  - 'paralisacao_2025': a nota cita a paralisação do governo dos EUA em 2025 (outubro de 2025 não foi coletado nem será);
+ *  - 'nao_divulgado': qualquer outro "-".
+ */
+export const GAP_REASONS = Object.freeze(['paralisacao_2025', 'nao_divulgado']);
+function gapReason(footnotes) {
+  const texto = Array.isArray(footnotes) ? footnotes.map((f) => String(f?.text ?? '')).join(' ') : '';
+  return /lapse in appropriations|shutdown/i.test(texto) ? 'paralisacao_2025' : 'nao_divulgado';
+}
+
+/**
  * Lê a resposta do BLS (v1 e v2 têm o mesmo formato).
- * @returns {{ values: Map<string, number>|null, reason: 'ok'|'key_rejected'|'limit'|'format'|'no_data' }}
- *   `values`: 'AAAA-MM' → valor; só meses (M01–M12), valor numérico; "-" (dado não divulgado) é pulado.
+ * @returns {{ values: Map<string, number>|null, reason: 'ok'|'key_rejected'|'limit'|'format'|'no_data', gaps?: Map<string, string>|null }}
+ *   `values`: 'AAAA-MM' → valor; só meses (M01–M12), valor numérico. `gaps` (só nos ramos "ok" e "sem dados"): 'AAAA-MM' → motivo (`GAP_REASONS`)
+ *   para a linha "-" (mês NUNCA publicado pelo BLS); null se não há nenhuma. Valor corrompido ("1,5") e a média anual (M13) não são lacuna.
  */
 export function parseBlsSeries(body, seriesId) {
   let j;
@@ -61,16 +73,23 @@ export function parseBlsSeries(body, seriesId) {
   const series = Array.isArray(j?.Results?.series) ? j.Results.series.find((s) => s?.seriesID === seriesId) : null;
   if (!series || !Array.isArray(series.data)) return { values: null, reason: 'format' };
   const values = new Map();
+  const gaps = new Map();
   for (const d of series.data) {
     if (!d || !/^\d{4}$/.test(String(d.year ?? '')) || !PERIOD_RE.test(String(d.period ?? ''))) continue;
-    // O BLS usa ponto decimal e nenhum separador de milhar: "1,5" não é número aqui (viraria 15 em silêncio). "-" = não divulgado.
+    const ym = `${d.year}-${String(d.period).slice(1)}`;
+    // O BLS usa ponto decimal e nenhum separador de milhar: "1,5" não é número aqui (viraria 15 em silêncio). "-" = mês NUNCA publicado (lacuna).
     const raw = String(d.value ?? '').trim();
+    if (raw === '-') {
+      if (!gaps.has(ym)) gaps.set(ym, gapReason(d.footnotes));
+      continue;
+    }
     const num = raw === '' ? NaN : Number(raw);
     if (!Number.isFinite(num)) continue;
-    const ym = `${d.year}-${String(d.period).slice(1)}`;
     if (!values.has(ym)) values.set(ym, num);
   }
-  return values.size ? { values, reason: 'ok' } : { values: null, reason: 'no_data' };
+  for (const ym of values.keys()) gaps.delete(ym); // resposta incoerente (valor E "-" no mesmo mês): o valor vence
+  const lacunas = gaps.size ? gaps : null;
+  return values.size ? { values, reason: 'ok', gaps: lacunas } : { values: null, reason: 'no_data', gaps: lacunas };
 }
 
 /** 'AAAA-MM' deslocado `delta` meses. */
@@ -181,28 +200,33 @@ async function getOne(url, seriesId, fetchImpl, env, timeoutMs) {
 /**
  * Busca as séries. Com a chave tenta a v2 primeiro; se o BLS a RECUSA, para de tentar a chave nesta passada (não gasta
  * consulta à toa) e usa a v1 sem chave. A chave só existe na URL da requisição e NUNCA aparece no resultado.
- * @returns {Promise<{ series: Record<string, Map<string, number>|null>, tally: { v2: number, v1: number, failed: number },
- *   keyPresent: boolean, keyRejected: boolean, limitHit: boolean }>}
+ * @returns {Promise<{ series: Record<string, Map<string, number>|null>, gaps: Record<string, Map<string, string>|null>, tally: { v2: number, v1: number, failed: number },
+ *   keyPresent: boolean, keyRejected: boolean, limitHit: boolean }>} `gaps`: as lacunas oficiais ("-") por série, só com o código do motivo.
  */
 export async function fetchBlsSeries({ fetchImpl = fetch, env = {}, timeoutMs = 15000, ids = allSeriesIds() } = {}) {
   const key = String(env.BLS_API_KEY ?? '').trim();
   const series = {};
+  const gaps = {};
   const tally = { v2: 0, v1: 0, failed: 0 };
   let keyRejected = false;
   let limitHit = false;
   for (const id of ids) {
     series[id] = null;
+    gaps[id] = null;
+    let lacunasV2 = null; // resposta da v2 só com "-" (sem nenhum número) ainda traz lacunas oficiais: não se perdem na queda para a v1
     if (key && !keyRejected) {
       const r = await getOne(`${BLS_V2}/${id}?registrationkey=${encodeURIComponent(key)}`, id, fetchImpl, env, timeoutMs);
-      if (r.values) { series[id] = r.values; tally.v2 += 1; continue; }
+      if (r.values) { series[id] = r.values; gaps[id] = r.gaps ?? null; tally.v2 += 1; continue; }
+      lacunasV2 = r.gaps ?? null;
       if (r.reason === 'key_rejected') keyRejected = true;
       if (r.reason === 'limit') limitHit = true;
     }
     const r1 = await getOne(`${BLS_V1}/${id}`, id, fetchImpl, env, timeoutMs);
+    gaps[id] = r1.gaps ?? lacunasV2; // as lacunas valem mesmo quando a resposta não tem número algum
     if (r1.values) { series[id] = r1.values; tally.v1 += 1; } else {
       tally.failed += 1;
       if (r1.reason === 'limit') limitHit = true;
     }
   }
-  return { series, tally, keyPresent: key !== '', keyRejected, limitHit };
+  return { series, gaps, tally, keyPresent: key !== '', keyRejected, limitHit };
 }
