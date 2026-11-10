@@ -144,9 +144,16 @@ export function previousValueText(kind, seriesById, reference) {
 export function actualValueText(kind, seriesById, reference) {
   if (!MONTH_RE.test(reference ?? '')) return null;
   const text = monthValueText(kind, seriesById, reference);
-  // O "Atual" congela no primeiro instante em que aparece: CPI/PPI só valem COMPLETOS (no mês E em 12 meses). Metade publicada
-  // (uma das duas séries ainda sem o mês) espera a próxima coleta em vez de ficar congelada pela metade.
-  if (text !== null && kind !== 'NFP' && !text.includes(' · ')) return null;
+  if (text === null) return null;
+  // O "Atual" congela no primeiro instante em que aparece. CPI/PPI usam DUAS séries (no mês e em 12 meses) e só valem quando AS DUAS já trazem o mês
+  // de referência: metade publicada (uma das duas ainda sem o mês) espera a próxima coleta em vez de congelar pela metade.
+  // A regra anterior exigia o texto "completo" (' · '), o que travava o CPI de 10/11/2026 para sempre: as duas séries já traziam outubro, mas a de
+  // 12 meses não tem a base (outubro de 2025 não foi publicado), então o "em 12 meses" é impossível. Parte que não dá para calcular fica de fora do
+  // texto (nunca se estima) e a tela a marca como "indisponível" (addendum 19).
+  if (kind !== 'NFP') {
+    const spec = BLS_SERIES[kind];
+    if (!seriesById?.[spec.month]?.has(reference) || !seriesById?.[spec.year]?.has(reference)) return null;
+  }
   return text;
 }
 

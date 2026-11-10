@@ -50,8 +50,16 @@ const DEPOIS_REVISADO = {
   CUSR0000SA0: mapa([['2026-09', 100.4], ['2026-08', 100], ['2026-10', 100.8]]),
   CES0000000001: mapa([['2026-09', 159150], ['2026-08', 159000], ['2026-10', 159200]]),
 };
+// CASO REAL de 10/11/2026 (1º CPI depois do shutdown de 2025; achado ao vivo, addendum 19): as DUAS séries já trazem outubro de 2026, mas a de 12 meses não tem
+// o índice de outubro de 2025 (base), então o "em 12 meses" de outubro NÃO dá para calcular. O "Atual" tem de entrar só com o mês, e não esperar para sempre.
+const SEM_BASE_DE_12_MESES = {
+  ...DEPOIS,
+  CUUR0000SA0: mapa([['2026-09', 103], ['2025-09', 100], ['2026-10', 104]]), // sem '2025-10'
+  WPUFD4: mapa([['2026-09', 150.96], ['2025-09', 148], ['2026-10', 152]]), // sem '2025-10'
+};
 const CPI_ANTERIOR = '+0,3% m/m · +3,0% a/a';
 const CPI_ATUAL = '+0,5% m/m · +4,0% a/a';
+const CPI_ATUAL_SO_MES = '+0,5% m/m';
 
 const publicar = (nowMs, blsSeries, previous = []) => buildEvents({ fredDatesByKind: FRED, nowMs, previous, blsSeries });
 
@@ -67,11 +75,28 @@ describe('números de um mês (actualValueText / previousValueText)', () => {
     for (const kind of ['CPI', 'PPI', 'NFP']) expect(actualValueText(kind, ANTES, '2026-10'), kind).toBeNull();
   });
 
-  it('CPI/PPI só valem COMPLETOS: com o mês só na série mensal (falta a de 12 meses) espera; Payroll tem um número só e vale', () => {
+  it('CPI/PPI só valem quando as DUAS séries já trazem o mês: com o mês só na série mensal (a de 12 meses ainda sem ele) espera; Payroll tem um número só e vale', () => {
     const meio = { ...DEPOIS, CUUR0000SA0: ANTES.CUUR0000SA0, WPUFD4: ANTES.WPUFD4 };
     expect(actualValueText('CPI', meio, '2026-10')).toBeNull();
     expect(actualValueText('PPI', meio, '2026-10')).toBeNull();
     expect(actualValueText('NFP', meio, '2026-10')).toBe('+81 mil');
+    // o inverso também é metade publicada: a série de 12 meses já tem o mês e a mensal ainda não
+    const inverso = { ...DEPOIS, CUSR0000SA0: ANTES.CUSR0000SA0, WPSFD4: ANTES.WPSFD4 };
+    expect(actualValueText('CPI', inverso, '2026-10')).toBeNull();
+    expect(actualValueText('PPI', inverso, '2026-10')).toBeNull();
+  });
+
+  it('REPRODUZ o CPI de 10/11/2026: as duas séries trazem o mês mas falta a base de 12 meses → o "Atual" vale SÓ com o mês (nunca espera para sempre)', () => {
+    expect(actualValueText('CPI', SEM_BASE_DE_12_MESES, '2026-10')).toBe(CPI_ATUAL_SO_MES);
+    expect(actualValueText('PPI', SEM_BASE_DE_12_MESES, '2026-10')).toBe('+0,5% m/m');
+    expect(actualValueText('NFP', SEM_BASE_DE_12_MESES, '2026-10')).toBe('+81 mil'); // Payroll não muda
+    // o "Anterior" (setembro) segue completo: a base de setembro de 2025 existe
+    expect(previousValueText('CPI', SEM_BASE_DE_12_MESES, '2026-10')).toBe(CPI_ANTERIOR);
+  });
+
+  it('as duas séries trazem o mês mas NENHUMA parte dá para calcular (sem o mês anterior e sem a base): continua sem "Atual" (nada de texto vazio)', () => {
+    const nada = { CUSR0000SA0: mapa([['2026-10', 100.8]]), CUUR0000SA0: mapa([['2026-10', 104]]) };
+    expect(actualValueText('CPI', nada, '2026-10')).toBeNull();
   });
 
   it('referência ausente ou mal formada, tipo sem BLS (PCE, FOMC) e série nula: null', () => {
@@ -140,6 +165,16 @@ describe('"Atual" e "Revisado" no events.json (addendum 15)', () => {
     expect(ev['NFP-2026-11-06'].values.actual).toBe('+81 mil');
     const completo = byId(publicar(AFTER_CPI + 600000, DEPOIS, publicar(AFTER_CPI, meio, pub)));
     expect(completo['CPI-2026-11-10'].values.actual).toBe(CPI_ATUAL);
+  });
+
+  it('REPRODUZ o CPI de 10/11/2026 no events.json: sem a base de 12 meses o "Atual" congela só com o mês, na 1ª coleta, e nunca mais muda', () => {
+    const pub = publicar(NOW, ANTES);
+    const primeira = publicar(AFTER_CPI, SEM_BASE_DE_12_MESES, pub);
+    expect(byId(primeira)['CPI-2026-11-10'].values).toEqual({ previous: CPI_ANTERIOR, actual: CPI_ATUAL_SO_MES, source: 'BLS' });
+    const outraRevisao = { ...SEM_BASE_DE_12_MESES, CUSR0000SA0: mapa([['2026-09', 100.2], ['2026-08', 100], ['2026-10', 101]]) };
+    const depois = publicar(AFTER_CPI + 3 * 3600000, outraRevisao, primeira);
+    expect(byId(depois)['CPI-2026-11-10'].values).toEqual(byId(primeira)['CPI-2026-11-10'].values);
+    expect(sanitizeValues(byId(primeira)['CPI-2026-11-10'].values)).not.toBeNull(); // a trava pública aceita o "Atual" só com o mês
   });
 
   it('evento visto pela 1ª vez JÁ divulgado (sem "Anterior" publicado): o "Anterior" é o melhor valor disponível e não há "Revisado"', () => {
