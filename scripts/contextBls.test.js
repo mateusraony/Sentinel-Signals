@@ -339,4 +339,24 @@ describe('lacunas oficiais (linha "-" do BLS)', () => {
     const falha = await fetchBlsSeries({ fetchImpl: async () => new Response('x', { status: 500 }), env: {} });
     for (const id of allSeriesIds()) expect(falha.gaps[id], id).toBeNull();
   });
+
+  it('resposta SÓ com lacunas ("-"), sem nenhum número: as lacunas NÃO se perdem (v2 sem valor + v1 caindo, v1 sozinha, v2 sem valor + v1 com números)', async () => {
+    const ID = 'WPUFD4';
+    const soLacuna = comNotas(ID, [linha('2026', 'M03', '-')]);
+    const comNumero = resposta(ID, [['2026', 'M09', '150.000']]);
+    const montar = (v2, v1) => async (url) => {
+      const corpo = String(url).includes('/v2/') ? v2 : v1;
+      return corpo === null ? new Response('x', { status: 500 }) : new Response(corpo, { status: 200 });
+    };
+    const casos = [
+      ['v2 só com lacuna e a v1 cai', { BLS_API_KEY: KEY }, montar(soLacuna, null), false],
+      ['v1 sozinha só com lacuna', {}, montar(null, soLacuna), false],
+      ['v2 só com lacuna e a v1 traz números', { BLS_API_KEY: KEY }, montar(soLacuna, comNumero), true],
+    ];
+    for (const [nome, env, impl, temNumeros] of casos) {
+      const r = await fetchBlsSeries({ fetchImpl: impl, env, ids: [ID] });
+      expect([...(r.gaps[ID] ?? [])], nome).toEqual([['2026-03', 'nao_divulgado']]);
+      expect(r.series[ID] !== null, nome).toBe(temNumeros);
+    }
+  });
 });

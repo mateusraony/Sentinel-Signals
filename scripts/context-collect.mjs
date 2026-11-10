@@ -20,7 +20,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildEvents, buildStatus, assertPublicShape, fetchFredDates, sanitizePrevious, needsResultCheck, FRED_RELEASES } from './contextCollect.mjs';
 import { fetchBlsSeries, allSeriesIds } from './contextBls.mjs';
-import { mergeBase, unionSeries, assertBaseShape, sanitizeBase, serializeBase, describeBase } from './contextBlsBase.mjs';
+import { mergeBase, baseToSeries, assertBaseShape, sanitizeBase, serializeBase, describeBase } from './contextBlsBase.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -131,11 +131,12 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   const fredDatesByKind = await fetchFredDates({ fetchImpl, env });
   // O BLS é opcional: qualquer falha vira "sem número" e as datas seguem (fetchBlsSeries nunca lança nem devolve texto de erro).
   const bls = await fetchBlsSeries({ fetchImpl, env, ids: allSeriesIds() });
-  // A base própria (addendum 21): lê o que já estava guardado, acrescenta o que a API trouxe e calcula os números de base + API.
-  // Se a API caiu ou veio parcial, a base completa o que falta; onde as duas têm o mês, a API (mais nova) vence.
+  // A base própria (addendum 21): lê o que já estava guardado, acrescenta o que a API trouxe e calcula os números da base JÁ FUNDIDA.
+  // Se a API caiu ou veio parcial, a base completa o que falta; revisão pequena do BLS entra; salto acima de 5% é recusado e NÃO entra em conta alguma
+  // (por isso não se mistura a resposta crua da API por cima: foi o achado do Codex no PR #558).
   const baseFile = path.join(args.dir, 'bls-base.json');
   const merged = mergeBase(readBase(baseFile), { series: bls.series, gaps: bls.gaps });
-  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: unionSeries(merged.base, bls.series) });
+  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: baseToSeries(merged.base) });
   const status = buildStatus({ events, fredDatesByKind, nowMs });
   try {
     assertPublicShape(events, status);

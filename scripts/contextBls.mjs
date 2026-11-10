@@ -213,14 +213,17 @@ export async function fetchBlsSeries({ fetchImpl = fetch, env = {}, timeoutMs = 
   for (const id of ids) {
     series[id] = null;
     gaps[id] = null;
+    let lacunasV2 = null; // resposta da v2 só com "-" (sem nenhum número) ainda traz lacunas oficiais: não se perdem na queda para a v1
     if (key && !keyRejected) {
       const r = await getOne(`${BLS_V2}/${id}?registrationkey=${encodeURIComponent(key)}`, id, fetchImpl, env, timeoutMs);
       if (r.values) { series[id] = r.values; gaps[id] = r.gaps ?? null; tally.v2 += 1; continue; }
+      lacunasV2 = r.gaps ?? null;
       if (r.reason === 'key_rejected') keyRejected = true;
       if (r.reason === 'limit') limitHit = true;
     }
     const r1 = await getOne(`${BLS_V1}/${id}`, id, fetchImpl, env, timeoutMs);
-    if (r1.values) { series[id] = r1.values; gaps[id] = r1.gaps ?? null; tally.v1 += 1; } else {
+    gaps[id] = r1.gaps ?? lacunasV2; // as lacunas valem mesmo quando a resposta não tem número algum
+    if (r1.values) { series[id] = r1.values; tally.v1 += 1; } else {
       tally.failed += 1;
       if (r1.reason === 'limit') limitHit = true;
     }

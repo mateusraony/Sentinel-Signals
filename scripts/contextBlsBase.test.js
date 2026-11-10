@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { BLS_SERIES, allSeriesIds, actualValueText, previousValueText } from './contextBls.mjs';
 import {
-  BASE_VERSION, BASE_SOURCE, MAX_MONTHS, SEED_GAPS, emptyBase, sanitizeBase, assertBaseShape, mergeBase, baseToSeries, unionSeries, describeBase, serializeBase,
+  BASE_VERSION, BASE_SOURCE, MAX_MONTHS, SEED_GAPS, emptyBase, sanitizeBase, assertBaseShape, mergeBase, baseToSeries, describeBase, serializeBase,
 } from './contextBlsBase.mjs';
 import { main, writeBase, readBase } from './context-collect.mjs';
 import { FRED_RELEASES, buildEvents } from './contextCollect.mjs';
@@ -43,6 +43,8 @@ const SO_OUTUBRO = { // o BLS acabou de divulgar: a API devolve só o mês novo 
   CES0000000001: mapa([['2026-10', 159200]]),
 };
 const nenhumaLacuna = Object.fromEntries(allSeriesIds().map((id) => [id, null]));
+/** O que o coletor usa nas contas: a base JÁ FUNDIDA com a resposta da API (valor recusado nunca entra). */
+const uniao = (base, api) => baseToSeries(mergeBase(base, { series: { ...nenhumaLacuna, ...(api ?? {}) }, gaps: nenhumaLacuna }, { seedGaps: {} }).base);
 const baseCom = (series, gaps = {}) => mergeBase(emptyBase(), { series, gaps: { ...nenhumaLacuna, ...gaps } }, { seedGaps: {} }).base;
 
 describe('sanitizeBase — o arquivo da rede/disco nunca é confiável', () => {
@@ -211,14 +213,14 @@ describe('mergeBase — a fusão que nunca perde o que já foi lido', () => {
   });
 });
 
-describe('baseToSeries / unionSeries — base + API', () => {
+describe('baseToSeries / base fundida com a API', () => {
   it('a base preenche o que a API não trouxe; onde as duas têm o mês, a API vence; sem nada, null', () => {
     const base = baseCom(ANTES);
-    const u = unionSeries(base, { ...nenhumaLacuna, [CPI_SA]: mapa([['2026-10', 100.8], ['2026-09', 100.4]]) });
+    const u = uniao(base, { ...nenhumaLacuna, [CPI_SA]: mapa([['2026-10', 100.8], ['2026-09', 100.4]]) });
     expect([...u[CPI_SA].entries()].sort()).toEqual([['2026-08', 100], ['2026-09', 100.4], ['2026-10', 100.8]]);
     expect(u[CPI_NSA].get('2025-09')).toBe(100);
-    expect(unionSeries(emptyBase(), nenhumaLacuna)[CPI_SA]).toBeNull();
-    expect(unionSeries(emptyBase(), null)[CPI_NSA]).toBeNull();
+    expect(uniao(emptyBase(), nenhumaLacuna)[CPI_SA]).toBeNull();
+    expect(uniao(emptyBase(), null)[CPI_NSA]).toBeNull();
     expect(baseToSeries(base)[CPI_SA].get('2026-09')).toBe(100.3);
   });
 });
@@ -228,7 +230,7 @@ describe('o cálculo com base + API parcial (o caso de 10/11/2026)', () => {
     const base = baseCom(ANTES_COM_OUT25);
     expect(previousValueText('CPI', SO_OUTUBRO, '2026-10')).toBeNull(); // sem a base, a resposta parcial não dá nem o "Anterior"
     expect(actualValueText('CPI', SO_OUTUBRO, '2026-10')).toBeNull();
-    const u = unionSeries(base, SO_OUTUBRO);
+    const u = uniao(base, SO_OUTUBRO);
     expect(previousValueText('CPI', u, '2026-10')).toBe('+0,3% m/m · +3,0% a/a');
     expect(actualValueText('CPI', u, '2026-10')).toBe('+0,5% m/m · +4,0% a/a');
     expect(actualValueText('PPI', u, '2026-10')).toBe('+0,5% m/m · +2,0% a/a');
@@ -242,7 +244,7 @@ describe('o cálculo com base + API parcial (o caso de 10/11/2026)', () => {
     };
     const base = mergeBase(emptyBase(), { series: { ...nenhumaLacuna, ...series }, gaps: nenhumaLacuna }).base; // com a semente
     expect(base.gaps[CPI_NSA]['2025-10']).toBe('paralisacao_2025');
-    expect(actualValueText('CPI', unionSeries(base, nenhumaLacuna), '2026-10')).toBe('+0,5% m/m');
+    expect(actualValueText('CPI', uniao(base, nenhumaLacuna), '2026-10')).toBe('+0,5% m/m');
   });
 });
 
@@ -369,6 +371,26 @@ describe('coletor de ponta a ponta (main) com a base', () => {
     }
   });
 
+  it('revisão da API acima de 5% é RECUSADA pela base E não entra nos números dos eventos (achado do Codex no PR #558)', async () => {
+    const dir = pasta();
+    try {
+      const r1 = await rodar(dir, doMapa(ANTES_COM_OUT25), NOW);
+      expect(r1.code).toBe(0);
+      expect(cpi(dir).values.previous).toBe('+0,3% m/m · +3,0% a/a');
+      const baseAntes = lido(dir, 'bls-base.json');
+      // O BLS "revisa" o índice sem ajuste de set/2026 de 103 para 125 (+21%): absurdo, tem de ser recusado em TODO lugar.
+      const absurdo = { ...ANTES_COM_OUT25, CUUR0000SA0: mapa([['2026-09', 125], ['2025-09', 100], ['2025-10', 100]]) };
+      const r2 = await rodar(dir, doMapa(absurdo), NOW + 3600000);
+      expect(r2.code).toBe(0);
+      expect(lido(dir, 'bls-base.json')).toBe(baseAntes);
+      expect(r2.logs).toContain('1 salto recusado');
+      expect(cpi(dir).values.previous).toBe('+0,3% m/m · +3,0% a/a'); // não +0,3% m/m · +25,0% a/a
+      expect(lido(dir, 'events.json')).not.toContain('25,0%');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('uma linha "-" FORA da semente (PPI, mar/2026) chega à base só como código do motivo — a passagem API → base funciona e o texto do BLS nunca vai junto', async () => {
     const dir = pasta();
     try {
@@ -421,7 +443,7 @@ describe('coletor de ponta a ponta (main) com a base', () => {
   it('o resultado dos eventos com base + API completa é IDÊNTICO ao de antes da base (nada muda para quem já funcionava)', () => {
     const previous = [];
     const semBase = buildEvents({ fredDatesByKind: FRED, nowMs: NOW, previous, blsSeries: ANTES });
-    const comBase = buildEvents({ fredDatesByKind: FRED, nowMs: NOW, previous, blsSeries: unionSeries(baseCom(ANTES), ANTES) });
+    const comBase = buildEvents({ fredDatesByKind: FRED, nowMs: NOW, previous, blsSeries: uniao(baseCom(ANTES), ANTES) });
     expect(comBase).toEqual(semBase);
   });
 });

@@ -3,7 +3,8 @@
 // Por quê: até aqui cada coleta baixava o histórico inteiro e calculava tudo na hora; uma resposta parcial ou uma queda da API deixava o evento sem
 // número, e a linha "-" do BLS (mês que NUNCA foi publicado, como outubro de 2025 por causa da paralisação do governo dos EUA) sumia sem deixar rastro.
 // Agora o coletor guarda os ÍNDICES CRUS que o BLS publicou (domínio público; "Fonte: BLS" na tela) e as LACUNAS OFICIAIS com o motivo, num arquivo
-// pequeno (`bls-base.json`) na branch pública `context-data`. Os números do painel continuam sendo calculados a partir de base + resposta da API.
+// pequeno (`bls-base.json`) na branch pública `context-data`. Os números do painel são calculados da base JÁ FUNDIDA com a resposta da API
+// (`baseToSeries(mergeBase(...).base)`): um valor que a fusão recusou NUNCA entra na conta — não se mistura a resposta crua por cima da base.
 //
 // Regras (cada uma travada por teste):
 //  - a fusão NUNCA perde o que já foi lido: resposta nula, parcial ou com erro deixa a base idêntica, byte a byte;
@@ -161,19 +162,6 @@ export function baseToSeries(base) {
   for (const id of IDS) {
     const v = isObj(base?.values) && isObj(base.values[id]) ? Object.entries(base.values[id]) : [];
     out[id] = v.length ? new Map(v) : null;
-  }
-  return out;
-}
-
-/** Base ∪ resposta da API: a base preenche o que a API não trouxe; onde as duas têm o mês, a API vence (é a leitura mais nova). Sem nada, null. */
-export function unionSeries(base, api) {
-  const daBase = baseToSeries(base);
-  const out = {};
-  for (const id of IDS) {
-    const a = api?.[id];
-    const m = new Map(daBase[id] ?? []);
-    if (a instanceof Map) for (const [ym, v] of a) m.set(ym, v);
-    out[id] = m.size ? m : null;
   }
   return out;
 }
