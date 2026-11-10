@@ -44,6 +44,22 @@ export const CATEGORY_META = Object.freeze({
   inflacao: { label: 'Inflação' },
   juros: { label: 'Juros' },
 });
+/**
+ * Emojis da Agenda (redesenho de 10/11/2026, addendum 20): TODOS saem desta tabela — nenhum literal solto nos componentes (regra "1 emoji = 1 significado",
+ * `src/lib/emojiRegistry.js`; este arquivo é o dono do vocabulário). Sempre acompanham um texto (o emoji é decoração com `aria-hidden`).
+ * Nenhum reaproveita glifo do trading (⏳ aguardando entrada, ⏱️ time stop, 📈/📉 preço, 🌊 chop…).
+ */
+export const KIND_EMOJI = Object.freeze({ NFP: '👷', CPI: '🛒', PPI: '🏭', PCE: '🧾', FOMC: '🏦' });
+export const CONTEXT_EMOJI = Object.freeze({
+  released: '📣', // "Saiu hoje às 10:30": a divulgação aconteceu
+  compare: '🆚', // "Anterior × Atual"
+  waiting: '📭', // ainda sem o número do BLS
+  unavailable: '🕳️', // saiu, mas esta medida não deu para calcular
+  btc: '🪙', // "O BTC depois da divulgação"
+  horizon: '🕒', // horizonte de tempo (5 min, 30 min, 1 h)
+  gauge: '🌡️', // tamanho do movimento do BTC comparado a um dia normal
+  howto: '🎓', // "Como ler"
+});
 export const IMPACT_LABELS = Object.freeze({ 3: 'Impacto alto', 2: 'Impacto médio', 1: 'Impacto baixo' });
 export const EVENT_HINTS = Object.freeze({
   CPI: 'inflação dos EUA',

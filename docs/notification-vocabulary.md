@@ -79,6 +79,24 @@ significado, sempre acompanhado de texto.
 |---|---|---|
 | 🗓️ | Agenda de eventos macro dos EUA (CPI, Payroll, PPI, PCE, FOMC) — só informação, não altera sinais nem operações | mensagens do `context-notify.yml` (`scripts/contextMessages.mjs`): teste, agenda e aviso antes do evento |
 
+### Agenda de eventos dos EUA — cartão de resultado (item 285, addendum 20)
+
+Redesenho de 10/11/2026 (pedido do usuário: mais vida e mais fácil de entender). Todos saem da tabela `KIND_EMOJI`/`CONTEXT_EMOJI` de
+`src/lib/marketContextBand.js` (dona do vocabulário; nenhum literal solto nos componentes). Decoração com `aria-hidden`: o texto ao lado carrega o sentido.
+Nenhum reaproveita glifo do trading (⏳, ⏱️, 📈/📉, 🌊, 🎯 já têm outro sentido). Cor identifica o PAPEL do número, nunca "bom/ruim".
+
+| Emoji | Significado único |
+|---|---|
+| 🛒 · 🏭 · 👷 · 🧾 · 🏦 | Tipo da notícia: inflação ao consumidor (CPI) · ao produtor (PPI) · emprego (Payroll) · gastos do consumo (PCE) · juros do Fed (FOMC) |
+| 📣 | A divulgação saiu ("Saiu hoje às 10:30") |
+| 🆚 | Número anterior × número atual |
+| 📭 | Ainda sem o número do BLS (aguardando a divulgação) |
+| 🕳️ | Medida que saiu mas não deu para calcular (indisponível) |
+| 🪙 | O BTC depois da divulgação — só o que aconteceu, sem causa nem previsão |
+| 🕒 | Horizonte de tempo depois da divulgação (5 min, 30 min, 1 h) |
+| 🌡️ | Tamanho do movimento do BTC comparado a um dia normal — sem direção |
+| 🎓 | "Como ler" o cartão |
+
 ### Registro "1 emoji = 1 significado" (item 280, PR-E2/E3)
 
 Fonte única: `src/lib/emojiRegistry.js` (`EMOJI_REGISTRY`, glifo → significado).
