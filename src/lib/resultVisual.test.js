@@ -125,6 +125,23 @@ describe('sparkGeometry — o minigráfico do BTC', () => {
     expect(g.points[0].x).toBe(10);
   });
 
+  it('movimento PEQUENO não vira montanha: o eixo vale no mínimo 0,3% (+12% de folga), não só a folga (achado do Codex, PR #557)', () => {
+    const g = sparkGeometry([{ m: 0, pct: 0 }, { m: 5, pct: 0.1 }], { width: 300, height: 112, pad: 10 });
+    // só subiu 0,1%: faltam 0,2 para o mínimo de 0,3, repartidos dos dois lados (-0,1 a +0,2); folga de 12% de 0,3 = 0,036 → eixo de -0,136 a +0,236
+    const total = 0.3 * 1.24;
+    const altura = 112 - 20;
+    expect(g.zeroY - g.points[1].y).toBeCloseTo((0.1 / total) * altura, 0); // ≈ 24,7 px de 92: um quarto da altura, não 58%
+    expect(g.zeroY - g.points[1].y).toBeLessThan(altura * 0.35);
+    // a folga é REPARTIDA dos dois lados: o zero fica em (0,236 / 0,372) da altura contada do topo, não colado na base nem no topo
+    expect(g.zeroY).toBeCloseTo(10 + (0.236 / total) * altura, 0); // ≈ 68,4
+    // o movimento oposto, do mesmo tamanho, ocupa o mesmo espaço
+    const baixo = sparkGeometry([{ m: 0, pct: 0 }, { m: 5, pct: -0.1 }], { width: 300, height: 112, pad: 10 });
+    expect(baixo.points[1].y - baixo.zeroY).toBeCloseTo(g.zeroY - g.points[1].y, 0);
+    // um movimento que já passa de 0,3% não muda de escala
+    const grande = sparkGeometry([{ m: 0, pct: 0 }, { m: 5, pct: 0.6 }], { width: 300, height: 112, pad: 10 });
+    expect(grande.zeroY - grande.points[1].y).toBeCloseTo((0.6 / (0.6 * 1.24)) * altura, 0);
+  });
+
   it('só subiu: o zero fica perto da BASE; subiu e caiu: o zero fica no meio do desenho', () => {
     const sobe = sparkGeometry([{ m: 0, pct: 0 }, { m: 5, pct: 0.6 }]);
     expect(sobe.zeroY).toBeGreaterThan(sobe.points[1].y);

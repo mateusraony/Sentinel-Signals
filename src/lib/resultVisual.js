@@ -92,11 +92,16 @@ export function sparkGeometry(series, { width = 300, height = 112, pad = 10 } = 
     .sort((a, b) => a.m - b.m);
   if (pts.length < 2) return null;
   const vals = pts.map((s) => s.pct);
-  const lo0 = Math.min(0, ...vals);
-  const hi0 = Math.max(0, ...vals);
-  const span0 = Math.max(hi0 - lo0, 0.3);
-  const lo = lo0 - span0 * 0.12;
-  const hi = hi0 + span0 * 0.12;
+  let lo = Math.min(0, ...vals);
+  let hi = Math.max(0, ...vals);
+  // Escala mínima de 0,3% NO EIXO (não só na folga): o que falta é repartido dos dois lados (o zero continua dentro). Assim um movimento de
+  // 0,1% ocupa ~1/4 da altura e não 58% — movimento minúsculo não vira montanha (achado do Codex, PR #557).
+  const falta = Math.max(0, 0.3 - (hi - lo));
+  lo -= falta / 2;
+  hi += falta / 2;
+  const folga = (hi - lo) * 0.12;
+  lo -= folga;
+  hi += folga;
   const maxAbs = Math.max(0.3, ...vals.map((v) => Math.abs(v)));
   const innerW = width - pad * 2;
   const innerH = height - pad * 2;
