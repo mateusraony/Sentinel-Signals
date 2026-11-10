@@ -153,7 +153,7 @@ describe('MarketContextBand', () => {
     dados([{ ...ev('NFP-x', 'NFP', iso(NOW - 5 * 60000)), values: { previous: '151 mil', actual: '175 mil', source: 'BLS' } }]);
     renderPage(<MarketContextBand />);
     const card = await screen.findByRole('article', { name: 'Resultado' });
-    expect(within(card).getByText('175 mil')).toBeTruthy();
+    expect(within(card).getAllByText('175 mil').length).toBeGreaterThan(0); // na frase e na ficha
     expect(within(card).queryByText('aguardando')).toBeNull();
     expect(screen.queryByRole('article', { name: 'Próximo evento' })).toBeNull();
   });
@@ -311,7 +311,7 @@ describe('MarketContextBand — resultado', () => {
   const CPI_V = { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', source: 'BLS' };
   const saiu = (id, kind, ago, values) => ({ ...ev(id, kind, iso(NOW - ago)), values });
 
-  it('aguardando o número: mostra o Anterior, "aguardando" no Atual e nenhuma comparação; diz quando entra', async () => {
+  it('aguardando o número: a ficha mostra o Anterior e "aguardando" no Atual, nenhuma comparação, e diz quando entra', async () => {
     dados([saiu('NFP-x', 'NFP', 12 * 60000, { previous: '+119 mil', source: 'BLS' })]);
     renderPage(<MarketContextBand />);
     const card = await screen.findByRole('article', { name: 'Resultado' });
@@ -319,50 +319,60 @@ describe('MarketContextBand — resultado', () => {
     expect(within(card).getByText(/Saiu hoje às 15:48/)).toBeTruthy(); // 18:48 UTC = 15:48 em Brasília
     expect(within(card).getByText(/há 12 min/)).toBeTruthy();
     expect(within(card).getByText('Aguardando o número')).toBeTruthy();
-    const tabela = within(card).getByRole('table');
-    expect(within(tabela).getByText('+119 mil')).toBeTruthy();
-    expect(within(tabela).getByText('aguardando')).toBeTruthy();
-    expect(within(tabela).queryByText(/acima|abaixo|igual/)).toBeNull();
+    expect(within(card).getByText(/O BLS ainda não publicou o número deste mês/)).toBeTruthy();
+    const ficha = within(card).getByRole('region', { name: 'No mês' });
+    expect(within(ficha).getByText('+119 mil')).toBeTruthy();
+    expect(within(ficha).getByText('aguardando')).toBeTruthy();
+    expect(within(ficha).queryByText('indisponível')).toBeNull(); // ainda não saiu: "aguardando", nunca "indisponível"
+    expect(within(ficha).queryByText(/acima|abaixo|igual/)).toBeNull();
     expect(within(card).queryByText('Resultado oficial')).toBeNull();
-    expect(within(card).getByText(/O número entra na próxima coleta \(última checagem há 2 h\)/)).toBeTruthy();
+    expect(within(card).getByText(/o número entra na próxima coleta \(última checagem há 2 h\)/)).toBeTruthy();
   });
 
-  it('com o número: uma linha por medida por extenso, Anterior × Atual, "Anterior revisado" e a comparação em palavras', async () => {
+  it('com o número: a frase do resultado, uma ficha por medida (Anterior × Atual), "Anterior revisado" e a direção em palavras', async () => {
     dados([saiu('CPI-x', 'CPI', 40 * 60000, { ...CPI_V, revised: '+0,4% m/m · +3,0% a/a' })]);
     renderPage(<MarketContextBand />);
     const card = await screen.findByRole('article', { name: 'Resultado' });
-    const tabela = within(card).getByRole('table');
     expect(within(card).getByText('Resultado oficial')).toBeTruthy();
-    expect(within(tabela).getByRole('columnheader', { name: 'Anterior' })).toBeTruthy();
-    expect(within(tabela).getByRole('columnheader', { name: 'Anterior revisado' })).toBeTruthy();
-    expect(within(tabela).getByRole('columnheader', { name: 'Atual' })).toBeTruthy();
-    const mes = within(tabela).getByRole('row', { name: /No mês/ });
+    const resumo = within(card).getByRole('group', { name: 'Resumo do resultado' });
+    expect(resumo.textContent).toContain('No mês: +0,5%, acima dos +0,3% da divulgação anterior. O anterior foi revisado para +0,4%.');
+    expect(resumo.textContent).toContain('Em 12 meses: +4,0%, acima dos +3,0% da divulgação anterior.');
+    const mes = within(card).getByRole('region', { name: 'No mês' });
+    expect(within(mes).getByText('Anterior')).toBeTruthy();
+    expect(within(mes).getByText('Atual')).toBeTruthy();
     expect(within(mes).getByText('+0,3%')).toBeTruthy(); // anterior
-    expect(within(mes).getByText('+0,4%')).toBeTruthy(); // revisado
     expect(within(mes).getByText('+0,5%')).toBeTruthy(); // atual
-    expect(within(mes).getByText('acima')).toBeTruthy();
-    const ano = within(tabela).getByRole('row', { name: /Em 12 meses/ });
+    expect(within(mes).getByText('+0,4%')).toBeTruthy(); // anterior revisado
+    expect(within(mes).getByText('acima do anterior')).toBeTruthy();
+    expect(within(mes).getByText('0,2 ponto a mais')).toBeTruthy();
+    const ano = within(card).getByRole('region', { name: 'Em 12 meses' });
     expect(within(ano).getByText('+4,0%')).toBeTruthy();
-    expect(within(ano).getByText('acima')).toBeTruthy();
-    expect(within(ano).getAllByText('—').length).toBe(1); // o 12 meses não foi revisado
-    expect(within(card).getByText(/Fonte: BLS\. Compara com o mês anterior, não com a expectativa do mercado/)).toBeTruthy();
+    expect(within(ano).getByText('1,0 ponto a mais')).toBeTruthy();
+    expect(within(ano).queryByText(/Anterior revisado/)).toBeNull(); // o 12 meses não foi revisado
+    expect(within(card).getByText(/compara com o mês anterior, não com a expectativa do mercado/)).toBeTruthy();
+    expect(within(card).getByText('Fonte: BLS')).toBeTruthy();
   });
 
-  it('abaixo e igual também aparecem em palavras; a seta e a palavra nunca usam cor de bom/ruim (verde/vermelho)', async () => {
+  it('abaixo e igual também aparecem em palavras; a direção usa a cor do TIPO da notícia, igual para "acima" e "abaixo" (nunca bom/ruim)', async () => {
     dados([
       saiu('NFP-x', 'NFP', 20 * 60000, { previous: '+119 mil', actual: '+81 mil', source: 'BLS' }),
       saiu('PPI-x', 'PPI', 2 * HORA, { previous: '-0,2% m/m · +2,0% a/a', actual: '-0,2% m/m · +1,5% a/a', source: 'BLS' }),
     ]);
-    const { container } = renderPage(<MarketContextBand />);
+    renderPage(<MarketContextBand />);
     const cards = await screen.findAllByRole('article', { name: 'Resultado' });
     expect(cards.length).toBe(2);
-    expect(within(cards[0]).getByText('abaixo')).toBeTruthy(); // Payroll: 81 < 119 (o mais recente vem primeiro)
-    expect(within(cards[1]).getByText('igual')).toBeTruthy(); // PPI no mês
-    expect(within(cards[1]).getByText('abaixo')).toBeTruthy(); // PPI em 12 meses
-    for (const t of container.querySelectorAll('table')) {
-      expect(t.innerHTML).not.toMatch(/#00ff80|#ff|green|red|emerald|rose/i);
-      for (const el of t.querySelectorAll('[style]')) expect(el.getAttribute('style') ?? '').not.toMatch(/color/);
-    }
+    expect(within(cards[0]).getByText('abaixo do anterior')).toBeTruthy(); // Payroll: 81 < 119 (o mais recente vem primeiro)
+    expect(within(cards[0]).getByText('38 mil a menos')).toBeTruthy();
+    const mes = within(cards[1]).getByRole('region', { name: 'No mês' });
+    const ano = within(cards[1]).getByRole('region', { name: 'Em 12 meses' });
+    const igual = within(mes).getByText('igual ao anterior'); // PPI no mês
+    const abaixo = within(ano).getByText('abaixo do anterior'); // PPI em 12 meses
+    expect(within(mes).queryByText(/a mais|a menos/)).toBeNull(); // sem mudança não há "diferença"
+    expect(within(ano).getByText('0,5 ponto a menos')).toBeTruthy();
+    // inflação = coral, emprego = azul-real (paleta "Brasa"): o MESMO tom para "igual" e "abaixo" (a cor não carrega bom/ruim)
+    expect(igual.style.color).toBe('rgb(255, 122, 92)');
+    expect(abaixo.style.color).toBe('rgb(255, 122, 92)');
+    expect(within(cards[0]).getByText('abaixo do anterior').style.color).toBe('rgb(90, 169, 255)');
   });
 
   it('o evento que já saiu NÃO aparece também como "próximo evento" nem nas colunas; o seguinte continua sendo o destaque', async () => {
@@ -487,7 +497,8 @@ describe('MarketContextBand — como o BTC se mexeu nas últimas divulgações',
     const bloco = screen.getByRole('complementary', BLOCO);
     expect(within(bloco).getByText('Costuma mexer mais que num dia normal')).toBeTruthy();
     expect(within(bloco).getByText('0,65%')).toBeTruthy();
-    expect(within(bloco).getByText(/dia normal: 0,22% · 3,0× mais/)).toBeTruthy();
+    expect(within(bloco).getByText('3,0× mais que num dia normal')).toBeTruthy();
+    expect(within(bloco).getByText('dia normal: 0,22%')).toBeTruthy();
     expect(within(bloco).getByText('0,44%')).toBeTruthy();
     expect(within(bloco).getByText(/34 divulgações desde jan\/2024 · medido em 06\/11\/2026/)).toBeTruthy();
     expect(within(bloco).getByText(/não indica para onde o BTC vai/)).toBeTruthy();
@@ -587,7 +598,7 @@ describe('MarketContextBand — o BTC depois da divulgação', () => {
     await screen.findByRole('article', { name: 'Resultado' });
     await waitFor(() => expect(btcMock).toHaveBeenCalled());
     expect(screen.queryByRole('complementary', { name: 'O BTC depois da divulgação' })).toBeNull();
-    expect(screen.getByText('+165 mil')).toBeTruthy();
+    expect(screen.getAllByText('+165 mil').length).toBeGreaterThan(0);
   });
 
   it('divulgação de dias atrás é passado fechado: as velas são buscadas UMA vez, mesmo com a tela pedindo atualização', async () => {
@@ -615,5 +626,114 @@ describe('MarketContextBand — o BTC depois da divulgação', () => {
     renderPage(<MarketContextBand />);
     await screen.findByRole('article', { name: 'Próximo evento' });
     expect(btcMock).not.toHaveBeenCalled();
+  });
+});
+
+// Redesenho do cartão de resultado (addendum 20 do item 285, 10/11/2026): "indisponível" no lugar de "aguardando" quando o BLS não tem a base de cálculo,
+// emojis só como decoração, minigráfico e extremos do BTC, andamento do horizonte que ainda não fechou.
+describe('MarketContextBand — cartão de resultado redesenhado', () => {
+  const MIN = 60000;
+  const saiu = (id, kind, ago, values) => ({ ...ev(id, kind, iso(NOW - ago)), values });
+  // Caso real de 10/11/2026: as duas séries do BLS trazem o mês, mas falta a base de 12 meses → o "Atual" vem só com o mês.
+  const CPI_SO_MES = { previous: '+0,6% m/m · +3,7% a/a', actual: '+0,4% m/m', source: 'BLS' };
+  const velas = (t0, closes) => Array.from({ length: 61 }, (_, i) => {
+    const rel = i - 1;
+    const c = closes[rel] ?? 100;
+    return { t: t0 + rel * MIN, o: 100, h: Math.max(100, c), l: Math.min(100, c), c };
+  });
+  const COMPLETO = { 4: 100.12, 29: 99.8, 59: 99.46 }; // +0,12% (5 min) / -0,20% (30 min) / -0,54% (1 h)
+
+  it('"Atual" só com o mês (sem a base de 12 meses): a ficha "Em 12 meses" diz "indisponível", nunca "aguardando", e a frase e a nota explicam', async () => {
+    dados([saiu('CPI-x', 'CPI', 40 * MIN, CPI_SO_MES)]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    expect(within(card).getByText('Resultado oficial')).toBeTruthy();
+    const resumo = within(card).getByRole('group', { name: 'Resumo do resultado' });
+    expect(resumo.textContent).toContain('No mês: +0,4%, abaixo dos +0,6% da divulgação anterior.');
+    expect(resumo.textContent).toContain('Em 12 meses: indisponível desta vez, não deu para calcular com os dados do BLS.');
+    const mes = within(card).getByRole('region', { name: 'No mês' });
+    expect(within(mes).getByText('abaixo do anterior')).toBeTruthy();
+    const ano = within(card).getByRole('region', { name: 'Em 12 meses' });
+    expect(within(ano).getByText('+3,7%')).toBeTruthy(); // o Anterior segue lá
+    expect(within(ano).getByText('indisponível')).toBeTruthy();
+    expect(within(ano).queryByText(/acima|abaixo|igual/)).toBeNull(); // sem número não há comparação
+    expect(within(card).queryByText('aguardando')).toBeNull();
+    expect(within(card).getByText(/Indisponível: não deu para calcular com os dados do BLS/)).toBeTruthy();
+  });
+
+  it('"Atual" completo: nada de "indisponível" nem da nota extra', async () => {
+    dados([saiu('CPI-x', 'CPI', 40 * MIN, { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    expect(within(card).queryByText(/indisponível/i)).toBeNull();
+  });
+
+  it('emojis são só decoração: todo glifo na tela está escondido do leitor de tela, e o nome do cartão não leva emoji', async () => {
+    btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+    dados([saiu('CPI-x', 'CPI', 3 * 60 * MIN, CPI_SO_MES), ev('PPI-x', 'PPI', '2026-11-13T13:30:00.000Z')]);
+    const { container } = renderPage(<MarketContextBand />);
+    await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
+    expect(screen.getByRole('article', { name: 'Resultado' })).toBeTruthy();
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const achados = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (/\p{Extended_Pictographic}/u.test(n.textContent)) achados.push(n);
+    }
+    expect(achados.length).toBeGreaterThan(5); // não-vacuidade: tipo da notícia, saiu, anterior × atual, indisponível, BTC, horizontes, termômetro, como ler
+    for (const n of achados) expect(n.parentElement.closest('[aria-hidden="true"]'), n.textContent).not.toBeNull();
+    // cada tipo de notícia tem o SEU emoji (o CPI do cartão de resultado é 🛒 e o PPI, que ainda vai sair, não aparece como CPI)
+    expect(container.textContent).toContain('🛒');
+  });
+
+  it('o BTC depois: minigráfico com a série minuto a minuto, mínimo e máximo com o minuto em que ocorreram, e a nota de que não prova causa', async () => {
+    btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+    dados([saiu('NFP-b', 'NFP', 3 * 60 * MIN, { previous: '+29 mil', actual: '+165 mil', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
+    const grafico = within(bloco).getByRole('img', { name: /Variação do BTC minuto a minuto/ });
+    expect(grafico.querySelectorAll('path')).toHaveLength(2); // a área e a linha
+    expect(grafico.querySelectorAll('circle')).toHaveLength(3); // marcadores de 5, 30 e 60 min (todos já fecharam)
+    expect(grafico.querySelector('linearGradient').getAttribute('y1')).toBe('1'); // terminou abaixo da referência: o preenchimento é mais forte junto da linha (embaixo)
+    expect(within(bloco).getByText('Mínimo').nextSibling.textContent).toBe('-0,54% aos 60 min');
+    expect(within(bloco).getByText('Máximo').nextSibling.textContent).toBe('+0,12% aos 5 min');
+    expect(bloco.textContent).toMatch(/não prova que a divulgação causou o movimento/);
+  });
+
+  it('horizonte que ainda não fechou: diz quantos minutos faltam e não desenha o marcador dele', async () => {
+    btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+    dados([saiu('NFP-b', 'NFP', 20 * MIN, { previous: '+29 mil', actual: '+165 mil', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
+    expect(within(bloco).getByText('faltam 10 min')).toBeTruthy(); // 30 min - 20 min
+    expect(within(bloco).getByText('faltam 40 min')).toBeTruthy(); // 60 min - 20 min
+    expect(within(bloco).getByText('atualiza a cada minuto')).toBeTruthy();
+    const grafico = within(bloco).getByRole('img', { name: /Variação do BTC minuto a minuto/ });
+    expect(grafico.querySelectorAll('circle')).toHaveLength(1); // só o de 5 min
+    expect(within(bloco).getByText('Em 5 min').nextSibling.textContent).toBe('+0,12%');
+  });
+
+  it('tudo fechado: nada de "atualiza a cada minuto" (passado fechado)', async () => {
+    btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+    dados([saiu('NFP-b', 'NFP', 3 * 60 * MIN, { previous: '+29 mil', actual: '+165 mil', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
+    expect(within(bloco).queryByText('atualiza a cada minuto')).toBeNull();
+    expect(within(bloco).queryByText(/faltam/)).toBeNull();
+  });
+
+  it('com o painel do BTC ao lado as fichas empilham; sem BTC elas ficam lado a lado (a grade usa a largura toda)', async () => {
+    dados([saiu('CPI-x', 'CPI', 40 * MIN, { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', source: 'BLS' })]);
+    const sem = renderPage(<MarketContextBand />);
+    const cardSem = await screen.findByRole('article', { name: 'Resultado' });
+    const gradeSem = within(cardSem).getByRole('region', { name: 'No mês' }).parentElement;
+    expect(gradeSem.className).toMatch(/sm:grid-cols-2/);
+    sem.unmount();
+    cleanup();
+    btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+    dados([saiu('CPI-x', 'CPI', 3 * 60 * MIN, { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const cardCom = await screen.findByRole('article', { name: 'Resultado' });
+    await within(cardCom).findByRole('complementary', { name: 'O BTC depois da divulgação' });
+    expect(within(cardCom).getByRole('region', { name: 'No mês' }).parentElement.className).not.toMatch(/sm:grid-cols-2/);
   });
 });

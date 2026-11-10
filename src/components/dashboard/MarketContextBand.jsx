@@ -1,26 +1,27 @@
 import React, { useState } from 'react';
 import {
   CalendarClock, Eye, EyeOff, Briefcase, ShoppingCart, Factory, Wallet, Landmark, BadgeCheck, Clock,
-  ChevronDown, ChevronUp, ArrowUp, ArrowDown, Equal, History, Activity,
+  ChevronDown, ChevronUp, ArrowUp, ArrowDown, Equal, History,
 } from 'lucide-react';
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { useNow } from '@/hooks/useNow';
 import {
-  BAND_STATES, CATEGORY_META, EVENT_META, IMPACT_LABELS, MAX_EVENTS_SHOWN, HISTORY_SHOWN,
+  BAND_STATES, CATEGORY_META, CATEGORY_ACCENTS, EVENT_META, IMPACT_LABELS, MAX_EVENTS_SHOWN, HISTORY_SHOWN,
   bandState, upcomingEvents, splitFeatured, groupEventsByDay, eventUrgency, approachFraction, eventValueSlots,
-  splitValueText, resultRows, resultEvents, releaseHistory, brtDayDiff, relativeDayLabel,
+  splitValueText, resultRows, resultEvents, releaseHistory,
   formatCountdown, formatCountdownBare, formatEventWhen, formatEventClock, formatAge, isBandEnabled, setBandEnabled,
 } from '@/lib/marketContextBand';
-import { reactionNote } from '@/lib/reactionStats';
+import { ResultCard, ReactionPanel } from '@/components/dashboard/MarketResultCard';
 import { useBtcAfterRelease } from '@/hooks/useBtcAfterRelease';
-import { HORIZONS_MIN, horizonLabel, formatMove, movesCount, lastMove } from '@/lib/btcAfterRelease';
+import { lastMove } from '@/lib/btcAfterRelease';
 
 const BOX = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' };
 const SOFT = { background: 'rgba(255,255,255,0.025)' };
 
-// Cor pelo TIPO da notícia (emprego / inflação / juros) — nunca "bom" ou "ruim". Escolhidas fora da paleta de urgência
-// (ciano / amarelo / laranja / verde), para uma cor não ser confundida com a outra; o rótulo em texto vai sempre junto.
-const CATEGORY_COLORS = { emprego: '#60a5fa', inflacao: '#c084fc', juros: '#f472b6' };
+// Cor pelo TIPO da notícia (emprego / inflação / juros) — nunca "bom" ou "ruim". A tabela é ÚNICA e mora na lib (`CATEGORY_ACCENTS`, travada por teste:
+// sem roxo, sem o ciano do BTC, com contraste). Aqui, em texto e ícone pequenos, só o `from`; o gradiente inteiro vai nas áreas maiores. O rótulo em
+// texto vai sempre junto da cor.
+const CATEGORY_COLORS = Object.fromEntries(Object.entries(CATEGORY_ACCENTS).map(([cat, a]) => [cat, a.from]));
 
 // Cor pela urgência (paleta do Dashboard): longe = ciano; nas próximas 24 h = amarelo; em até 1 h ou recém-saído = laranja.
 const TONES = {
@@ -178,170 +179,6 @@ function DirectionTag({ direction }) {
   );
 }
 
-/** "Saiu hoje às 10:30 · há 12 min" (ou "ontem"). */
-function releasedWhen(e, now) {
-  const day = relativeDayLabel(brtDayDiff(e.startMs, now)).toLowerCase();
-  return `Saiu ${day} às ${formatEventClock(e.startsAtUtc)}`;
-}
-
-/**
- * "Como o BTC se mexeu nas últimas divulgações" (Agenda 4d, addendum 18 do item 285): o TAMANHO do movimento do BTC na 1ª hora e nos 5 primeiros
- * minutos das divulgações passadas do mesmo tipo, contra o mesmo horário num dia normal. Medido, não previsto: sempre com o número de casos e a
- * data da medição, sem sinal de alta/baixa, sem verde/vermelho e sem previsão. Só aparece para o tipo que tem medição (CPI, Payroll, PPI e PCE).
- */
-function ReactionNote({ kind }) {
-  const n = reactionNote(kind);
-  if (!n) return null;
-  const strong = n.verdict === 'maior';
-  return (
-    <aside aria-label="Como o BTC se mexeu nas últimas divulgações" className="rounded-lg px-3 py-2.5 space-y-2"
-      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.08)' }}>
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-        <h4 className="flex items-center gap-1.5 text-10px font-mono uppercase tracking-wider text-muted-foreground">
-          <Activity className="w-3 h-3 shrink-0" aria-hidden="true" />
-          Como o BTC se mexeu nas últimas divulgações
-        </h4>
-        <span className="text-10px font-mono font-bold rounded-full px-2 py-0.5"
-          style={{ color: strong ? '#e2e8f0' : '#94a3b8', border: `1px solid ${strong ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.12)'}` }}>
-          {n.chip}
-        </span>
-      </div>
-      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 font-mono tabular-nums">
-        <div>
-          <dt className="text-10px text-muted-foreground">Na 1ª hora (mediana)</dt>
-          <dd className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-lg font-bold text-foreground leading-tight">{n.hour.value}</span>
-            <span className="text-10px text-muted-foreground">dia normal: {n.hour.normal}{n.hour.times ? ` · ${n.hour.times} mais` : ''}</span>
-          </dd>
-        </div>
-        <div>
-          <dt className="text-10px text-muted-foreground">Nos 5 primeiros minutos</dt>
-          <dd className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-lg font-bold text-foreground leading-tight">{n.first5.value}</span>
-            <span className="text-10px text-muted-foreground">dia normal: {n.first5.normal}</span>
-          </dd>
-        </div>
-      </dl>
-      <p className="text-10px font-mono text-muted-foreground leading-relaxed">
-        {n.cases} · medido em {n.measuredAt}. Tamanho do movimento, sem direção: um retrato do passado, que não indica para onde o BTC vai.
-        O mercado reage ao que surpreende, e este painel não tem a expectativa.
-      </p>
-    </aside>
-  );
-}
-
-/**
- * "O BTC depois da divulgação" (Agenda 4d, parte 2, addendum 18 do item 285): quanto o preço do BTC andou nos 5 min, 30 min e 1 h seguintes a uma divulgação que
- * JÁ saiu, medido nas velas de 1 minuto. Mostra o que aconteceu, com sinal mas sem cor de "bom/ruim", e não afirma que a divulgação causou o movimento.
- * Horizonte cuja vela ainda não fechou aparece como "—". Some inteiro enquanto não há nenhum número (ou se a busca falhou).
- */
-function BtcAfter({ moves }) {
-  if (!moves || movesCount(moves) === 0) return null;
-  return (
-    <aside aria-label="O BTC depois da divulgação" className="rounded-lg px-3 py-2.5 space-y-1.5"
-      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.08)' }}>
-      <h4 className="flex items-center gap-1.5 text-10px font-mono uppercase tracking-wider text-muted-foreground">
-        <Activity className="w-3 h-3 shrink-0" aria-hidden="true" />
-        O BTC depois da divulgação
-      </h4>
-      <dl className="flex flex-wrap gap-x-6 gap-y-1 font-mono tabular-nums">
-        {HORIZONS_MIN.map((n) => (
-          <div key={n}>
-            <dt className="text-10px text-muted-foreground">Em {horizonLabel(n)}</dt>
-            <dd className="text-lg font-bold text-foreground leading-tight">{formatMove(moves[n])}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="text-10px font-mono text-muted-foreground leading-relaxed">
-        Velas de 1 minuto do BTC na Binance. Mostra o que aconteceu depois; não prova que a divulgação causou o movimento.
-      </p>
-    </aside>
-  );
-}
-
-/**
- * Cartão de RESULTADO: evento do BLS que acabou de sair. Tabela com uma linha por medida (no mês, em 12 meses ou vagas do mês):
- * Anterior, Atual e a comparação neutra; "Anterior revisado" só se o BLS corrigiu o mês anterior. Sem o "Atual" ainda, mostra
- * "aguardando" (o número entra na próxima coleta). Não prevê nada: compara com o MÊS ANTERIOR, não com a expectativa do mercado.
- */
-function ResultCard({ e, now, checkedAtMs, moves }) {
-  const meta = EVENT_META[e.kind];
-  const Icon = KIND_ICONS[e.kind];
-  const rows = resultRows(e.values);
-  const hasActual = rows.some((r) => r.actual !== null);
-  const hasRevised = rows.some((r) => r.revised !== null);
-  const age = formatAge(checkedAtMs, now);
-  return (
-    <article aria-label="Resultado" className="rounded-xl p-3 sm:p-4 space-y-3"
-      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', borderTop: `2px solid ${CATEGORY_COLORS[meta.category]}` }}>
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-        <div className="flex items-start gap-3 min-w-0 flex-1 basis-56">
-          <span className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-            style={{ background: 'rgba(255,255,255,0.06)', color: CATEGORY_COLORS[meta.category] }}>
-            <Icon className="w-5 h-5" aria-hidden="true" />
-          </span>
-          <div className="min-w-0 space-y-1">
-            <CategoryTag category={meta.category} Icon={Icon} />
-            <h3 className="text-base font-bold text-foreground leading-tight tracking-tight">
-              {meta.title}
-              <span className="ml-2 text-xs font-mono font-normal text-muted-foreground">({meta.short})</span>
-            </h3>
-            <p className="text-11px font-mono text-muted-foreground">
-              <time dateTime={e.startsAtUtc} className="text-foreground">{releasedWhen(e, now)}</time>
-              {' · '}{formatAge(e.startMs, now)}
-            </p>
-          </div>
-        </div>
-        <span className="inline-flex items-center gap-1 text-10px font-mono font-bold uppercase tracking-wider shrink-0"
-          style={{ color: hasActual ? '#00ff80' : '#94a3b8' }}>
-          {hasActual
-            ? <BadgeCheck className="w-3 h-3" aria-hidden="true" />
-            : <span className="w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none" style={{ background: '#94a3b8' }} aria-hidden="true" />}
-          {hasActual ? 'Resultado oficial' : 'Aguardando o número'}
-        </span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full sm:w-auto sm:min-w-[30rem] text-left border-separate border-spacing-y-1">
-          <caption className="sr-only">{`${meta.title}: número anterior e número atual`}</caption>
-          <thead>
-            <tr className="text-10px font-mono uppercase tracking-wider text-muted-foreground">
-              <th scope="col" className="font-normal pr-3"><span className="sr-only">Medida</span></th>
-              <th scope="col" className="font-normal pr-3 sm:pr-6">Anterior</th>
-              {hasRevised && <th scope="col" className="font-normal pr-3 sm:pr-6">Anterior revisado</th>}
-              <th scope="col" className="font-normal">Atual</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.key} className="font-mono tabular-nums">
-                <th scope="row" className="text-xs font-normal text-muted-foreground pr-3 whitespace-nowrap py-1 align-top">{r.label}</th>
-                <td className="text-sm text-muted-foreground pr-3 sm:pr-6 py-1 align-top">{r.previous ?? '—'}</td>
-                {hasRevised && <td className="text-sm text-muted-foreground pr-3 sm:pr-6 py-1 align-top">{r.revised ?? '—'}</td>}
-                <td className="py-1 align-top">
-                  {/* O valor e a comparação ficam juntos: no celular a seta desce para baixo do número em vez de ficar numa 5ª coluna cortada. */}
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                    <span className="text-lg font-bold text-foreground leading-tight">
-                      {r.actual ?? <span className="text-10px font-normal text-muted-foreground">aguardando</span>}
-                    </span>
-                    <DirectionTag direction={r.direction} />
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <BtcAfter moves={moves} />
-      <p className="text-10px font-mono text-muted-foreground">
-        {e.values?.source ? `Fonte: ${e.values.source}. ` : ''}
-        {hasActual
-          ? 'Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).'
-          : `O número entra na próxima coleta${age ? ` (última checagem ${age})` : ''}.`}
-      </p>
-    </article>
-  );
-}
-
 /** Uma divulgação da lista "Últimas divulgações": dia, nome, "anterior → atual" da medida principal e a comparação neutra. */
 function HistoryRow({ e, now, moves }) {
   const meta = EVENT_META[e.kind];
@@ -464,7 +301,7 @@ function EventTile({ e, now }) {
   const tone = TONES[eventUrgency(e, now)];
   return (
     <li className="relative overflow-hidden rounded-lg p-2.5 pt-3 flex flex-col gap-1.5" style={{ ...SOFT, opacity: pending ? 0.75 : 1 }}>
-      <span className="absolute inset-x-0 top-0 h-0.5" style={{ background: CATEGORY_COLORS[meta.category] }} aria-hidden="true" />
+      <span className="absolute inset-x-0 top-0 h-1" style={{ background: `linear-gradient(90deg, ${CATEGORY_ACCENTS[meta.category].from}, ${CATEGORY_ACCENTS[meta.category].to})` }} aria-hidden="true" />
       <CategoryTag category={meta.category} Icon={Icon} />
       <p className="text-xs font-semibold text-foreground leading-tight">
         {meta.title}
@@ -580,8 +417,8 @@ function MarketContextBandInner() {
       )}
       {results.map((r) => (
         <div key={r.id} className="space-y-2">
-          <ResultCard e={r} now={now} checkedAtMs={checkedAtMs} moves={reactions.get(r.id)?.moves} />
-          <ReactionNote kind={r.kind} />
+          <ResultCard e={r} now={now} checkedAtMs={checkedAtMs} btc={reactions.get(r.id)} />
+          <ReactionPanel kind={r.kind} />
         </div>
       ))}
       {rows.length === 0 ? (
@@ -591,7 +428,7 @@ function MarketContextBandInner() {
           {featured && (
             <div className="space-y-2">
               <NextEventCard e={featured} now={now} />
-              <ReactionNote kind={featured.kind} />
+              <ReactionPanel kind={featured.kind} />
             </div>
           )}
           {groups.length > 0 && (

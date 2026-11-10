@@ -126,6 +126,8 @@ const ARQUIVOS_DA_FAIXA = [
   'src/lib/btcAfterRelease.js', // Agenda 4d, parte 2: o BTC depois de cada divulgação (conta pura)
   'src/lib/btcAfterReleaseSource.js', // idem: busca pública das velas, falha em silêncio
   'src/hooks/useBtcAfterRelease.js',
+  'src/components/dashboard/MarketResultCard.jsx', // redesenho do cartão de resultado (addendum 20): só apresentação, sem banco nem motor
+  'src/lib/resultVisual.js', // geometria e frases PURAS do cartão
 ];
 const PROIBIDO_NA_FAIXA = [
   { nome: 'adaptador de entidades (banco)', re: /@\/api\/entities|api\/entities|adminEntities/ },
@@ -164,7 +166,7 @@ describe('tripwire: a faixa de eventos do painel só lê a branch pública (item
     expect(dash).toMatch(/import MarketContextBand from '@\/components\/dashboard\/MarketContextBand'/);
     for (const rel of MOTOR) {
       const texto = lerSeExiste(rel);
-      if (texto !== null) expect(texto, rel).not.toMatch(/MarketContextBand|useMarketContext|marketContext(Band|Source)|reactionStats|btcAfterRelease|useBtcAfterRelease/);
+      if (texto !== null) expect(texto, rel).not.toMatch(/MarketContextBand|useMarketContext|marketContext(Band|Source)|reactionStats|btcAfterRelease|useBtcAfterRelease|resultVisual|MarketResultCard/);
     }
   });
 });

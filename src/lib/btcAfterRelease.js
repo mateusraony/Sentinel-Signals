@@ -41,8 +41,10 @@ export function dropOpenCandles(candles, nowMs) {
 /**
  * Movimento (%, com sinal) do BTC depois de `t0Ms`, por horizonte. `{ 5, 30, 60 }`: número, ou null se a vela daquele horizonte ainda não fechou
  * (`nowMs`) ou não veio. Devolve null se a vela de referência não veio (sem referência não há conta).
+ * `series` = o caminho minuto a minuto para o minigráfico: `{ m: 0, pct: 0 }` (a referência) e um ponto por vela JÁ fechada até o minuto 60; vela
+ * faltando fica de fora (nunca se completa com a vizinha).
  * @param {{ t: number, c: number }[]} candles
- * @returns {{ moves: Record<number, number|null> } | null}
+ * @returns {{ moves: Record<number, number|null>, series: { m: number, pct: number }[] } | null}
  */
 export function afterRelease(candles, t0Ms, nowMs) {
   const byOpen = new Map((candles ?? []).map((c) => [c.t, c]));
@@ -54,7 +56,13 @@ export function afterRelease(candles, t0Ms, nowMs) {
     const c = t0Ms + n * MIN <= nowMs ? byOpen.get(t0Ms + (n - 1) * MIN) : undefined;
     moves[n] = c ? (c.c / ref.c - 1) * 100 : null;
   }
-  return { moves };
+  /** @type {{ m: number, pct: number }[]} */
+  const series = [{ m: 0, pct: 0 }];
+  for (let m = 1; m <= 60 && t0Ms + m * MIN <= nowMs; m += 1) {
+    const c = byOpen.get(t0Ms + (m - 1) * MIN);
+    if (c) series.push({ m, pct: (c.c / ref.c - 1) * 100 });
+  }
+  return { moves, series };
 }
 
 /** "+0,12%" / "-0,54%" em português (vírgula), sem cor: o sinal é só fato, nunca "bom" ou "ruim". */

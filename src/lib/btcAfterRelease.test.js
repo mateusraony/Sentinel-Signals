@@ -55,6 +55,34 @@ describe('afterRelease', () => {
   });
 });
 
+// Redesenho do cartão (addendum 20): o minigráfico precisa do caminho minuto a minuto, não só dos 3 horizontes.
+describe('afterRelease — a série minuto a minuto (`series`)', () => {
+  it('começa na referência (minuto 0, 0%) e tem um ponto por vela JÁ fechada; cada ponto é o fechamento contra a referência (contas à mão)', () => {
+    const r = afterRelease(candles({ 0: 101, 1: 99, 4: 102 }), T0, T0 + 6 * MIN);
+    expect(r.series.map((s) => s.m)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(r.series[0]).toEqual({ m: 0, pct: 0 });
+    expect(r.series[1].pct).toBeCloseTo(1, 10); // vela que abre em T0 e fecha em +1 min: 101 / 100
+    expect(r.series[2].pct).toBeCloseTo(-1, 10);
+    expect(r.series[5].pct).toBeCloseTo(2, 10); // vela do minuto 4 fecha em +5 min
+    // o ponto do horizonte é o MESMO número de `moves`
+    expect(r.series[5].pct).toBeCloseTo(r.moves[5], 10);
+  });
+
+  it('nunca passa do "agora": vela ainda aberta e minutos futuros ficam de fora; no máximo 61 pontos (0 a 60)', () => {
+    expect(afterRelease(candles(FULL), T0, T0 + 3 * MIN + 30 * 1000).series.map((s) => s.m)).toEqual([0, 1, 2, 3]);
+    expect(afterRelease(candles(FULL), T0, T0 + 500 * MIN).series).toHaveLength(61);
+    expect(afterRelease(candles(FULL), T0, T0).series).toEqual([{ m: 0, pct: 0 }]);
+  });
+
+  it('vela faltando = o minuto fica de fora (nunca completa com a vizinha); sem a referência não há série', () => {
+    const semUma = candles(FULL).filter((v) => v.t !== T0 + 9 * MIN); // some o fechamento do minuto 10
+    const r = afterRelease(semUma, T0, T0 + 61 * MIN);
+    expect(r.series.some((s) => s.m === 10)).toBe(false);
+    expect(r.series).toHaveLength(60);
+    expect(afterRelease(candles(FULL).filter((v) => v.t !== T0 - MIN), T0, T0 + 61 * MIN)).toBeNull();
+  });
+});
+
 // Achado do Codex no PR #555: a vela do minuto 29 ainda aberta, guardada em cache, virava "fechamento" dos 30 min só porque o relógio passou de T0 + 30 min.
 describe('dropOpenCandles', () => {
   it('tira a vela que ainda estava aberta no instante da busca; a que fecha exatamente nele fica', () => {

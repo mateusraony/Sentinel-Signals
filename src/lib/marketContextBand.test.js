@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   STALE_AFTER_MS, JUST_RELEASED_MS, MAX_EVENTS_SHOWN, APPROACH_HORIZON_MS, BAND_STATES, EVENT_LABELS, EVENT_META, IMPACT_LABELS,
-  CATEGORY_META, parseEventValues, eventValueSlots,
+  CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, parseEventValues, eventValueSlots,
   RESULT_CARD_MS, RESULT_KINDS, HISTORY_SHOWN, splitValueText, valueNumber, compareValues, resultRows, resultEvents, releaseHistory,
   parseEvents, parseCheckedAt, upcomingEvents, bandState, formatCountdown, formatCountdownBare, formatEventWhen, formatAge,
   isBandEnabled, setBandEnabled,
@@ -482,5 +482,54 @@ describe('resultEvents e releaseHistory — quem vira cartão de resultado e que
     const lista = [-1, 0, 1, 23, 24, 25, 48].map((h) => e(`E${h}`, 'CPI', h * HORA + (h === 24 ? 0 : 1), { previous: '+0,3% m/m', actual: '+0,5% m/m', source: 'BLS' }));
     const noCartao = new Set(resultEvents(lista, NOW).map((x) => x.id));
     for (const x of releaseHistory(lista, NOW)) expect(noCartao.has(x.id), x.id).toBe(false);
+  });
+});
+
+// Paleta "Brasa" (10/11/2026): o usuário não quis roxo e escolheu entre 3 opções com o cartão real. A fonte única das cores por tipo de notícia mora na lib.
+describe('CATEGORY_ACCENTS / BTC_ACCENT — a paleta por tipo de notícia', () => {
+  const HEX = /^#[0-9a-f]{6}$/;
+  const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const lum = (h) => {
+    const [r, g, b] = rgb(h).map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrasteSobreOCartao = (h) => { const a = lum(h); const b = lum('#0f1522'); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); };
+  const matiz = (h) => {
+    const [r, g, b] = rgb(h).map((v) => v / 255);
+    const max = Math.max(r, g, b); const d = max - Math.min(r, g, b);
+    if (d === 0) return 0;
+    const m = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (m * 60 + 360) % 360;
+  };
+  const todas = Object.entries(CATEGORY_ACCENTS).flatMap(([cat, a]) => [[`${cat}.from`, a.from], [`${cat}.to`, a.to]]);
+
+  it('uma entrada por categoria da lista, cada uma com from e to em hex', () => {
+    expect(Object.keys(CATEGORY_ACCENTS).sort()).toEqual(Object.keys(CATEGORY_META).sort());
+    for (const [nome, cor] of todas) expect(cor, nome).toMatch(HEX);
+    expect(BTC_ACCENT.from).toMatch(HEX);
+  });
+
+  it('NENHUMA categoria usa o ciano do BTC (era o fim do gradiente de emprego e os dois se confundiam lado a lado)', () => {
+    const doBtc = new Set([BTC_ACCENT.from, BTC_ACCENT.to]);
+    for (const [nome, cor] of todas) expect(doBtc.has(cor), nome).toBe(false);
+  });
+
+  it('sem roxo nem violeta (decisão do usuário): nenhum tom com matiz entre 255° e 320°', () => {
+    for (const [nome, cor] of todas) {
+      const h = matiz(cor);
+      expect(h < 255 || h > 320, `${nome} ${cor} (${Math.round(h)}°)`).toBe(true);
+    }
+  });
+
+  it('contraste sobre o fundo do cartão: o from (texto e ícone pequenos) ≥ 4,5:1 e o to (áreas grandes) ≥ 3:1', () => {
+    for (const [cat, a] of Object.entries(CATEGORY_ACCENTS)) {
+      expect(contrasteSobreOCartao(a.from), `${cat}.from`).toBeGreaterThanOrEqual(4.5);
+      expect(contrasteSobreOCartao(a.to), `${cat}.to`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('as três categorias são tons diferentes entre si (inflação, emprego e juros)', () => {
+    const froms = Object.values(CATEGORY_ACCENTS).map((a) => a.from);
+    expect(new Set(froms).size).toBe(3);
   });
 });
