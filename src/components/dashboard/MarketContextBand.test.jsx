@@ -406,7 +406,7 @@ describe('MarketContextBand — resultado', () => {
     expect(within(lista).queryByText('Inflação ao consumidor')).toBeNull();
   });
 
-  it('Últimas divulgações: dia, nome, "anterior → atual", comparação em palavras e a marca de revisão; cinco de início e "Ver todas"', async () => {
+  it('Últimas divulgações: cada uma vira um cartão com o dia, o nome e a FRASE do que aconteceu (com a revisão dita por extenso); cinco de início e "Ver todas"', async () => {
     const velhos = Array.from({ length: 7 }, (_, i) => saiu(`CPI-${i}`, 'CPI', (3 + i * 7) * 24 * HORA, i === 0
       ? { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', revised: '+0,4% m/m · +3,0% a/a', source: 'BLS' }
       : { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,1% m/m · +3,0% a/a', source: 'BLS' }));
@@ -415,20 +415,62 @@ describe('MarketContextBand — resultado', () => {
     const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
     expect(within(lista).getAllByRole('listitem').length).toBe(5);
     const primeira = within(lista).getAllByRole('listitem')[0]; // a mais recente (3 dias atrás = DOM 01/11)
-    expect(within(primeira).getByText('DOM 01/11')).toBeTruthy();
+    expect(within(primeira).getByText(/DOM 01\/11/)).toBeTruthy();
     expect(within(primeira).getByText('Inflação ao consumidor')).toBeTruthy();
-    expect(within(primeira).getByText('+0,3%')).toBeTruthy();
-    expect(within(primeira).getByText('+0,5%')).toBeTruthy();
-    expect(within(primeira).getByText('no mês')).toBeTruthy();
-    expect(within(primeira).getByText('acima')).toBeTruthy();
-    expect(within(primeira).getByText('anterior revisado')).toBeTruthy();
-    expect(within(within(lista).getAllByRole('listitem')[1]).getByText('abaixo')).toBeTruthy();
-    expect(within(within(lista).getAllByRole('listitem')[1]).queryByText('anterior revisado')).toBeNull();
-    expect(within(lista).getByText('Fonte: BLS. Compara com o mês anterior.')).toBeTruthy();
+    const frase = within(primeira).getByRole('group', { name: 'O que aconteceu' }).textContent;
+    expect(frase).toContain('No mês: +0,5%, acima dos +0,3% da divulgação anterior.');
+    expect(frase).toContain('O anterior foi revisado para +0,4%.');
+    expect(frase).toContain('Em 12 meses: +4,0%, acima dos +3,0% da divulgação anterior.');
+    const segunda = within(within(lista).getAllByRole('listitem')[1]).getByRole('group', { name: 'O que aconteceu' }).textContent;
+    expect(segunda).toContain('No mês: +0,1%, abaixo dos +0,3% da divulgação anterior.');
+    expect(segunda).toContain('Em 12 meses: +3,0%, igual ao da divulgação anterior (+3,0%).');
+    expect(segunda).not.toMatch(/revisado/);
+    expect(within(lista).getByText('Fonte: BLS. Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).')).toBeTruthy();
     fireEvent.click(within(lista).getByRole('button', { name: 'Ver todas (7)' }));
     expect(within(lista).getAllByRole('listitem').length).toBe(7);
     fireEvent.click(within(lista).getByRole('button', { name: 'Mostrar menos' }));
     expect(within(lista).getAllByRole('listitem').length).toBe(5);
+  });
+
+  it('Últimas divulgações de uma lacuna oficial (CPI de out/2026 depois das 24 h): a frase explica o buraco, sem "indisponível"', async () => {
+    dados([{ ...saiu('CPI-lac', 'CPI', 3 * 24 * HORA, { previous: '+0,6% m/m · +3,7% a/a', actual: '+0,4% m/m', gap: 'paralisacao_2025', alt: { pct: '+4,1%', from: '2025-11', to: '2026-10', months: 11 }, source: 'BLS' }), reference: '2026-10' }]);
+    renderPage(<MarketContextBand />);
+    const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
+    const frase = within(lista).getByRole('group', { name: 'O que aconteceu' }).textContent;
+    expect(frase).toContain('No mês: +0,4%, abaixo dos +0,6% da divulgação anterior.');
+    expect(frase).toContain('Em 12 meses: sem número oficial neste mês. O BLS não divulgou o índice de out/2025 (paralisação do governo dos EUA).');
+    expect(frase).not.toMatch(/indispon/);
+  });
+
+  it('os cartões da lista não falam de previsão, probabilidade, compra/venda nem "bom/ruim" — só o que aconteceu', async () => {
+    dados([
+      saiu('NFP-a', 'NFP', 4 * 24 * HORA, { previous: '+29 mil', actual: '+165 mil', revised: '+60 mil', source: 'BLS' }),
+      saiu('CPI-b', 'CPI', 9 * 24 * HORA, CPI_V),
+    ]);
+    renderPage(<MarketContextBand />);
+    const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
+    expect(lista.textContent).toContain('No mês: +165 mil, acima dos +29 mil da divulgação anterior. O anterior foi revisado para +60 mil.');
+    expect(lista.textContent).not.toMatch(/probabilidade|vai subir|vai cair|compra|venda|proje[cç]|previs[aã]o|\bbom\b|\bruim\b|melhor|pior/i);
+  });
+
+  it('divulgação da lista sem "Anterior" (só o número que saiu): a frase fecha com ponto e não inventa comparação', async () => {
+    dados([saiu('NFP-sozinho', 'NFP', 4 * 24 * HORA, { actual: '+165 mil', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
+    const frase = within(lista).getByRole('group', { name: 'O que aconteceu' }).textContent;
+    expect(frase).toContain('No mês: +165 mil.');
+    expect(frase).not.toMatch(/acima|abaixo|igual/);
+  });
+
+  it('o emoji do tipo da notícia no cartão da lista é só decoração (escondido do leitor de tela)', async () => {
+    dados([saiu('NFP-a', 'NFP', 4 * 24 * HORA, { previous: '+29 mil', actual: '+165 mil', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
+    expect(lista.textContent).toContain('👷');
+    const walker = document.createTreeWalker(lista, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (/\p{Extended_Pictographic}/u.test(n.textContent)) expect(n.parentElement.closest('[aria-hidden="true"]'), n.textContent).not.toBeNull();
+    }
   });
 
   it('sem nenhuma divulgação com número: a lista não existe (nada de seção vazia)', async () => {
@@ -581,14 +623,27 @@ describe('MarketContextBand — o BTC depois da divulgação', () => {
     expect(within(bloco).getByText('Em 1 h').nextSibling.textContent).toBe('—');
   });
 
-  it('última divulgação da lista (de dias atrás): linha curta "BTC em 1 h: -0,54%"', async () => {
+  it('divulgação da lista (de dias atrás): o cartão mostra o BTC em 5 min, 30 min e 1 h, como o cartão de cima, e a nota de que não prova causa', async () => {
     comVelas(COMPLETO);
     dados([saiu('NFP-b', 'NFP', 5 * 24 * 60 * MIN, VALORES)]);
     renderPage(<MarketContextBand />);
     const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
-    await waitFor(() => expect(within(lista).getByText(/BTC em 1 h:/)).toBeTruthy());
-    expect(within(lista).getByText('-0,54%')).toBeTruthy();
+    await waitFor(() => expect(within(lista).getByText('O BTC depois da divulgação')).toBeTruthy());
+    expect(within(lista).getByText('Em 5 min').nextSibling.textContent).toBe('+0,12%');
+    expect(within(lista).getByText('Em 30 min').nextSibling.textContent).toBe('-0,20%');
+    expect(within(lista).getByText('Em 1 h').nextSibling.textContent).toBe('-0,54%');
     expect(within(lista).getByText(/só mostra o que aconteceu depois/)).toBeTruthy();
+  });
+
+  it('divulgação da lista sem velas do BTC (busca falhou): o cartão fica só com o que aconteceu, sem bloco do BTC', async () => {
+    btcMock.mockResolvedValue(null);
+    dados([saiu('NFP-b', 'NFP', 5 * 24 * 60 * MIN, VALORES)]);
+    renderPage(<MarketContextBand />);
+    const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
+    await waitFor(() => expect(btcMock).toHaveBeenCalled());
+    expect(within(lista).getByRole('group', { name: 'O que aconteceu' })).toBeTruthy();
+    expect(within(lista).queryByText('O BTC depois da divulgação')).toBeNull();
+    expect(within(lista).queryByText(/só mostra o que aconteceu depois/)).toBeNull();
   });
 
   it('busca que falha (null): nada aparece e o resto da faixa segue igual', async () => {

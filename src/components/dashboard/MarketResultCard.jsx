@@ -1,7 +1,7 @@
 import React, { useId } from 'react';
 import { ArrowUp, ArrowDown, Equal, BadgeCheck } from 'lucide-react';
 import {
-  EVENT_META, CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, KIND_EMOJI, CONTEXT_EMOJI, resultRows, brtDayDiff, relativeDayLabel, formatEventClock, formatAge,
+  EVENT_META, CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, KIND_EMOJI, CONTEXT_EMOJI, resultRows, brtDayDiff, relativeDayLabel, formatEventClock, formatAge, groupEventsByDay,
 } from '@/lib/marketContextBand';
 import { reactionNote } from '@/lib/reactionStats';
 import { HORIZONS_MIN, horizonLabel, formatMove } from '@/lib/btcAfterRelease';
@@ -262,43 +262,11 @@ function Spark({ geo }) {
   );
 }
 
-/** O horizonte de 5 min, 30 min ou 1 h ainda não fechou? (o painel do BTC se atualiza a cada minuto enquanto isso). */
-const btcPending = (e, now) => HORIZONS_MIN.some((n) => !horizonStatus(n, e.startMs, now).closed);
-
-/** O título do painel do BTC, FORA da caixa (alinhado ao título "O número" da coluna ao lado), com o aviso de que ainda atualiza. */
-function BtcHeading({ e, now, className = '' }) {
-  return (
-    <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 ${className}`}>
-      <h4 className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider" style={{ color: BTC.from }}>
-        <Emoji className="text-base">{CONTEXT_EMOJI.btc}</Emoji>
-        O BTC depois da divulgação
-      </h4>
-      {btcPending(e, now) && (
-        <span className="inline-flex items-center gap-1.5 text-10px font-mono" style={{ color: BTC.from }}>
-          <span className="w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none" style={{ background: BTC.from }} aria-hidden="true" />
-          atualiza a cada minuto
-        </span>
-      )}
-    </div>
-  );
-}
-
-/**
- * "O BTC depois da divulgação": quanto o preço do BTC andou nos 5 min, 30 min e 1 h seguintes, medido nas velas de 1 minuto. O que aconteceu, com
- * sinal mas sem cor de "bom/ruim", e sem afirmar que a divulgação causou o movimento. A barrinha mostra o TAMANHO do movimento (sem direção); o
- * horizonte que ainda não fechou aparece pontilhado, com quanto falta.
- */
-function BtcPanel({ e, now, btc, className = '' }) {
-  const moves = btc.moves;
-  const geo = sparkGeometry(btc.series);
+/** Os três quadradinhos "Em 5 min / Em 30 min / Em 1 h" do BTC: valor com sinal, barra do TAMANHO do movimento (sem direção) ou, se a vela ainda não fechou, quanto falta. */
+function HorizonTiles({ e, now, moves }) {
   const maxAbs = maxAbsMove(moves);
-  const ext = seriesExtremes(btc.series);
   return (
-    <aside aria-label="O BTC depois da divulgação" className={`relative overflow-hidden rounded-2xl p-4 flex flex-col gap-3.5 ${className}`}
-      style={{ background: 'linear-gradient(165deg, rgba(34,211,238,0.14), rgba(255,255,255,0.02) 58%)', border: '1px solid rgba(34,211,238,0.32)' }}>
-      {/* O minigráfico fica com a altura que sobrar (centralizado): quando a coluna ao lado é mais alta, o vão é um só, em volta do desenho, e não três espalhados. */}
-      {geo && <div className="flex-1 flex items-center"><div className="w-full"><Spark geo={geo} /></div></div>}
-      <ol className="grid grid-cols-3 gap-1.5 sm:gap-2">
+    <ol className="grid grid-cols-3 gap-1.5 sm:gap-2">
         {HORIZONS_MIN.map((n) => {
           const st = horizonStatus(n, e.startMs, now);
           const v = moves[n];
@@ -329,7 +297,46 @@ function BtcPanel({ e, now, btc, className = '' }) {
             </li>
           );
         })}
-      </ol>
+    </ol>
+  );
+}
+
+/** O horizonte de 5 min, 30 min ou 1 h ainda não fechou? (o painel do BTC se atualiza a cada minuto enquanto isso). */
+const btcPending = (e, now) => HORIZONS_MIN.some((n) => !horizonStatus(n, e.startMs, now).closed);
+
+/** O título do painel do BTC, FORA da caixa (alinhado ao título "O número" da coluna ao lado), com o aviso de que ainda atualiza. */
+function BtcHeading({ e, now, className = '' }) {
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 ${className}`}>
+      <h4 className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider" style={{ color: BTC.from }}>
+        <Emoji className="text-base">{CONTEXT_EMOJI.btc}</Emoji>
+        O BTC depois da divulgação
+      </h4>
+      {btcPending(e, now) && (
+        <span className="inline-flex items-center gap-1.5 text-10px font-mono" style={{ color: BTC.from }}>
+          <span className="w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none" style={{ background: BTC.from }} aria-hidden="true" />
+          atualiza a cada minuto
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "O BTC depois da divulgação": quanto o preço do BTC andou nos 5 min, 30 min e 1 h seguintes, medido nas velas de 1 minuto. O que aconteceu, com
+ * sinal mas sem cor de "bom/ruim", e sem afirmar que a divulgação causou o movimento. A barrinha mostra o TAMANHO do movimento (sem direção); o
+ * horizonte que ainda não fechou aparece pontilhado, com quanto falta.
+ */
+function BtcPanel({ e, now, btc, className = '' }) {
+  const moves = btc.moves;
+  const geo = sparkGeometry(btc.series);
+  const ext = seriesExtremes(btc.series);
+  return (
+    <aside aria-label="O BTC depois da divulgação" className={`relative overflow-hidden rounded-2xl p-4 flex flex-col gap-3.5 ${className}`}
+      style={{ background: 'linear-gradient(165deg, rgba(34,211,238,0.14), rgba(255,255,255,0.02) 58%)', border: '1px solid rgba(34,211,238,0.32)' }}>
+      {/* O minigráfico fica com a altura que sobrar (centralizado): quando a coluna ao lado é mais alta, o vão é um só, em volta do desenho, e não três espalhados. */}
+      {geo && <div className="flex-1 flex items-center"><div className="w-full"><Spark geo={geo} /></div></div>}
+      <HorizonTiles e={e} now={now} moves={moves} />
       {ext && (
         <dl className="flex flex-wrap gap-x-5 gap-y-1 text-11px font-mono tabular-nums">
           <div className="flex items-baseline gap-1.5">
@@ -437,6 +444,72 @@ export function ResultCard({ e, now, checkedAtMs, btc }) {
         </footer>
       </div>
     </article>
+  );
+}
+
+/**
+ * Uma divulgação da lista "Últimas divulgações" (a que já saiu há mais de 24 h): a MESMA linguagem do cartão de resultado, em tamanho menor — o dia e o
+ * nome, uma FRASE do que aconteceu (número atual contra o anterior, em palavras e sem "bom/ruim"), as medidas Anterior → Atual e, ao lado, o BTC depois da
+ * divulgação (5 min, 30 min e 1 h). Não há expectativa do mercado aqui (sem fonte gratuita e licenciada): a referência é sempre o número anterior.
+ * @param {{ e: object, now: number, moves?: Record<number, number|null>|null }} props
+ */
+export function HistoryCard({ e, now, moves = null }) {
+  const meta = EVENT_META[e.kind];
+  const accent = ACCENTS[meta.category];
+  const g = groupEventsByDay([e], now)[0];
+  const rows = resultRows(e.values, e.reference ?? null);
+  const items = resultSummary(rows, true);
+  const hasBtc = Boolean(moves) && Object.values(moves).some((v) => Number.isFinite(v));
+  return (
+    <li className="relative overflow-hidden rounded-2xl p-3.5 sm:p-4"
+      style={{ background: `linear-gradient(135deg, ${alpha(accent.from, 0.12)} 0%, rgba(255,255,255,0.03) 45%, rgba(255,255,255,0.02) 100%)`, border: `1px solid ${alpha(accent.from, 0.3)}` }}>
+      <div className={hasBtc ? 'grid gap-x-5 gap-y-3 lg:grid-cols-12' : 'grid gap-3'}>
+        <div className={`space-y-2.5 min-w-0 ${hasBtc ? 'lg:col-span-7' : ''}`}>
+          <div className="flex items-center gap-3">
+            <span aria-hidden="true" className="w-11 h-11 shrink-0 rounded-xl p-0.5 select-none"
+              style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}>
+              <span className="w-full h-full rounded-[0.6rem] flex items-center justify-center text-2xl" style={{ background: '#0f1522' }}>{KIND_EMOJI[e.kind]}</span>
+            </span>
+            <div className="min-w-0">
+              <p className="text-10px font-mono font-bold tracking-wider whitespace-nowrap" style={{ color: accent.from }}>
+                {g.weekday} {g.dayMonth}
+                <span className="ml-2 font-normal text-muted-foreground">{formatEventClock(e.startsAtUtc)} · {relativeDayLabel(brtDayDiff(e.startMs, now)).toLowerCase()}</span>
+              </p>
+              <h4 className="text-sm sm:text-base font-extrabold text-foreground leading-tight">
+                {meta.title}
+                <span className="ml-1.5 text-10px font-mono font-normal text-muted-foreground">({meta.short})</span>
+              </h4>
+            </div>
+          </div>
+          <div role="group" aria-label="O que aconteceu" className="rounded-xl px-3.5 py-2.5 space-y-1" style={{ background: 'rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <p aria-hidden="true" className="text-10px font-mono uppercase tracking-wider text-muted-foreground">O que aconteceu</p>
+            {items.map((it) => (
+              <p key={it.key} className="text-xs sm:text-sm leading-snug text-foreground/90">
+                {it.kind === 'gap' || it.kind === 'unavailable'
+                  ? <><Emoji className="mr-1.5">{CONTEXT_EMOJI.unavailable}</Emoji>{summaryText(it)}</>
+                  : <>
+                    <strong>{it.label}:</strong> <span className="font-extrabold" style={{ color: accent.from }}>{it.actual}</span>
+                    {it.kind === 'compare' && (it.word === 'igual'
+                      ? <>, igual ao da divulgação anterior ({it.previous}).</>
+                      : <>, <strong>{it.word}</strong> dos {it.previous} da divulgação anterior.</>)}
+                    {it.kind === 'alone' && '.'}
+                    {it.revised && <span className="text-muted-foreground"> O anterior foi revisado para {it.revised}.</span>}
+                  </>}
+              </p>
+            ))}
+          </div>
+        </div>
+        {hasBtc && (
+          <div className="lg:col-span-5 space-y-2 min-w-0">
+            <h5 className="flex items-center gap-2 text-10px font-mono font-bold uppercase tracking-wider" style={{ color: BTC.from }}>
+              <Emoji className="text-base">{CONTEXT_EMOJI.btc}</Emoji>
+              O BTC depois da divulgação
+            </h5>
+            <HorizonTiles e={e} now={now} moves={moves} />
+          </div>
+        )}
+      </div>
+    </li>
   );
 }
 
