@@ -279,8 +279,8 @@ describe('data ADIADA pelo FRED nunca vira divulgação (achado do Codex no PR #
 describe('trava pública com "Atual" e "Revisado"', () => {
   const OK = { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', revised: '+0,4% m/m · +3,0% a/a', source: 'BLS' };
 
-  it('VALUES_KEYS é a lista fechada dos 4 campos', () => {
-    expect(VALUES_KEYS).toEqual(['previous', 'actual', 'revised', 'source']);
+  it('VALUES_KEYS é a lista fechada dos 6 campos (addendum 22 acrescenta `gap` e `alt`, a lacuna oficial)', () => {
+    expect(VALUES_KEYS).toEqual(['previous', 'actual', 'revised', 'gap', 'alt', 'source']);
   });
 
   it('sanitizeValues aceita as combinações válidas e devolve SEMPRE na mesma ordem de chaves', () => {

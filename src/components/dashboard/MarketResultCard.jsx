@@ -6,7 +6,7 @@ import {
 import { reactionNote } from '@/lib/reactionStats';
 import { HORIZONS_MIN, horizonLabel, formatMove } from '@/lib/btcAfterRelease';
 import {
-  compareBars, deltaText, resultSummary, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes,
+  compareBars, deltaText, resultSummary, summaryText, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes,
 } from '@/lib/resultVisual';
 
 // Cartão de RESULTADO da Agenda (Contexto de Mercado, addendum 20 do item 285 — redesenho de 10/11/2026, a pedido do usuário: "muito simples, cores
@@ -98,6 +98,9 @@ function Summary({ rows, official, accent }) {
           {it.kind === 'unavailable' && (
             <><Emoji className="mr-1.5">{CONTEXT_EMOJI.unavailable}</Emoji><strong>{it.label}:</strong> indisponível desta vez, não deu para calcular com os dados do BLS.</>
           )}
+          {it.kind === 'gap' && (
+            <><Emoji className="mr-1.5">{CONTEXT_EMOJI.unavailable}</Emoji><strong>{it.label}:</strong> sem número oficial neste mês. {summaryText(it).split('neste mês. ')[1]}</>
+          )}
           {it.kind === 'alone' && (
             <><strong>{it.label}:</strong> <span className="font-extrabold" style={hot}>{it.actual}</span>.</>
           )}
@@ -115,6 +118,47 @@ function Summary({ rows, official, accent }) {
   );
 }
 
+/**
+ * A "janela alternativa" (addendum 22): quando o BLS nunca publicou o mês-base do "em 12 meses", a variação de um período MAIS CURTO, só com índices publicados.
+ * Rótulo e borda tracejada dizem que NÃO é o número oficial (o mesmo "tracejado" do estado "sem número"); sem seta de acima/abaixo e sem comparação:
+ * os períodos são diferentes, comparar enganaria. Nunca é estimativa.
+ */
+function AltWindow({ alt, accent }) {
+  const t = altWindowText(alt);
+  if (!t) return null;
+  return (
+    <div role="group" aria-label="Janela alternativa" className="rounded-xl p-3 space-y-2"
+      style={{ background: 'rgba(255,255,255,0.05)', border: `1px dashed ${alpha(accent.from, 0.5)}` }}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+        <span className="text-10px font-mono font-bold uppercase tracking-wider" style={{ color: accent.from }}>
+          <Emoji className="mr-1">{CONTEXT_EMOJI.window}</Emoji>Janela alternativa · {t.title}
+        </span>
+        <span className="text-10px font-mono text-muted-foreground">não é o número oficial em 12 meses</span>
+      </div>
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
+        <span className="text-3xl sm:text-4xl font-black font-mono tabular-nums leading-none"
+          style={{ color: accent.from, backgroundImage: `linear-gradient(135deg, ${accent.from}, ${accent.to})`, WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          {alt.pct}
+        </span>
+        <span className="text-11px leading-snug text-muted-foreground min-w-0 flex-1 basis-40">{t.body}</span>
+      </div>
+    </div>
+  );
+}
+
+/** A caixa "Por que não há número em 12 meses?": largura toda, embaixo do par de colunas (não alonga a coluna das fichas). Só informação; nada estimado. */
+function GapNote({ row }) {
+  return (
+    <aside aria-label="Por que não há número em 12 meses" className="rounded-xl px-4 py-3 space-y-1.5"
+      style={{ background: 'rgba(148,163,184,0.10)', border: '1px dashed rgba(148,163,184,0.45)' }}>
+      <h4 className="text-10px font-mono font-bold uppercase tracking-wider text-muted-foreground">
+        <Emoji className="mr-1.5 text-base">{CONTEXT_EMOJI.unavailable}</Emoji>Por que não há número em 12 meses?
+      </h4>
+      <p className="text-sm leading-relaxed text-foreground/90">{gapExplanation(row).join(' ')}</p>
+    </aside>
+  );
+}
+
 /** Uma medida (no mês, em 12 meses, vagas): Anterior → Atual lado a lado, barras na mesma escala, direção em palavras e a diferença. */
 function MeasureTile({ r, official, accent }) {
   const hasActual = r.actual !== null;
@@ -123,7 +167,7 @@ function MeasureTile({ r, official, accent }) {
   const dir = DIRECTION[r.direction];
   const diff = hasActual ? deltaText(r.previous, r.actual) : null;
   return (
-    <section aria-label={r.label} className="relative overflow-hidden rounded-2xl p-4 space-y-3.5"
+    <section aria-label={r.label} className="relative overflow-hidden rounded-2xl p-4 space-y-3.5 flex-auto"
       style={{ background: 'rgba(255,255,255,0.045)', border: `1px solid ${alpha(accent.from, 0.3)}` }}>
       <span className="absolute inset-x-0 top-0 h-1" style={{ background: `linear-gradient(90deg, ${accent.from}, ${accent.to})` }} aria-hidden="true" />
       <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 pt-1">
@@ -148,7 +192,7 @@ function MeasureTile({ r, official, accent }) {
               <span className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-mono font-bold text-muted-foreground"
                 style={{ border: '1px dashed rgba(148,163,184,0.5)', background: 'repeating-linear-gradient(135deg, rgba(148,163,184,0.10) 0 6px, transparent 6px 12px)' }}>
                 <Emoji className="text-base">{CONTEXT_EMOJI.unavailable}</Emoji>
-                indisponível
+                {r.gap ? 'sem número oficial' : 'indisponível'}
               </span>
             )}
             {!official && (
@@ -161,6 +205,7 @@ function MeasureTile({ r, official, accent }) {
           </dd>
         </div>
       </dl>
+      {unavailable && r.gap && r.alt && <AltWindow alt={r.alt} accent={accent} />}
       {r.revised && (
         <p className="text-10px font-mono text-muted-foreground">Anterior revisado para <span className="font-bold text-foreground">{r.revised}</span>.</p>
       )}
@@ -217,33 +262,42 @@ function Spark({ geo }) {
   );
 }
 
+/** O horizonte de 5 min, 30 min ou 1 h ainda não fechou? (o painel do BTC se atualiza a cada minuto enquanto isso). */
+const btcPending = (e, now) => HORIZONS_MIN.some((n) => !horizonStatus(n, e.startMs, now).closed);
+
+/** O título do painel do BTC, FORA da caixa (alinhado ao título "O número" da coluna ao lado), com o aviso de que ainda atualiza. */
+function BtcHeading({ e, now, className = '' }) {
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 ${className}`}>
+      <h4 className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider" style={{ color: BTC.from }}>
+        <Emoji className="text-base">{CONTEXT_EMOJI.btc}</Emoji>
+        O BTC depois da divulgação
+      </h4>
+      {btcPending(e, now) && (
+        <span className="inline-flex items-center gap-1.5 text-10px font-mono" style={{ color: BTC.from }}>
+          <span className="w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none" style={{ background: BTC.from }} aria-hidden="true" />
+          atualiza a cada minuto
+        </span>
+      )}
+    </div>
+  );
+}
+
 /**
  * "O BTC depois da divulgação": quanto o preço do BTC andou nos 5 min, 30 min e 1 h seguintes, medido nas velas de 1 minuto. O que aconteceu, com
  * sinal mas sem cor de "bom/ruim", e sem afirmar que a divulgação causou o movimento. A barrinha mostra o TAMANHO do movimento (sem direção); o
  * horizonte que ainda não fechou aparece pontilhado, com quanto falta.
  */
-function BtcPanel({ e, now, btc }) {
+function BtcPanel({ e, now, btc, className = '' }) {
   const moves = btc.moves;
   const geo = sparkGeometry(btc.series);
   const maxAbs = maxAbsMove(moves);
   const ext = seriesExtremes(btc.series);
-  const pending = HORIZONS_MIN.some((n) => !horizonStatus(n, e.startMs, now).closed);
   return (
-    <aside aria-label="O BTC depois da divulgação" className="relative overflow-hidden rounded-2xl p-4 space-y-3.5"
+    <aside aria-label="O BTC depois da divulgação" className={`relative overflow-hidden rounded-2xl p-4 flex flex-col gap-3.5 ${className}`}
       style={{ background: 'linear-gradient(165deg, rgba(34,211,238,0.14), rgba(255,255,255,0.02) 58%)', border: '1px solid rgba(34,211,238,0.32)' }}>
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <h4 className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider" style={{ color: BTC.from }}>
-          <Emoji className="text-base">{CONTEXT_EMOJI.btc}</Emoji>
-          O BTC depois da divulgação
-        </h4>
-        {pending && (
-          <span className="inline-flex items-center gap-1.5 text-10px font-mono" style={{ color: BTC.from }}>
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none" style={{ background: BTC.from }} aria-hidden="true" />
-            atualiza a cada minuto
-          </span>
-        )}
-      </div>
-      {geo && <Spark geo={geo} />}
+      {/* O minigráfico fica com a altura que sobrar (centralizado): quando a coluna ao lado é mais alta, o vão é um só, em volta do desenho, e não três espalhados. */}
+      {geo && <div className="flex-1 flex items-center"><div className="w-full"><Spark geo={geo} /></div></div>}
       <ol className="grid grid-cols-3 gap-1.5 sm:gap-2">
         {HORIZONS_MIN.map((n) => {
           const st = horizonStatus(n, e.startMs, now);
@@ -304,7 +358,8 @@ function BtcPanel({ e, now, btc }) {
 export function ResultCard({ e, now, checkedAtMs, btc }) {
   const meta = EVENT_META[e.kind];
   const accent = ACCENTS[meta.category];
-  const rows = resultRows(e.values);
+  const rows = resultRows(e.values, e.reference ?? null);
+  const gapRow = rows.find((r) => r.gap && r.actual === null) ?? null;
   const official = rows.some((r) => r.actual !== null);
   const partial = official && rows.some((r) => r.actual === null);
   const age = formatAge(checkedAtMs, now);
@@ -345,26 +400,37 @@ export function ResultCard({ e, now, checkedAtMs, btc }) {
 
         <Summary rows={rows} official={official} accent={accent} />
 
-        <div className={hasBtc ? 'grid gap-4 lg:grid-cols-12 items-start' : 'grid gap-4'}>
-          <section aria-label="O número" className={hasBtc ? 'lg:col-span-7 space-y-3' : 'space-y-3'}>
-            <h4 className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-foreground">
+        {/* Com o painel do BTC ao lado, as DUAS colunas têm título e caixa na mesma linha (grade com 2 linhas) e a mesma altura: o título do BTC saiu de dentro da
+            caixa para a caixa começar na altura da 1ª ficha; as fichas dividem a altura que sobrar. No celular tudo empilha (título, caixa, título, caixa). */}
+        <div className={hasBtc ? 'grid gap-x-4 gap-y-3 lg:grid-cols-12' : 'grid gap-3'}>
+          <section aria-label="O número" className={hasBtc ? 'flex flex-col gap-3 lg:contents' : 'flex flex-col gap-3'}>
+            <h4 className={`flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-foreground ${hasBtc ? 'lg:col-span-7 lg:col-start-1 lg:row-start-1' : ''}`}>
               <Emoji className="text-base">{CONTEXT_EMOJI.compare}</Emoji>
               O número: anterior e atual
             </h4>
             {/* Com o painel do BTC ao lado a coluna é estreita: as fichas empilham (cada uma com a largura toda). Sem ele, lado a lado. */}
-            <div className={rows.length > 1 && !hasBtc ? 'grid gap-3 sm:grid-cols-2' : 'grid gap-3'}>
+            <div className={hasBtc
+              ? 'flex flex-col gap-3 lg:col-span-7 lg:col-start-1 lg:row-start-2'
+              : (rows.length > 1 ? 'grid gap-3 sm:grid-cols-2' : 'grid gap-3')}>
               {rows.map((r) => <MeasureTile key={r.key} r={r} official={official} accent={accent} />)}
             </div>
           </section>
-          {hasBtc && <div className="lg:col-span-5"><BtcPanel e={e} now={now} btc={btc} /></div>}
+          {hasBtc && (
+            <div className="flex flex-col gap-3 lg:contents">
+              <BtcHeading e={e} now={now} className="lg:col-span-5 lg:col-start-8 lg:row-start-1" />
+              <BtcPanel e={e} now={now} btc={btc} className="lg:col-span-5 lg:col-start-8 lg:row-start-2" />
+            </div>
+          )}
         </div>
+
+        {gapRow && <GapNote row={gapRow} />}
 
         <footer className="pt-3 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
           <p className="text-10px font-mono text-muted-foreground leading-relaxed min-w-0 flex-1 basis-80">
             <Emoji className="mr-1">{CONTEXT_EMOJI.howto}</Emoji>
             Como ler:{' '}
             {official
-              ? `compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).${partial ? ' Indisponível: não deu para calcular com os dados do BLS.' : ''}`
+              ? `compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).${partial ? (gapRow ? ' Sem número oficial: o BLS não publicou o índice usado na comparação.' : ' Indisponível: não deu para calcular com os dados do BLS.') : ''}`
               : `o número entra na próxima coleta${age ? ` (última checagem ${age})` : ''}.`}
           </p>
           {e.values?.source && <p className="text-10px font-mono text-muted-foreground whitespace-nowrap">Fonte: {e.values.source}</p>}

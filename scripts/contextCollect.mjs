@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import { KINDS, KIND_TIMES, STATUS, US_RELEASES } from './contextCalendar.mjs';
 import { nyToUtc } from './contextTime.mjs';
 import { buildUserAgent, MAX_BODY_BYTES } from './contextProbe.mjs';
-import { previousValues, previousValueText, actualValueText, PREVIOUS_TEXT_RE, BLS_SOURCE, BLS_SERIES } from './contextBls.mjs';
+import { previousValues, previousValueText, actualValueText, gapNoteValues, isValidAltText, GAP_REASONS, PREVIOUS_TEXT_RE, BLS_SOURCE, BLS_SERIES } from './contextBls.mjs';
 
 /** Releases do FRED, conferidos pelo nome na sonda (runs 5-8). FOMC não está aqui: vem da lista fixa. */
 export const FRED_RELEASES = Object.freeze({ CPI: 10, NFP: 50, PPI: 46, PCE: 54 });
@@ -24,7 +24,7 @@ export const FRED_RELEASES = Object.freeze({ CPI: 10, NFP: 50, PPI: 46, PCE: 54 
 export const PUBLIC_VERSION = 1;
 // `values` (addenda 14 e 15): os números oficiais do BLS — `null` ou `{ previous?, actual?, revised?, source }`; ver `sanitizeValues`.
 export const EVENT_KEYS = Object.freeze(['id', 'kind', 'reference', 'startsAtUtc', 'status', 'firstSeenAt', 'lastChangedAt', 'values']);
-export const VALUES_KEYS = Object.freeze(['previous', 'actual', 'revised', 'source']);
+export const VALUES_KEYS = Object.freeze(['previous', 'actual', 'revised', 'gap', 'alt', 'source']);
 export const STATUS_KEYS = Object.freeze(['version', 'checkedAt', 'fred', 'eventsCount', 'coverageUntil', 'hash']);
 export const FRED_STATES = Object.freeze(['ok', 'parcial', 'falhou']);
 
@@ -87,6 +87,18 @@ export function sanitizeValues(v) {
   }
   if (!out.previous && !out.actual) return null;
   if (out.revised && !out.actual) return null;
+  // Lacuna oficial (addendum 22): `gap` = motivo da lista fechada; `alt` = a janela alternativa (formato fechado, 2 a 11 meses). Só junto do "Atual";
+  // `alt` só existe junto do `gap` (a janela só é "alternativa" ao número oficial que não existe).
+  if (Object.prototype.hasOwnProperty.call(v, 'gap')) {
+    if (typeof v.gap !== 'string' || !GAP_REASONS.includes(v.gap)) return null;
+    out.gap = v.gap;
+  }
+  if (Object.prototype.hasOwnProperty.call(v, 'alt')) {
+    if (!isValidAltText(v.alt)) return null;
+    out.alt = v.alt;
+  }
+  if ((out.gap || out.alt) && !out.actual) return null;
+  if (out.alt && !out.gap) return null;
   out.source = BLS_SOURCE;
   return out;
 }
@@ -104,8 +116,8 @@ const hasHappened = (kind, date, nowMs) => {
  *   grava o "Atual"; se o "Anterior" recalculado agora difere do congelado, grava também o "Revisado". Daí em diante tudo fica
  *   CONGELADO (uma revisão posterior do mês não troca o número que saiu na divulgação).
  */
-function eventValues({ kind, reference, status, released, published, blsSeries }) {
-  if (published?.actual) return published;
+function eventValues({ kind, reference, status, released, published, blsSeries, blsGaps }) {
+  if (published?.actual) return withGapNote(published, kind, reference, blsSeries, blsGaps);
   // Data a confirmar (adiada, retirada) que já passou NÃO é uma divulgação: nunca ganha "Atual" (o mês que o BLS traz é o do evento remarcado).
   if (released && status === STATUS.A_CONFIRMAR) return published;
   if (!released) {
@@ -121,7 +133,24 @@ function eventValues({ kind, reference, status, released, published, blsSeries }
   out.actual = actual;
   if (published?.previous && fresh && fresh !== published.previous) out.revised = fresh;
   out.source = BLS_SOURCE;
-  return sanitizeValues(out) ?? published;
+  return withGapNote(sanitizeValues(out) ?? published, kind, reference, blsSeries, blsGaps);
+}
+
+/**
+ * A explicação da lacuna oficial (addendum 22) junto de um `values` que JÁ tem o "Atual": o `gap` (motivo) e a `alt` (janela alternativa). Congela como o
+ * "Atual" — o que já saiu nunca é trocado —, mas um evento publicado SEM eles (como o CPI de 10/11/2026, que saiu antes desta regra) os ganha uma vez,
+ * e a `alt` pode entrar depois do `gap` (quando o 1º mês depois da lacuna aparece). Sem lacuna registrada, devolve o `values` como veio.
+ */
+function withGapNote(values, kind, reference, blsSeries, blsGaps) {
+  if (!values?.actual || !blsSeries || !blsGaps || (values.gap && values.alt)) return values;
+  const note = gapNoteValues(kind, blsSeries, blsGaps, reference);
+  if (!note) return values;
+  const out = { ...values };
+  delete out.source;
+  if (!out.gap) out.gap = note.gap;
+  if (!out.alt && note.alt) out.alt = note.alt;
+  out.source = BLS_SOURCE;
+  return sanitizeValues(out) ?? values;
 }
 
 /**
@@ -152,8 +181,9 @@ function eventValues({ kind, reference, status, released, published, blsSeries }
  *    "Atual" (e "Revisado", se o BLS corrigiu o mês anterior) gravados no 1º instante em que o BLS traz o mês e CONGELADOS.
  *    Sem número calculável nem publicado: `null`.
  * @param {Record<string, Map<string, number>|null>} [p.blsSeries] séries do BLS por código (`fetchBlsSeries().series`)
+ * @param {Record<string, Map<string, string>|null>} [p.blsGaps] lacunas oficiais do BLS por série (mês → motivo), da base (`baseToGaps`); explicam o "em 12 meses" que não existe
  */
-export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, previous = [], nowMs, blsSeries = null }) {
+export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, previous = [], nowMs, blsSeries = null, blsGaps = null }) {
   const nowIso = new Date(nowMs).toISOString();
   const cutoffMs = nowMs - DAY_MS;
   const cand = new Map(); // id → { kind, date, reference, status }
@@ -211,7 +241,7 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     if (!utc) continue;
     const p = prevById.get(id);
     const values = eventValues({
-      kind: c.kind, reference: c.reference, status: c.status, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries,
+      kind: c.kind, reference: c.reference, status: c.status, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries, blsGaps,
     });
     // Só de ontem em diante; o já divulgado COM "Atual" fica HISTORY_DAYS dias (alimenta "Últimas divulgações").
     if (utc.ms < cutoffMs && !(values?.actual && utc.ms >= nowMs - HISTORY_DAYS * DAY_MS)) continue;

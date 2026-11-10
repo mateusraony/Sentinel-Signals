@@ -706,7 +706,10 @@ describe('MarketContextBand — cartão de resultado redesenhado', () => {
     const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
     expect(within(bloco).getByText('faltam 10 min')).toBeTruthy(); // 30 min - 20 min
     expect(within(bloco).getByText('faltam 40 min')).toBeTruthy(); // 60 min - 20 min
-    expect(within(bloco).getByText('atualiza a cada minuto')).toBeTruthy();
+    // O aviso mora no TÍTULO do painel (fora da caixa, na mesma linha do título "O número: anterior e atual"), não dentro da caixa.
+    const card = screen.getByRole('article', { name: 'Resultado' });
+    expect(within(card).getByText('atualiza a cada minuto')).toBeTruthy();
+    expect(within(bloco).queryByText('atualiza a cada minuto')).toBeNull();
     const grafico = within(bloco).getByRole('img', { name: /Variação do BTC minuto a minuto/ });
     expect(grafico.querySelectorAll('circle')).toHaveLength(1); // só o de 5 min
     expect(within(bloco).getByText('Em 5 min').nextSibling.textContent).toBe('+0,12%');
@@ -717,7 +720,7 @@ describe('MarketContextBand — cartão de resultado redesenhado', () => {
     dados([saiu('NFP-b', 'NFP', 3 * 60 * MIN, { previous: '+29 mil', actual: '+165 mil', source: 'BLS' })]);
     renderPage(<MarketContextBand />);
     const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
-    expect(within(bloco).queryByText('atualiza a cada minuto')).toBeNull();
+    expect(within(screen.getByRole('article', { name: 'Resultado' })).queryByText('atualiza a cada minuto')).toBeNull();
     expect(within(bloco).queryByText(/faltam/)).toBeNull();
   });
 
@@ -735,5 +738,116 @@ describe('MarketContextBand — cartão de resultado redesenhado', () => {
     const cardCom = await screen.findByRole('article', { name: 'Resultado' });
     await within(cardCom).findByRole('complementary', { name: 'O BTC depois da divulgação' });
     expect(within(cardCom).getByRole('region', { name: 'No mês' }).parentElement.className).not.toMatch(/sm:grid-cols-2/);
+  });
+
+  // ---- Lacuna oficial do BLS (addendum 22) + alinhamento das duas colunas -------------------------------------------------------------------------------
+  const CPI_LACUNA = { previous: '+0,6% m/m · +3,7% a/a', actual: '+0,4% m/m', gap: 'paralisacao_2025', alt: { pct: '+3,9%', from: '2025-11', to: '2026-10', months: 11 }, source: 'BLS' };
+  const saiuRef = (ago, values) => ({ ...saiu('CPI-gap', 'CPI', ago, values), reference: '2026-10' });
+
+  it('lacuna oficial: a frase, a ficha, a janela alternativa e a caixa explicam o buraco do BLS — sem "indisponível", sem seta na janela e sem estimativa', async () => {
+    dados([saiuRef(40 * MIN, CPI_LACUNA)]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    const resumo = within(card).getByRole('group', { name: 'Resumo do resultado' });
+    expect(resumo.textContent).toContain('Em 12 meses: sem número oficial neste mês. O BLS não divulgou o índice de out/2025 (paralisação do governo dos EUA).');
+    expect(resumo.textContent).not.toMatch(/indisponível/);
+    const ano = within(card).getByRole('region', { name: 'Em 12 meses' });
+    expect(within(ano).getByText('sem número oficial')).toBeTruthy();
+    expect(within(ano).queryByText('indisponível')).toBeNull();
+    expect(within(ano).getByText('+3,7%')).toBeTruthy(); // o Anterior segue lá
+    const janela = within(ano).getByRole('group', { name: 'Janela alternativa' });
+    expect(janela.textContent).toContain('desde nov/2025 (11 meses)');
+    expect(within(janela).getByText('+3,9%')).toBeTruthy();
+    expect(janela.textContent).toContain('não é o número oficial em 12 meses');
+    expect(janela.textContent).toContain('de nov/2025 até out/2026, só com índices que o BLS publicou');
+    expect(janela.textContent).not.toMatch(/acima|abaixo|igual|estimativa|previsão/i); // não compara, não estima
+    expect(within(ano).queryByText(/acima do anterior|abaixo do anterior|igual ao anterior/)).toBeNull();
+    const caixa = within(card).getByRole('complementary', { name: 'Por que não há número em 12 meses' });
+    expect(caixa.textContent).toContain('O BLS não coletou os preços de out/2025 por causa da paralisação do governo dos EUA e nunca publicou esse índice.');
+    expect(caixa.textContent).toContain('Nada foi estimado.');
+    expect(caixa.textContent).toContain('A janela alternativa é só uma referência: tem 11 meses e não se compara com os +3,7% de 12 meses da divulgação anterior.');
+    expect(within(card).getByText(/Sem número oficial: o BLS não publicou o índice usado na comparação/)).toBeTruthy();
+    expect(within(card).queryByText(/Indisponível: não deu para calcular/)).toBeNull();
+  });
+
+  it('lacuna SEM "Anterior" de 12 meses: a ficha "Em 12 meses" aparece mesmo assim, com "—" no Anterior, o chip, a janela e a caixa (achado do Codex no PR #559)', async () => {
+    dados([saiuRef(40 * MIN, { ...CPI_LACUNA, previous: '+0,6% m/m' })]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    const ano = within(card).getByRole('region', { name: 'Em 12 meses' });
+    expect(within(ano).getByText('—')).toBeTruthy(); // o Anterior que não existe
+    expect(within(ano).getByText('sem número oficial')).toBeTruthy();
+    expect(within(ano).getByRole('group', { name: 'Janela alternativa' }).textContent).toContain('+3,9%');
+    const caixa = within(card).getByRole('complementary', { name: 'Por que não há número em 12 meses' });
+    expect(caixa.textContent).toContain('A janela alternativa é só uma referência: tem 11 meses e não se compara com o número oficial de 12 meses.');
+    expect(within(card).getByRole('group', { name: 'Resumo do resultado' }).textContent).toContain('Em 12 meses: sem número oficial neste mês.');
+  });
+
+  it('lacuna sem janela alternativa (o 1º mês depois da lacuna ainda não existe): explica o buraco e NÃO desenha janela alguma', async () => {
+    dados([saiuRef(40 * MIN, { ...CPI_LACUNA, alt: undefined })]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    expect(within(card).queryByRole('group', { name: 'Janela alternativa' })).toBeNull();
+    const caixa = within(card).getByRole('complementary', { name: 'Por que não há número em 12 meses' });
+    expect(caixa.textContent).not.toMatch(/janela alternativa/i);
+    expect(within(card).getByRole('region', { name: 'Em 12 meses' }).textContent).toContain('sem número oficial');
+  });
+
+  it('sem `reference` no evento a frase não inventa o mês; motivo genérico não cita a paralisação', async () => {
+    dados([saiu('CPI-gap', 'CPI', 40 * MIN, { ...CPI_LACUNA, gap: 'nao_divulgado', alt: undefined })]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    const resumo = within(card).getByRole('group', { name: 'Resumo do resultado' }).textContent;
+    expect(resumo).toContain('O BLS não divulgou o índice do mês usado na comparação.');
+    expect(resumo).not.toMatch(/paralisação|out\/2025/);
+  });
+
+  it('sem lacuna (o "em 12 meses" tem número): nenhuma caixa, nenhuma janela', async () => {
+    dados([saiuRef(40 * MIN, { previous: '+0,6% m/m · +3,7% a/a', actual: '+0,4% m/m · +3,5% a/a', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    expect(within(card).queryByRole('complementary', { name: 'Por que não há número em 12 meses' })).toBeNull();
+    expect(within(card).queryByRole('group', { name: 'Janela alternativa' })).toBeNull();
+    expect(within(card).queryByText(/sem número oficial/i)).toBeNull();
+  });
+
+  it('com o BTC ao lado: títulos e caixas das duas colunas ficam na MESMA linha da grade (alinhamento), e o título do BTC fica fora da caixa', async () => {
+    btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+    dados([saiuRef(3 * 60 * MIN, CPI_LACUNA)]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    const bloco = await within(card).findByRole('complementary', { name: 'O BTC depois da divulgação' });
+    const tituloNumero = within(card).getByRole('heading', { name: /O número: anterior e atual/ });
+    const tituloBtc = within(card).getByRole('heading', { name: /O BTC depois da divulgação/ });
+    expect(bloco.contains(tituloBtc)).toBe(false); // o título saiu da caixa
+    expect(within(bloco).queryByRole('heading')).toBeNull();
+    // títulos: linha 1; caixas: linha 2 (a grade de 12 colunas só existe com o BTC ao lado)
+    expect(tituloNumero.className).toMatch(/lg:row-start-1/);
+    expect(tituloBtc.parentElement.className).toMatch(/lg:row-start-1/);
+    expect(bloco.className).toMatch(/lg:row-start-2/);
+    const fichas = within(card).getByRole('region', { name: 'No mês' }).parentElement;
+    expect(fichas.className).toMatch(/lg:row-start-2/);
+    // as duas caixas começam na mesma coluna que o seu título
+    expect(tituloBtc.parentElement.className).toMatch(/lg:col-start-8/);
+    expect(bloco.className).toMatch(/lg:col-start-8/);
+    expect(fichas.className).toMatch(/lg:col-start-1/);
+    // as fichas dividem a altura que sobrar (nenhuma encolhe abaixo do conteúdo: `flex-auto`, não `flex-1`)
+    expect(within(card).getByRole('region', { name: 'Em 12 meses' }).className).toMatch(/\bflex-auto\b/);
+    expect(within(card).getByRole('region', { name: 'Em 12 meses' }).className).not.toMatch(/\bflex-1\b/);
+    // a caixa do porquê fica FORA da coluna das fichas (não a alonga): é irmã da grade, embaixo
+    const caixa = within(card).getByRole('complementary', { name: 'Por que não há número em 12 meses' });
+    expect(fichas.contains(caixa)).toBe(false);
+  });
+
+  it('os emojis novos (🕳️ no "sem número oficial" e 🪟 na janela) também são só decoração: escondidos do leitor de tela', async () => {
+    dados([saiuRef(40 * MIN, CPI_LACUNA)]);
+    const { container } = renderPage(<MarketContextBand />);
+    await screen.findByRole('article', { name: 'Resultado' });
+    expect(container.textContent).toContain('🪟');
+    expect(container.textContent).toContain('🕳️');
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (/\p{Extended_Pictographic}/u.test(n.textContent)) expect(n.parentElement.closest('[aria-hidden="true"]'), n.textContent).not.toBeNull();
+    }
   });
 });

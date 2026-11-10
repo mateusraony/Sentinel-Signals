@@ -424,7 +424,7 @@ describe('valor "Anterior" do BLS (addendum 14)', () => {
       (({ values: _v, ...resto }) => resto)(cpi), // o campo some
     ];
     for (const e of plantados) expect(() => assertPublicShape([e], st), JSON.stringify(e.values)).toThrow(/conteúdo público recusado/);
-    expect(VALUES_KEYS).toEqual(['previous', 'actual', 'revised', 'source']); // addendum 15 (contextResult.test.js)
+    expect(VALUES_KEYS).toEqual(['previous', 'actual', 'revised', 'gap', 'alt', 'source']); // addendum 15 (actual/revised) e 22 (gap/alt) — contextResult.test.js e contextGapNote.test.js
   });
 
   describe('coleta ponta a ponta (main)', () => {

@@ -8,9 +8,11 @@ import {
   CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, parseEventValues, eventValueSlots,
   RESULT_CARD_MS, RESULT_KINDS, HISTORY_SHOWN, splitValueText, valueNumber, compareValues, resultRows, resultEvents, releaseHistory,
   parseEvents, parseCheckedAt, upcomingEvents, bandState, formatCountdown, formatCountdownBare, formatEventWhen, formatAge,
-  isBandEnabled, setBandEnabled,
+  isBandEnabled, setBandEnabled, parseAlt, shiftMonth, GAP_REASONS, KIND_EMOJI, CONTEXT_EMOJI,
   brtDayKey, brtDayDiff, relativeDayLabel, formatEventClock, groupEventsByDay, splitFeatured, eventUrgency, approachFraction,
 } from './marketContextBand.js';
+import { GAP_REASONS as COLLECTOR_GAP_REASONS } from '../../scripts/contextBls.mjs';
+import { EMOJI_REGISTRY } from './emojiRegistry.js';
 
 const NOW = Date.parse('2026-11-05T12:00:00.000Z');
 const ev = (id, kind, startsAtUtc, status = 'oficial') => ({ id, kind, startsAtUtc, status, reference: '2026-10', firstSeenAt: startsAtUtc, lastChangedAt: startsAtUtc });
@@ -18,7 +20,15 @@ const ev = (id, kind, startsAtUtc, status = 'oficial') => ({ id, kind, startsAtU
 describe('parseEvents — o JSON vem da rede e pode vir ruim', () => {
   it('aceita as linhas bem formadas e devolve o instante em ms', () => {
     const out = parseEvents([ev('CPI-2026-11-10', 'CPI', '2026-11-10T13:30:00.000Z')]);
-    expect(out).toEqual([{ id: 'CPI-2026-11-10', kind: 'CPI', status: 'oficial', startsAtUtc: '2026-11-10T13:30:00.000Z', startMs: Date.parse('2026-11-10T13:30:00.000Z') }]);
+    // `reference` (o mês que o evento mede) agora vai adiante, só quando bem formado: o cartão o usa para dizer QUAL índice o BLS não publicou.
+    expect(out).toEqual([{ id: 'CPI-2026-11-10', kind: 'CPI', status: 'oficial', startsAtUtc: '2026-11-10T13:30:00.000Z', startMs: Date.parse('2026-11-10T13:30:00.000Z'), reference: '2026-10' }]);
+  });
+
+  it('`reference` mal formada, ausente ou de outro tipo some (nunca vira texto na tela)', () => {
+    for (const reference of ['lixo', '2026-13', '2026-1', 202610, null, undefined, { a: 1 }, '2026-10 <b>']) {
+      const [e] = parseEvents([{ ...ev('CPI-2026-11-10', 'CPI', '2026-11-10T13:30:00.000Z'), reference }]);
+      expect(Object.prototype.hasOwnProperty.call(e, 'reference'), JSON.stringify(reference)).toBe(false);
+    }
   });
 
   it('ignora linha com tipo/situação desconhecidos, hora inválida ou sem id — sem lançar', () => {
@@ -293,6 +303,78 @@ describe('eventUrgency e approachFraction', () => {
     expect(approachFraction(-5)).toBe(1);
     expect(approachFraction(APPROACH_HORIZON_MS * 3)).toBe(0);
     expect(approachFraction(NaN)).toBe(0);
+  });
+});
+
+describe('lacuna oficial no cartão (addendum 22) — `gap`, `alt` e a medida "em 12 meses" sem número', () => {
+  const base = { previous: '+0,6% m/m · +3,7% a/a', actual: '+0,4% m/m', source: 'BLS' };
+  const com = { ...base, gap: 'paralisacao_2025', alt: '+3,9% de 2025-11 a 2026-10' };
+
+  it('parseEventValues leva o motivo e a janela (já interpretada) só junto do "Atual" e só da lista fechada', () => {
+    expect(parseEventValues(com)).toEqual({ ...base, revised: null, gap: 'paralisacao_2025', alt: { pct: '+3,9%', from: '2025-11', to: '2026-10', months: 11 } });
+    // formato de antes: nenhuma chave nova aparece
+    expect(Object.keys(parseEventValues(base))).toEqual(['previous', 'actual', 'revised', 'source']);
+    expect(parseEventValues({ ...com, gap: 'texto livre' })).toEqual({ ...base, revised: null }); // motivo fora da lista some, e a janela com ele
+    expect(parseEventValues({ previous: base.previous, gap: 'paralisacao_2025', alt: com.alt })).toEqual({ previous: base.previous, actual: null, revised: null, source: null }); // sem "Atual"
+    expect(parseEventValues({ ...base, alt: com.alt })).toEqual({ ...base, revised: null }); // `alt` sem `gap`
+  });
+
+  it('a janela só vale no formato fechado e de 2 a 11 meses', () => {
+    expect(parseAlt('+3,9% de 2025-11 a 2026-10')).toEqual({ pct: '+3,9%', from: '2025-11', to: '2026-10', months: 11 });
+    expect(parseAlt('0,0% de 2026-01 a 2026-03')).toEqual({ pct: '0,0%', from: '2026-01', to: '2026-03', months: 2 });
+    for (const ruim of [null, undefined, 5, '', '+3,9% desde 2025-11', '+3,9% de 2025-10 a 2026-10', '+3,9% de 2026-10 a 2025-11', '+3,9% de 2026-09 a 2026-10', '+3,9% de 2025-11 a 2026-10 <b>', '3,9% de 2025-11 a 2026-10']) {
+      expect(parseAlt(ruim), JSON.stringify(ruim)).toBeNull();
+    }
+  });
+
+  it('a lista de motivos da tela é a MESMA do coletor', () => {
+    expect([...GAP_REASONS]).toEqual([...COLLECTOR_GAP_REASONS]);
+  });
+
+  it('resultRows: só a medida "em 12 meses" SEM número ganha o motivo, o mês-base e a janela', () => {
+    const rows = resultRows(parseEventValues(com), '2026-10');
+    expect(rows.find((r) => r.key === 'mom').gap).toBeUndefined();
+    const yoy = rows.find((r) => r.key === 'yoy');
+    expect(yoy).toMatchObject({ actual: null, previous: '+3,7%', gap: 'paralisacao_2025', gapMonth: '2025-10' });
+    expect(yoy.alt).toEqual({ pct: '+3,9%', from: '2025-11', to: '2026-10', months: 11 });
+  });
+
+  it('sem `reference` o mês-base fica null (a tela escreve sem o mês); sem lacuna nada muda nas linhas', () => {
+    expect(resultRows(parseEventValues(com)).find((r) => r.key === 'yoy').gapMonth).toBeNull();
+    expect(resultRows(parseEventValues(com), 'lixo').find((r) => r.key === 'yoy').gapMonth).toBeNull();
+    for (const r of resultRows(parseEventValues(base), '2026-10')) expect(Object.keys(r)).toEqual(['key', 'label', 'previous', 'actual', 'revised', 'direction']);
+  });
+
+  it('lacuna SEM "Anterior" de 12 meses (só o mês foi calculado antes): a linha "em 12 meses" existe mesmo assim, com o motivo e a janela (achado do Codex no PR #559)', () => {
+    const v = parseEventValues({ previous: '+0,6% m/m', actual: '+0,4% m/m', gap: 'paralisacao_2025', alt: '+3,9% de 2025-11 a 2026-10', source: 'BLS' });
+    const yoy = resultRows(v, '2026-10').find((r) => r.key === 'yoy');
+    expect(yoy).toMatchObject({ previous: null, actual: null, revised: null, gap: 'paralisacao_2025', gapMonth: '2025-10' });
+    expect(yoy.alt).toEqual({ pct: '+3,9%', from: '2025-11', to: '2026-10', months: 11 });
+    // nenhuma lacuna e nenhum número de 12 meses: a linha continua não existindo (nada de ficha vazia)
+    expect(resultRows(parseEventValues({ previous: '+0,6% m/m', actual: '+0,4% m/m', source: 'BLS' }), '2026-10').map((r) => r.key)).toEqual(['mom']);
+  });
+
+  it('se o "em 12 meses" TEM número, a lacuna é ignorada (o número oficial vence)', () => {
+    const v = parseEventValues({ previous: '+0,6% m/m · +3,7% a/a', actual: '+0,4% m/m · +3,6% a/a', gap: 'paralisacao_2025', source: 'BLS' });
+    expect(resultRows(v, '2026-10').find((r) => r.key === 'yoy').gap).toBeUndefined();
+  });
+
+  it('shiftMonth atravessa o ano', () => {
+    expect(shiftMonth('2026-10', -12)).toBe('2025-10');
+    expect(shiftMonth('2026-01', -1)).toBe('2025-12');
+    expect(shiftMonth('2025-12', 1)).toBe('2026-01');
+  });
+});
+
+describe('emojis da Agenda — 1 emoji = 1 significado (registro)', () => {
+  it('todo glifo das tabelas KIND_EMOJI e CONTEXT_EMOJI está no registro, é DONO deste arquivo e nenhum se repete', () => {
+    const glifos = [...Object.values(KIND_EMOJI), ...Object.values(CONTEXT_EMOJI)];
+    expect(glifos.length).toBeGreaterThan(10);
+    expect(new Set(glifos).size).toBe(glifos.length);
+    for (const g of glifos) {
+      expect(EMOJI_REGISTRY[g], `${g} sem registro`).toBeDefined();
+      expect(EMOJI_REGISTRY[g].files, `${g} sem dono`).toContain('src/lib/marketContextBand.js');
+    }
   });
 });
 

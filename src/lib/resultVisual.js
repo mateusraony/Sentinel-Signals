@@ -1,7 +1,7 @@
 // Contexto de Mercado — o VISUAL do cartão de resultado (redesenho de 10/11/2026, docs/known-risks.md item 285, addendum 20).
 // Parte PURA: só geometria (barras, minigráfico, andamento) e frases em português simples. Sem rede, sem relógio próprio (o "agora" vem de fora),
 // sem banco. A cor NUNCA diz "bom" ou "ruim": quem manda é o PAPEL do número (anterior, atual, BTC); a direção vai por seta + palavra.
-import { valueNumber } from '@/lib/marketContextBand';
+import { valueNumber, shiftMonth } from '@/lib/marketContextBand';
 
 const MIN = 60 * 1000;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
@@ -56,12 +56,15 @@ export function deltaText(previousText, actualText) {
  *  - { kind: 'wait' }                                         — o BLS ainda não publicou;
  *  - { kind: 'compare', label, actual, previous, word, revised } — "acima" | "abaixo" | "igual" à divulgação anterior;
  *  - { kind: 'alone', label, actual, revised }               — saiu, mas não há anterior para comparar;
- *  - { kind: 'unavailable', label }                          — saiu o resultado, mas esta medida não deu para calcular.
- * @param {{ key: string, label: string, previous: string|null, actual: string|null, revised: string|null, direction: string|null }[]} rows
+ *  - { kind: 'unavailable', label }                          — saiu o resultado, mas esta medida não deu para calcular;
+ *  - { kind: 'gap', label, reason, month }                   — sem número oficial porque o BLS nunca publicou o mês-base (lacuna oficial).
+ * @param {{ key: string, label: string, previous: string|null, actual: string|null, revised: string|null, direction: string|null, gap?: string, gapMonth?: string|null, alt?: object|null }[]} rows
  */
 export function resultSummary(rows, official) {
   if (!official) return [{ key: 'wait', kind: 'wait' }];
   return (Array.isArray(rows) ? rows : []).map((r) => {
+    // Lacuna OFICIAL (o BLS nunca publicou o mês-base do "em 12 meses"): a frase diz POR QUÊ, em vez de "indisponível".
+    if (r.actual === null && r.gap) return { key: r.key, kind: 'gap', label: r.label, reason: r.gap, month: monthLabel(r.gapMonth) };
     if (r.actual === null) return { key: r.key, kind: 'unavailable', label: r.label };
     if (r.previous !== null && r.direction) {
       return { key: r.key, kind: 'compare', label: r.label, actual: r.actual, previous: r.previous, word: r.direction, revised: r.revised };
@@ -70,9 +73,53 @@ export function resultSummary(rows, official) {
   });
 }
 
+const MONTHS_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+/** 'AAAA-MM' → "out/2025" (null se não for um mês bem formado). */
+export function monthLabel(ym) {
+  const m = typeof ym === 'string' ? /^(\d{4})-(0[1-9]|1[0-2])$/.exec(ym) : null;
+  return m ? `${MONTHS_PT[Number(m[2]) - 1]}/${m[1]}` : null;
+}
+
+/** O motivo da lacuna em palavras, depois de "O BLS não divulgou o índice de out/2025": a paralisação do governo dos EUA ou nada (motivo genérico). */
+const gapCause = (reason) => (reason === 'paralisacao_2025' ? ' (paralisação do governo dos EUA)' : '');
+
+/** Título e texto curtos da janela alternativa (`alt` já interpretado por `parseAlt`): "desde nov/2025 (11 meses)" e o período em palavras. */
+export function altWindowText(alt) {
+  const from = monthLabel(alt?.from);
+  const to = monthLabel(alt?.to);
+  if (!from || !to || !Number.isFinite(alt?.months)) return null;
+  return {
+    title: `desde ${from} (${alt.months} meses)`,
+    body: `de ${from} até ${to}, só com índices que o BLS publicou (sem ajuste sazonal).`,
+  };
+}
+
+/**
+ * A explicação completa da lacuna (a caixa "Por que não há número em 12 meses?"), em frases curtas. `r` = a linha "em 12 meses" de `resultRows` com `gap`.
+ * Não estima nada: diz o que o BLS não publicou, o que isso impede e — se existe — que a janela alternativa é só uma referência de outro período.
+ * @returns {string[]}
+ */
+export function gapExplanation(r) {
+  const month = monthLabel(r?.gapMonth);
+  const eventMonth = month ? monthLabel(shiftMonth(r.gapMonth, 12)) : null;
+  const lines = [];
+  if (r?.gap === 'paralisacao_2025') {
+    lines.push(`O BLS não coletou os preços ${month ? `de ${month}` : 'do mês usado na comparação'} por causa da paralisação do governo dos EUA e nunca publicou esse índice.`);
+  } else {
+    lines.push(`O BLS não publicou o índice ${month ? `de ${month}` : 'do mês usado na comparação'}.`);
+  }
+  lines.push(`Sem ele, o BLS também não divulga a variação em 12 meses${eventMonth ? ` de ${eventMonth}` : ''}. Nada foi estimado.`);
+  if (r?.alt) {
+    lines.push(`A janela alternativa é só uma referência: tem ${r.alt.months} meses e não se compara com ${r.previous ? `os ${r.previous} de 12 meses da divulgação anterior` : 'o número oficial de 12 meses'}.`);
+  }
+  return lines;
+}
+
 /** A mesma frase como TEXTO (leitor de tela, título, teste de vocabulário). */
 export function summaryText(item) {
   if (item.kind === 'wait') return 'O BLS ainda não publicou o número deste mês. Quando sair, ele aparece aqui.';
+  if (item.kind === 'gap') return `${item.label}: sem número oficial neste mês. O BLS não divulgou o índice ${item.month ? `de ${item.month}` : 'do mês usado na comparação'}${gapCause(item.reason)}.`;
   if (item.kind === 'unavailable') return `${item.label}: indisponível desta vez, não deu para calcular com os dados do BLS.`;
   const rev = item.revised ? ` O anterior foi revisado para ${item.revised}.` : '';
   if (item.kind === 'alone') return `${item.label}: ${item.actual}.${rev}`;
