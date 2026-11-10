@@ -345,6 +345,15 @@ describe('lacuna oficial no cartão (addendum 22) — `gap`, `alt` e a medida "e
     for (const r of resultRows(parseEventValues(base), '2026-10')) expect(Object.keys(r)).toEqual(['key', 'label', 'previous', 'actual', 'revised', 'direction']);
   });
 
+  it('lacuna SEM "Anterior" de 12 meses (só o mês foi calculado antes): a linha "em 12 meses" existe mesmo assim, com o motivo e a janela (achado do Codex no PR #559)', () => {
+    const v = parseEventValues({ previous: '+0,6% m/m', actual: '+0,4% m/m', gap: 'paralisacao_2025', alt: '+3,9% de 2025-11 a 2026-10', source: 'BLS' });
+    const yoy = resultRows(v, '2026-10').find((r) => r.key === 'yoy');
+    expect(yoy).toMatchObject({ previous: null, actual: null, revised: null, gap: 'paralisacao_2025', gapMonth: '2025-10' });
+    expect(yoy.alt).toEqual({ pct: '+3,9%', from: '2025-11', to: '2026-10', months: 11 });
+    // nenhuma lacuna e nenhum número de 12 meses: a linha continua não existindo (nada de ficha vazia)
+    expect(resultRows(parseEventValues({ previous: '+0,6% m/m', actual: '+0,4% m/m', source: 'BLS' }), '2026-10').map((r) => r.key)).toEqual(['mom']);
+  });
+
   it('se o "em 12 meses" TEM número, a lacuna é ignorada (o número oficial vence)', () => {
     const v = parseEventValues({ previous: '+0,6% m/m · +3,7% a/a', actual: '+0,4% m/m · +3,6% a/a', gap: 'paralisacao_2025', source: 'BLS' });
     expect(resultRows(v, '2026-10').find((r) => r.key === 'yoy').gap).toBeUndefined();

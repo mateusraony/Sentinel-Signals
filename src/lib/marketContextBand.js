@@ -240,10 +240,13 @@ export function resultRows(values, reference = null) {
     const revisedRaw = pick(sides.revised, key);
     // "Revisado" só aparece onde o BLS de fato mudou aquela medida (no CPI, o 12 meses pode ficar igual enquanto o mês muda).
     const revised = revisedRaw !== null && revisedRaw !== previous ? revisedRaw : null;
-    if (previous === null && actual === null && revised === null) continue;
+    // A linha "em 12 meses" de uma lacuna oficial existe MESMO sem número nenhum dos dois lados (ex.: o "Anterior" de 12 meses não pôde ser calculado):
+    // sem ela a explicação e a janela alternativa, já coletadas, não apareceriam (achado do Codex no PR #559).
+    const lacuna = key === 'yoy' && actual === null && Boolean(values.gap);
+    if (previous === null && actual === null && revised === null && !lacuna) continue;
     const row = { key, label: MEASURE_ROW_LABELS[key], previous, actual, revised, direction: compareValues(actual, previous) };
     // A medida "em 12 meses" que NÃO existe porque o mês-base é uma lacuna oficial do BLS: o motivo, o mês-base (se o evento traz o mês que mede) e a janela alternativa.
-    if (key === 'yoy' && actual === null && values.gap) {
+    if (lacuna) {
       row.gap = values.gap;
       row.gapMonth = typeof reference === 'string' && MONTH_RE.test(reference) ? shiftMonth(reference, -12) : null;
       row.alt = values.alt ?? null;

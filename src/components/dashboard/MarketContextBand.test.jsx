@@ -770,6 +770,19 @@ describe('MarketContextBand — cartão de resultado redesenhado', () => {
     expect(within(card).queryByText(/Indisponível: não deu para calcular/)).toBeNull();
   });
 
+  it('lacuna SEM "Anterior" de 12 meses: a ficha "Em 12 meses" aparece mesmo assim, com "—" no Anterior, o chip, a janela e a caixa (achado do Codex no PR #559)', async () => {
+    dados([saiuRef(40 * MIN, { ...CPI_LACUNA, previous: '+0,6% m/m' })]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    const ano = within(card).getByRole('region', { name: 'Em 12 meses' });
+    expect(within(ano).getByText('—')).toBeTruthy(); // o Anterior que não existe
+    expect(within(ano).getByText('sem número oficial')).toBeTruthy();
+    expect(within(ano).getByRole('group', { name: 'Janela alternativa' }).textContent).toContain('+3,9%');
+    const caixa = within(card).getByRole('complementary', { name: 'Por que não há número em 12 meses' });
+    expect(caixa.textContent).toContain('A janela alternativa é só uma referência: tem 11 meses e não se compara com o número oficial de 12 meses.');
+    expect(within(card).getByRole('group', { name: 'Resumo do resultado' }).textContent).toContain('Em 12 meses: sem número oficial neste mês.');
+  });
+
   it('lacuna sem janela alternativa (o 1º mês depois da lacuna ainda não existe): explica o buraco e NÃO desenha janela alguma', async () => {
     dados([saiuRef(40 * MIN, { ...CPI_LACUNA, alt: undefined })]);
     renderPage(<MarketContextBand />);
