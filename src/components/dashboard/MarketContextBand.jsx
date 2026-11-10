@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import {
   CalendarClock, Eye, EyeOff, Briefcase, ShoppingCart, Factory, Wallet, Landmark, BadgeCheck, Clock,
-  ChevronDown, ChevronUp, ArrowUp, ArrowDown, Equal, History,
+  ChevronDown, ChevronUp, History,
 } from 'lucide-react';
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { useNow } from '@/hooks/useNow';
 import {
   BAND_STATES, CATEGORY_META, CATEGORY_ACCENTS, EVENT_META, IMPACT_LABELS, MAX_EVENTS_SHOWN, HISTORY_SHOWN,
   bandState, upcomingEvents, splitFeatured, groupEventsByDay, eventUrgency, approachFraction, eventValueSlots,
-  splitValueText, resultRows, resultEvents, releaseHistory,
+  splitValueText, resultEvents, releaseHistory,
   formatCountdown, formatCountdownBare, formatEventWhen, formatEventClock, formatAge, isBandEnabled, setBandEnabled,
 } from '@/lib/marketContextBand';
-import { ResultCard, ReactionPanel } from '@/components/dashboard/MarketResultCard';
+import { ResultCard, ReactionPanel, HistoryCard } from '@/components/dashboard/MarketResultCard';
 import { useBtcAfterRelease } from '@/hooks/useBtcAfterRelease';
 import { lastMove } from '@/lib/btcAfterRelease';
 
@@ -160,57 +160,6 @@ function ValueSlots({ e, compact = false }) {
   );
 }
 
-const DIRECTION_META = {
-  acima: { Icon: ArrowUp, text: 'acima' },
-  abaixo: { Icon: ArrowDown, text: 'abaixo' },
-  igual: { Icon: Equal, text: 'igual' },
-};
-
-/** Seta NEUTRA (cor do texto, nunca verde/vermelho) + a palavra: só diz se o número ficou acima, abaixo ou igual ao anterior. */
-function DirectionTag({ direction }) {
-  const meta = DIRECTION_META[direction];
-  if (!meta) return null;
-  const { Icon } = meta;
-  return (
-    <span className="inline-flex items-center gap-1 text-xs font-mono font-bold text-foreground whitespace-nowrap">
-      <Icon className="w-3.5 h-3.5" aria-hidden="true" />
-      {meta.text}
-    </span>
-  );
-}
-
-/** Uma divulgação da lista "Últimas divulgações": dia, nome, "anterior → atual" da medida principal e a comparação neutra. */
-function HistoryRow({ e, now, moves }) {
-  const meta = EVENT_META[e.kind];
-  const g = groupEventsByDay([e], now)[0];
-  const main = resultRows(e.values)[0];
-  return (
-    <li className="rounded-lg px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1" style={SOFT}>
-      <span className="text-10px font-mono font-bold tracking-wider text-muted-foreground whitespace-nowrap">{g.weekday} {g.dayMonth}</span>
-      <span className="text-xs font-semibold text-foreground">
-        {meta.title}
-        <span className="ml-1.5 text-10px font-mono font-normal text-muted-foreground">({meta.short})</span>
-      </span>
-      {main && (
-        <span className="text-xs font-mono tabular-nums text-foreground">
-          {main.previous ?? '—'} <span aria-label="para" className="text-muted-foreground">→</span> <span className="font-bold">{main.actual}</span>
-          <span className="ml-1.5 text-10px text-muted-foreground">{main.label.toLowerCase()}</span>
-        </span>
-      )}
-      {main && <DirectionTag direction={main.direction} />}
-      {resultRows(e.values).some((r) => r.revised !== null) && <span className="text-10px font-mono text-muted-foreground">anterior revisado</span>}
-      {(() => {
-        const m = lastMove(moves);
-        return m && (
-          <span className="text-10px font-mono text-muted-foreground tabular-nums">
-            BTC em {m.label}: <span className="font-bold text-foreground">{m.text}</span>
-          </span>
-        );
-      })()}
-    </li>
-  );
-}
-
 /** "Últimas divulgações": só eventos com o "Atual" oficial (de mais de 24 h atrás). Some inteira enquanto não há nenhuma. */
 function ReleaseHistory({ items, now, reactions }) {
   const [open, setOpen] = useState(false);
@@ -222,10 +171,10 @@ function ReleaseHistory({ items, now, reactions }) {
         <History className="w-3 h-3" aria-hidden="true" />
         Últimas divulgações
       </h3>
-      <ul className="flex flex-col gap-1.5">
-        {shown.map((e) => <HistoryRow key={e.id} e={e} now={now} moves={reactions?.get(e.id)?.moves} />)}
+      <ul className="flex flex-col gap-3">
+        {shown.map((e) => <HistoryCard key={e.id} e={e} now={now} moves={reactions?.get(e.id)?.moves} />)}
       </ul>
-      <p className="text-10px font-mono text-muted-foreground">Fonte: BLS. Compara com o mês anterior.</p>
+      <p className="text-10px font-mono text-muted-foreground">Fonte: BLS. Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).</p>
       {shown.some((e) => lastMove(reactions?.get(e.id)?.moves)) && (
         <p className="text-10px font-mono text-muted-foreground">O BTC vem das velas de 1 minuto da Binance e só mostra o que aconteceu depois; não prova que a divulgação causou o movimento.</p>
       )}
