@@ -369,10 +369,10 @@ describe('MarketContextBand — resultado', () => {
     const abaixo = within(ano).getByText('abaixo do anterior'); // PPI em 12 meses
     expect(within(mes).queryByText(/a mais|a menos/)).toBeNull(); // sem mudança não há "diferença"
     expect(within(ano).getByText('0,5 ponto a menos')).toBeTruthy();
-    // inflação = roxo, emprego = azul: o MESMO tom para "igual" e "abaixo" (a cor não carrega bom/ruim)
-    expect(igual.style.color).toBe('rgb(192, 132, 252)');
-    expect(abaixo.style.color).toBe('rgb(192, 132, 252)');
-    expect(within(cards[0]).getByText('abaixo do anterior').style.color).toBe('rgb(96, 165, 250)');
+    // inflação = coral, emprego = azul-real (paleta "Brasa"): o MESMO tom para "igual" e "abaixo" (a cor não carrega bom/ruim)
+    expect(igual.style.color).toBe('rgb(255, 122, 92)');
+    expect(abaixo.style.color).toBe('rgb(255, 122, 92)');
+    expect(within(cards[0]).getByText('abaixo do anterior').style.color).toBe('rgb(90, 169, 255)');
   });
 
   it('o evento que já saiu NÃO aparece também como "próximo evento" nem nas colunas; o seguinte continua sendo o destaque', async () => {

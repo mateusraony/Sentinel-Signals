@@ -1,7 +1,7 @@
 import React, { useId } from 'react';
 import { ArrowUp, ArrowDown, Equal, BadgeCheck } from 'lucide-react';
 import {
-  EVENT_META, CATEGORY_META, KIND_EMOJI, CONTEXT_EMOJI, resultRows, brtDayDiff, relativeDayLabel, formatEventClock, formatAge,
+  EVENT_META, CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, KIND_EMOJI, CONTEXT_EMOJI, resultRows, brtDayDiff, relativeDayLabel, formatEventClock, formatAge,
 } from '@/lib/marketContextBand';
 import { reactionNote } from '@/lib/reactionStats';
 import { HORIZONS_MIN, horizonLabel, formatMove } from '@/lib/btcAfterRelease';
@@ -17,14 +17,10 @@ import {
 // "ainda não saiu" e "não deu para calcular" têm cara própria, para nunca parecer dado faltando; (5) os emojis saem da tabela de
 // `src/lib/marketContextBand.js` (1 emoji = 1 significado) e são só decoração: o texto ao lado carrega o sentido.
 
-// Cor de destaque por TIPO de notícia (inflação / emprego / juros): gradiente vivo, claro o bastante para passar de 3:1 sobre o fundo escuro do cartão.
-const ACCENTS = {
-  inflacao: { from: '#c084fc', to: '#818cf8' },
-  emprego: { from: '#60a5fa', to: '#22d3ee' },
-  juros: { from: '#f472b6', to: '#fb7185' },
-};
+// As cores por TIPO de notícia e a do BTC moram na lib (fonte única, travada por teste): `CATEGORY_ACCENTS` e `BTC_ACCENT`.
+const ACCENTS = CATEGORY_ACCENTS;
+const BTC = BTC_ACCENT;
 const PREVIOUS = '#94a3b8'; // cinza-azulado: o número de ANTES
-const BTC = { from: '#22d3ee', to: '#38bdf8' }; // ciano: o BTC
 const OK = '#6ee7b7'; // verde só no selo "Resultado oficial" (estado do dado, não "bom")
 
 /** '#c084fc' + 0.3 → 'rgba(192, 132, 252, 0.3)'. */

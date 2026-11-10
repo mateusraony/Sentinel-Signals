@@ -60,6 +60,20 @@ export const CONTEXT_EMOJI = Object.freeze({
   gauge: '🌡️', // tamanho do movimento do BTC comparado a um dia normal
   howto: '🎓', // "Como ler"
 });
+/**
+ * Cor de destaque por TIPO de notícia — gradiente `from` → `to` — e FONTE ÚNICA: o cartão de resultado, o "Próximo evento" e as colunas por dia usam
+ * esta tabela. A cor identifica o PAPEL do dado (tipo da notícia), NUNCA "bom" ou "ruim". Paleta "Brasa" (10/11/2026): o usuário não quis roxo e
+ * escolheu entre 3 opções sem roxo vendo o cartão real — inflação = coral, emprego = azul-real, juros = rosa. `from` (o mais claro, contraste ≥ 4,5:1
+ * sobre o fundo do cartão) serve para texto e ícone pequenos; o gradiente inteiro só em áreas grandes (≥ 3:1). O ciano do BTC (`BTC_ACCENT`) NÃO pode
+ * aparecer aqui: era o fim do gradiente de emprego e os dois se confundiam lado a lado. Tudo isso é travado por teste.
+ */
+export const CATEGORY_ACCENTS = Object.freeze({
+  inflacao: Object.freeze({ from: '#ff7a5c', to: '#ff5c4d' }),
+  emprego: Object.freeze({ from: '#5aa9ff', to: '#3d7dff' }),
+  juros: Object.freeze({ from: '#ff7eb6', to: '#ec5fa6' }),
+});
+/** O BTC: ciano (papel "BTC" no cartão de resultado). Nenhuma categoria usa este tom. */
+export const BTC_ACCENT = Object.freeze({ from: '#22d3ee', to: '#38bdf8' });
 export const IMPACT_LABELS = Object.freeze({ 3: 'Impacto alto', 2: 'Impacto médio', 1: 'Impacto baixo' });
 export const EVENT_HINTS = Object.freeze({
   CPI: 'inflação dos EUA',

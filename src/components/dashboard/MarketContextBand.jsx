@@ -6,7 +6,7 @@ import {
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { useNow } from '@/hooks/useNow';
 import {
-  BAND_STATES, CATEGORY_META, EVENT_META, IMPACT_LABELS, MAX_EVENTS_SHOWN, HISTORY_SHOWN,
+  BAND_STATES, CATEGORY_META, CATEGORY_ACCENTS, EVENT_META, IMPACT_LABELS, MAX_EVENTS_SHOWN, HISTORY_SHOWN,
   bandState, upcomingEvents, splitFeatured, groupEventsByDay, eventUrgency, approachFraction, eventValueSlots,
   splitValueText, resultRows, resultEvents, releaseHistory,
   formatCountdown, formatCountdownBare, formatEventWhen, formatEventClock, formatAge, isBandEnabled, setBandEnabled,
@@ -18,9 +18,10 @@ import { lastMove } from '@/lib/btcAfterRelease';
 const BOX = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' };
 const SOFT = { background: 'rgba(255,255,255,0.025)' };
 
-// Cor pelo TIPO da notícia (emprego / inflação / juros) — nunca "bom" ou "ruim". Escolhidas fora da paleta de urgência
-// (ciano / amarelo / laranja / verde), para uma cor não ser confundida com a outra; o rótulo em texto vai sempre junto.
-const CATEGORY_COLORS = { emprego: '#60a5fa', inflacao: '#c084fc', juros: '#f472b6' };
+// Cor pelo TIPO da notícia (emprego / inflação / juros) — nunca "bom" ou "ruim". A tabela é ÚNICA e mora na lib (`CATEGORY_ACCENTS`, travada por teste:
+// sem roxo, sem o ciano do BTC, com contraste). Aqui, em texto e ícone pequenos, só o `from`; o gradiente inteiro vai nas áreas maiores. O rótulo em
+// texto vai sempre junto da cor.
+const CATEGORY_COLORS = Object.fromEntries(Object.entries(CATEGORY_ACCENTS).map(([cat, a]) => [cat, a.from]));
 
 // Cor pela urgência (paleta do Dashboard): longe = ciano; nas próximas 24 h = amarelo; em até 1 h ou recém-saído = laranja.
 const TONES = {
@@ -300,7 +301,7 @@ function EventTile({ e, now }) {
   const tone = TONES[eventUrgency(e, now)];
   return (
     <li className="relative overflow-hidden rounded-lg p-2.5 pt-3 flex flex-col gap-1.5" style={{ ...SOFT, opacity: pending ? 0.75 : 1 }}>
-      <span className="absolute inset-x-0 top-0 h-0.5" style={{ background: CATEGORY_COLORS[meta.category] }} aria-hidden="true" />
+      <span className="absolute inset-x-0 top-0 h-1" style={{ background: `linear-gradient(90deg, ${CATEGORY_ACCENTS[meta.category].from}, ${CATEGORY_ACCENTS[meta.category].to})` }} aria-hidden="true" />
       <CategoryTag category={meta.category} Icon={Icon} />
       <p className="text-xs font-semibold text-foreground leading-tight">
         {meta.title}
