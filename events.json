@@ -81,7 +81,10 @@
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
     "lastChangedAt": "2026-10-31T16:19:52.086Z",
-    "values": null
+    "values": {
+      "previous": "+0,4% m/m",
+      "source": "BLS"
+    }
   },
   {
     "id": "PPI-2026-12-15",
