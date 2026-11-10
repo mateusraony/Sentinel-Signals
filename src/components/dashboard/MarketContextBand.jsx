@@ -321,7 +321,8 @@ function ResultCard({ e, now, checkedAtMs, moves }) {
                   {/* O valor e a comparação ficam juntos: no celular a seta desce para baixo do número em vez de ficar numa 5ª coluna cortada. */}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
                     <span className="text-lg font-bold text-foreground leading-tight">
-                      {r.actual ?? <span className="text-10px font-normal text-muted-foreground">aguardando</span>}
+                      {/* Com o resultado já oficial, a medida que ficou sem número NÃO vem mais: "aguardando" seria falso (addendum 19). */}
+                      {r.actual ?? <span className="text-10px font-normal text-muted-foreground">{hasActual ? 'indisponível' : 'aguardando'}</span>}
                     </span>
                     <DirectionTag direction={r.direction} />
                   </div>
@@ -335,7 +336,7 @@ function ResultCard({ e, now, checkedAtMs, moves }) {
       <p className="text-10px font-mono text-muted-foreground">
         {e.values?.source ? `Fonte: ${e.values.source}. ` : ''}
         {hasActual
-          ? 'Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).'
+          ? `Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).${rows.some((r) => r.actual === null) ? ' Indisponível: não deu para calcular com os dados do BLS.' : ''}`
           : `O número entra na próxima coleta${age ? ` (última checagem ${age})` : ''}.`}
       </p>
     </article>

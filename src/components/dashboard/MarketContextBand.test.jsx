@@ -348,6 +348,32 @@ describe('MarketContextBand — resultado', () => {
     expect(within(card).getByText(/Fonte: BLS\. Compara com o mês anterior, não com a expectativa do mercado/)).toBeTruthy();
   });
 
+  // Achado ao vivo no CPI de 10/11/2026 (addendum 19): o BLS não tem a base de 12 meses (outubro de 2025), então o "Atual" vem só com o mês.
+  // "aguardando" seria falso (esse número NÃO vem): a medida que ficou sem número diz "indisponível".
+  it('"Atual" só com o mês (sem a base de 12 meses): a linha "Em 12 meses" diz "indisponível", nunca "aguardando", e a nota explica', async () => {
+    dados([saiu('CPI-x', 'CPI', 40 * 60000, { previous: '+0,6% m/m · +3,7% a/a', actual: '+0,4% m/m', source: 'BLS' })]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    const tabela = within(card).getByRole('table');
+    expect(within(card).getByText('Resultado oficial')).toBeTruthy();
+    const mes = within(tabela).getByRole('row', { name: /No mês/ });
+    expect(within(mes).getByText('+0,4%')).toBeTruthy();
+    expect(within(mes).getByText('abaixo')).toBeTruthy();
+    const ano = within(tabela).getByRole('row', { name: /Em 12 meses/ });
+    expect(within(ano).getByText('+3,7%')).toBeTruthy(); // o Anterior segue lá
+    expect(within(ano).getByText('indisponível')).toBeTruthy();
+    expect(within(ano).queryByText(/acima|abaixo|igual/)).toBeNull(); // sem número não há comparação
+    expect(within(tabela).queryByText('aguardando')).toBeNull();
+    expect(within(card).getByText(/Indisponível: não deu para calcular com os dados do BLS/)).toBeTruthy();
+  });
+
+  it('Atual completo: nada de "indisponível" nem da nota extra', async () => {
+    dados([saiu('CPI-x', 'CPI', 40 * 60000, CPI_V)]);
+    renderPage(<MarketContextBand />);
+    const card = await screen.findByRole('article', { name: 'Resultado' });
+    expect(within(card).queryByText(/indisponível/i)).toBeNull();
+  });
+
   it('abaixo e igual também aparecem em palavras; a seta e a palavra nunca usam cor de bom/ruim (verde/vermelho)', async () => {
     dados([
       saiu('NFP-x', 'NFP', 20 * 60000, { previous: '+119 mil', actual: '+81 mil', source: 'BLS' }),
