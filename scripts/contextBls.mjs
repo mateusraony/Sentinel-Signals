@@ -92,6 +92,12 @@ export function parseBlsSeries(body, seriesId) {
   return values.size ? { values, reason: 'ok', gaps: lacunas } : { values: null, reason: 'no_data', gaps: lacunas };
 }
 
+// A "janela alternativa" (addendum 22): quando o mês-base do "em 12 meses" é uma lacuna OFICIAL, a variação entre o 1º mês publicado depois dela e o mês do
+// evento (11 meses). Formato fechado e auto-contido: "+3,5% de 2025-11 a 2026-10" (o sinal é obrigatório, menos no zero).
+const ALT_PCT = '(?:[+-]\\d{1,2},\\d|0,0)%';
+const ALT_YM = '\\d{4}-(?:0[1-9]|1[0-2])';
+export const ALT_TEXT_RE = new RegExp(`^${ALT_PCT} de (${ALT_YM}) a (${ALT_YM})$`);
+
 /** 'AAAA-MM' deslocado `delta` meses. */
 export function shiftMonth(ym, delta) {
   const [y, m] = ym.split('-').map(Number);
@@ -174,6 +180,49 @@ export function actualValueText(kind, seriesById, reference) {
     if (!seriesById?.[spec.month]?.has(reference) || !seriesById?.[spec.year]?.has(reference)) return null;
   }
   return text;
+}
+
+/** Quantos meses de `a` até `b` (ambos 'AAAA-MM'); negativo se `b` vem antes. */
+export function monthsBetween(a, b) {
+  const [ya, ma] = a.split('-').map(Number);
+  const [yb, mb] = b.split('-').map(Number);
+  return (yb * 12 + mb) - (ya * 12 + ma);
+}
+
+/** A janela alternativa é coerente? Formato fechado E de 2 a 11 meses (12 seria o número oficial, que não é "alternativo"). */
+export function isValidAltText(text) {
+  const m = typeof text === 'string' ? ALT_TEXT_RE.exec(text) : null;
+  if (!m) return false;
+  const n = monthsBetween(m[1], m[2]);
+  return n >= 2 && n <= 11;
+}
+
+/**
+ * A explicação do "em 12 meses" que NÃO existe (addendum 22): quando o mês que o evento mede já foi publicado, mas o mês-base (12 meses antes) é uma
+ * LACUNA OFICIAL registrada (o BLS nunca o publicou), devolve `{ gap }` (o motivo, de `GAP_REASONS`) e, se o 1º mês publicado depois da lacuna existe,
+ * `alt` (a variação até o mês do evento). Falta de dado SEM registro de lacuna não vale (não se afirma o que não se sabe); nunca se estima nem interpola.
+ * @param {string} kind 'CPI' | 'PPI' | 'NFP' @param {Record<string, Map<string, number>|null>} seriesById
+ * @param {Record<string, Map<string, string>|null>} gapsById lacunas oficiais por série (mês → motivo)
+ * @returns {{ gap: string, alt?: string }|null}
+ */
+export function gapNoteValues(kind, seriesById, gapsById, reference) {
+  const spec = BLS_SERIES[kind];
+  if (!spec?.year || !MONTH_RE.test(reference ?? '')) return null;
+  const yoy = seriesById?.[spec.year];
+  const gaps = gapsById?.[spec.year];
+  if (!(yoy instanceof Map) || !(gaps instanceof Map)) return null;
+  const base = shiftMonth(reference, -12);
+  if (!yoy.has(reference) || yoy.has(base)) return null;
+  const reason = gaps.get(base);
+  if (!GAP_REASONS.includes(reason)) return null;
+  const out = { gap: reason };
+  const start = shiftMonth(base, 1);
+  const pct = pctChange(yoy.get(reference), yoy.get(start));
+  if (pct !== null && Math.abs(pct) <= MAX_ABS_YEAR_PCT) {
+    const text = `${formatPct(pct)} de ${start} a ${reference}`;
+    if (isValidAltText(text)) out.alt = text;
+  }
+  return out;
 }
 
 /** O objeto público `values` de um evento ainda NÃO divulgado: `{ previous, source }` ou null. */

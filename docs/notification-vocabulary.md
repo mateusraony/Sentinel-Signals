@@ -91,7 +91,8 @@ Nenhum reaproveita glifo do trading (⏳, ⏱️, 📈/📉, 🌊, 🎯 já têm
 | 📣 | A divulgação saiu ("Saiu hoje às 10:30") |
 | 🆚 | Número anterior × número atual |
 | 📭 | Ainda sem o número do BLS (aguardando a divulgação) |
-| 🕳️ | Medida que saiu mas não deu para calcular (indisponível) |
+| 🕳️ | Medida que saiu sem número (indisponível, ou lacuna oficial do BLS: "sem número oficial" + "Por que não há número em 12 meses?") |
+| 🪟 | Janela alternativa: variação de um período mais curto (ex.: de nov/2025 a out/2026), só com índices que o BLS publicou — **não é o número oficial** e não se compara com ele |
 | 🪙 | O BTC depois da divulgação — só o que aconteceu, sem causa nem previsão |
 | 🕒 | Horizonte de tempo depois da divulgação (5 min, 30 min, 1 h) |
 | 🌡️ | Tamanho do movimento do BTC comparado a um dia normal — sem direção |

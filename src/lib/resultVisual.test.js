@@ -1,7 +1,7 @@
 // Visual do cartão de resultado (addendum 20 do item 285): geometria e frases PURAS. Contas à mão; o vocabulário nunca vira "bom/ruim" nem previsão.
 import { describe, it, expect } from 'vitest';
 import {
-  compareBars, deltaText, resultSummary, summaryText, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes,
+  compareBars, deltaText, resultSummary, summaryText, monthLabel, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes,
 } from './resultVisual';
 
 const MIN = 60 * 1000;
@@ -61,6 +61,70 @@ describe('deltaText — quanto mudou, em palavras', () => {
     expect(deltaText('+0,6%', '+0,6%')).toBeNull();
     expect(deltaText(null, '+0,6%')).toBeNull();
     expect(deltaText('+0,6%', 'lixo')).toBeNull();
+  });
+});
+
+describe('lacuna oficial — frases do cartão (addendum 22)', () => {
+  const yoyGap = { key: 'yoy', label: 'Em 12 meses', previous: '+3,7%', actual: null, revised: null, direction: null, gap: 'paralisacao_2025', gapMonth: '2025-10', alt: { pct: '+3,9%', from: '2025-11', to: '2026-10', months: 11 } };
+  const mes = { key: 'mom', label: 'No mês', previous: '+0,6%', actual: '+0,4%', revised: null, direction: 'abaixo' };
+
+  it('monthLabel: "AAAA-MM" em português curto; formato errado vira null', () => {
+    expect(monthLabel('2025-10')).toBe('out/2025');
+    expect(monthLabel('2026-01')).toBe('jan/2026');
+    expect(monthLabel('2026-12')).toBe('dez/2026');
+    for (const ruim of [null, undefined, 5, '', '2026-13', '2026-1', 'out/2025', '2026-10 <b>']) expect(monthLabel(ruim), JSON.stringify(ruim)).toBeNull();
+  });
+
+  it('a medida com lacuna diz POR QUÊ (nunca "indisponível" nem "aguardando")', () => {
+    const s = resultSummary([mes, yoyGap], true);
+    expect(s.map((x) => x.kind)).toEqual(['compare', 'gap']);
+    expect(summaryText(s[1])).toBe('Em 12 meses: sem número oficial neste mês. O BLS não divulgou o índice de out/2025 (paralisação do governo dos EUA).');
+    expect(summaryText(s[1])).not.toMatch(/indispon|aguardando/);
+    const generico = resultSummary([{ ...yoyGap, gap: 'nao_divulgado' }], true)[0];
+    expect(summaryText(generico)).toBe('Em 12 meses: sem número oficial neste mês. O BLS não divulgou o índice de out/2025.');
+    const semMes = resultSummary([{ ...yoyGap, gapMonth: null }], true)[0];
+    expect(summaryText(semMes)).toBe('Em 12 meses: sem número oficial neste mês. O BLS não divulgou o índice do mês usado na comparação (paralisação do governo dos EUA).');
+  });
+
+  it('sem lacuna registrada, a medida sem número continua "indisponível" (como antes)', () => {
+    const { gap, gapMonth, alt, ...semGap } = yoyGap; // eslint-disable-line no-unused-vars
+    expect(resultSummary([semGap], true)[0].kind).toBe('unavailable');
+  });
+
+  it('antes do número oficial a frase de espera vence, mesmo com lacuna', () => {
+    expect(resultSummary([mes, yoyGap], false)).toEqual([{ key: 'wait', kind: 'wait' }]);
+  });
+
+  it('altWindowText: título e texto da janela; dado ruim = null', () => {
+    expect(altWindowText(yoyGap.alt)).toEqual({ title: 'desde nov/2025 (11 meses)', body: 'de nov/2025 até out/2026, só com índices que o BLS publicou (sem ajuste sazonal).' });
+    for (const ruim of [null, undefined, {}, { from: '2025-11', to: '2026-10' }, { from: 'x', to: '2026-10', months: 11 }]) expect(altWindowText(ruim)).toBeNull();
+  });
+
+  it('gapExplanation: o que o BLS não publicou, o que isso impede, "nada foi estimado" e a ressalva da janela', () => {
+    expect(gapExplanation(yoyGap)).toEqual([
+      'O BLS não coletou os preços de out/2025 por causa da paralisação do governo dos EUA e nunca publicou esse índice.',
+      'Sem ele, o BLS também não divulga a variação em 12 meses de out/2026. Nada foi estimado.',
+      'A janela alternativa é só uma referência: tem 11 meses e não se compara com os +3,7% de 12 meses da divulgação anterior.',
+    ]);
+    expect(gapExplanation({ ...yoyGap, gap: 'nao_divulgado', alt: null })).toEqual([
+      'O BLS não publicou o índice de out/2025.',
+      'Sem ele, o BLS também não divulga a variação em 12 meses de out/2026. Nada foi estimado.',
+    ]);
+    // sem o mês-base e sem anterior: nada de mês inventado
+    const g = gapExplanation({ ...yoyGap, gapMonth: null, previous: null });
+    expect(g[0]).toBe('O BLS não coletou os preços do mês usado na comparação por causa da paralisação do governo dos EUA e nunca publicou esse índice.');
+    expect(g[1]).toBe('Sem ele, o BLS também não divulga a variação em 12 meses. Nada foi estimado.');
+    expect(g[2]).toBe('A janela alternativa é só uma referência: tem 11 meses e não se compara com o número oficial de 12 meses.');
+  });
+
+  it('o vocabulário continua neutro: nenhuma frase fala de previsão, compra/venda, bom/ruim nem "acima/abaixo" da janela', () => {
+    const todas = [
+      ...resultSummary([mes, yoyGap], true).map(summaryText),
+      ...gapExplanation(yoyGap), ...gapExplanation({ ...yoyGap, gap: 'nao_divulgado' }),
+      altWindowText(yoyGap.alt).title, altWindowText(yoyGap.alt).body,
+    ].join(' ');
+    expect(todas).not.toMatch(/probabilidade|vai subir|vai cair|\bcompra|\bvenda|proje[cç]|previs[aã]o|\bbom\b|\bruim\b|melhor|pior|forte|fraco|estimativa|aproxima/i);
+    expect(altWindowText(yoyGap.alt).title + altWindowText(yoyGap.alt).body).not.toMatch(/acima|abaixo/);
   });
 });
 

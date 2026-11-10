@@ -166,6 +166,16 @@ export function baseToSeries(base) {
   return out;
 }
 
+/** As lacunas da base como `{ id → Map(mês → motivo)|null }`, o formato que `gapNoteValues` consome. */
+export function baseToGaps(base) {
+  const out = {};
+  for (const id of IDS) {
+    const g = isObj(base?.gaps) && isObj(base.gaps[id]) ? Object.entries(base.gaps[id]) : [];
+    out[id] = g.length ? new Map(g) : null;
+  }
+  return out;
+}
+
 /**
  * A linha do resumo do coletor sobre a base: só contagens e códigos (o repositório é público e o resumo é legível sem login).
  * @param {{ written: number, rejected: number }} stats @param {string} estado ex.: 'gravada', 'inalterada'

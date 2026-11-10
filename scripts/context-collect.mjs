@@ -20,7 +20,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildEvents, buildStatus, assertPublicShape, fetchFredDates, sanitizePrevious, needsResultCheck, FRED_RELEASES } from './contextCollect.mjs';
 import { fetchBlsSeries, allSeriesIds } from './contextBls.mjs';
-import { mergeBase, baseToSeries, assertBaseShape, sanitizeBase, serializeBase, describeBase } from './contextBlsBase.mjs';
+import { mergeBase, baseToSeries, baseToGaps, assertBaseShape, sanitizeBase, serializeBase, describeBase } from './contextBlsBase.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -136,7 +136,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   // (por isso não se mistura a resposta crua da API por cima: foi o achado do Codex no PR #558).
   const baseFile = path.join(args.dir, 'bls-base.json');
   const merged = mergeBase(readBase(baseFile), { series: bls.series, gaps: bls.gaps });
-  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: baseToSeries(merged.base) });
+  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: baseToSeries(merged.base), blsGaps: baseToGaps(merged.base) });
   const status = buildStatus({ events, fredDatesByKind, nowMs });
   try {
     assertPublicShape(events, status);

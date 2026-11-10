@@ -54,7 +54,8 @@ export const CONTEXT_EMOJI = Object.freeze({
   released: '📣', // "Saiu hoje às 10:30": a divulgação aconteceu
   compare: '🆚', // "Anterior × Atual"
   waiting: '📭', // ainda sem o número do BLS
-  unavailable: '🕳️', // saiu, mas esta medida não deu para calcular
+  unavailable: '🕳️', // saiu, mas esta medida ficou sem número (indisponível, ou lacuna oficial do BLS)
+  window: '🪟', // "janela alternativa": período mais curto, só com índices publicados
   btc: '🪙', // "O BTC depois da divulgação"
   horizon: '🕒', // horizonte de tempo (5 min, 30 min, 1 h)
   gauge: '🌡️', // tamanho do movimento do BTC comparado a um dia normal
@@ -112,9 +113,36 @@ export function parseEvents(json) {
     if (!Number.isFinite(startMs)) continue;
     seen.add(e.id);
     const values = parseEventValues(e.values);
-    out.push({ id: e.id, kind: e.kind, status: e.status, startsAtUtc: e.startsAtUtc, startMs, ...(values ? { values } : {}) });
+    // O mês que o evento mede ('AAAA-MM'), só quando bem formado: a tela o usa para dizer QUAL índice o BLS não publicou (lacuna oficial).
+    const reference = typeof e.reference === 'string' && MONTH_RE.test(e.reference) ? e.reference : null;
+    out.push({ id: e.id, kind: e.kind, status: e.status, startsAtUtc: e.startsAtUtc, startMs, ...(reference ? { reference } : {}), ...(values ? { values } : {}) });
   }
   return out;
+}
+
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** Motivos de lacuna que o coletor publica (lista fechada; o teste confere que é a MESMA de `scripts/contextBls.mjs`). Outro valor é descartado. */
+export const GAP_REASONS = Object.freeze(['paralisacao_2025', 'nao_divulgado']);
+
+/** Meses de `a` até `b` ('AAAA-MM'). */
+const monthsFrom = (a, b) => (Number(b.slice(0, 4)) * 12 + Number(b.slice(5))) - (Number(a.slice(0, 4)) * 12 + Number(a.slice(5)));
+
+/** 'AAAA-MM' deslocado `delta` meses. */
+export function shiftMonth(ym, delta) {
+  const t = Number(ym.slice(0, 4)) * 12 + (Number(ym.slice(5)) - 1) + delta;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
+}
+
+/**
+ * A "janela alternativa" do coletor: "+3,5% de 2025-11 a 2026-10" → { pct: '+3,5%', from: '2025-11', to: '2026-10', months: 11 }. Só o formato fechado, com
+ * 2 a 11 meses (12 seria o número oficial); qualquer outra coisa, ou algo que não é texto, vira null.
+ */
+export function parseAlt(text) {
+  const m = typeof text === 'string' ? /^((?:[+-]\d{1,2},\d|0,0)%) de (\d{4}-(?:0[1-9]|1[0-2])) a (\d{4}-(?:0[1-9]|1[0-2]))$/.exec(text) : null;
+  if (!m) return null;
+  const months = monthsFrom(m[2], m[3]);
+  return months >= 2 && months <= 11 ? { pct: m[1], from: m[2], to: m[3], months } : null;
 }
 
 /** Texto dos números curto (ex.: "151 mil", "3,2%"); o arquivo vem da rede, então qualquer coisa fora disso é descartada. */
@@ -137,7 +165,10 @@ export function parseEventValues(raw) {
   const previous = cleanValueText(raw.previous);
   const actual = cleanValueText(raw.actual);
   if (!previous && !actual) return null;
-  return { previous, actual, revised: actual ? cleanValueText(raw.revised) : null, source: cleanValueText(raw.source) };
+  // Lacuna oficial (addendum 22): `gap` (motivo da lista fechada) e `alt` (janela alternativa, já interpretada) só existem junto do "Atual"; `alt` só junto do `gap`.
+  const gap = actual && GAP_REASONS.includes(raw.gap) ? raw.gap : null;
+  const alt = gap ? parseAlt(raw.alt) : null;
+  return { previous, actual, revised: actual ? cleanValueText(raw.revised) : null, ...(gap ? { gap } : {}), ...(alt ? { alt } : {}), source: cleanValueText(raw.source) };
 }
 
 /**
@@ -198,7 +229,7 @@ export function compareValues(actual, previous) {
  * As linhas do cartão de resultado: uma por medida (no mês, em 12 meses ou vagas do mês), com Anterior, Atual, Revisado e a comparação.
  * Cada lado pode faltar (`null`): o "Atual" some até o BLS divulgar; o "Revisado" só existe se o BLS corrigiu aquela medida.
  */
-export function resultRows(values) {
+export function resultRows(values, reference = null) {
   if (!values) return [];
   const sides = { previous: splitValueText(values.previous), actual: splitValueText(values.actual), revised: splitValueText(values.revised) };
   const pick = (list, key) => list.find((x) => x.key === key)?.value ?? null;
@@ -210,7 +241,14 @@ export function resultRows(values) {
     // "Revisado" só aparece onde o BLS de fato mudou aquela medida (no CPI, o 12 meses pode ficar igual enquanto o mês muda).
     const revised = revisedRaw !== null && revisedRaw !== previous ? revisedRaw : null;
     if (previous === null && actual === null && revised === null) continue;
-    rows.push({ key, label: MEASURE_ROW_LABELS[key], previous, actual, revised, direction: compareValues(actual, previous) });
+    const row = { key, label: MEASURE_ROW_LABELS[key], previous, actual, revised, direction: compareValues(actual, previous) };
+    // A medida "em 12 meses" que NÃO existe porque o mês-base é uma lacuna oficial do BLS: o motivo, o mês-base (se o evento traz o mês que mede) e a janela alternativa.
+    if (key === 'yoy' && actual === null && values.gap) {
+      row.gap = values.gap;
+      row.gapMonth = typeof reference === 'string' && MONTH_RE.test(reference) ? shiftMonth(reference, -12) : null;
+      row.alt = values.alt ?? null;
+    }
+    rows.push(row);
   }
   return rows;
 }
