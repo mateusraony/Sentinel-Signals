@@ -1,7 +1,7 @@
 // Visual do cartão de resultado (addendum 20 do item 285): geometria e frases PURAS. Contas à mão; o vocabulário nunca vira "bom/ruim" nem previsão.
 import { describe, it, expect } from 'vitest';
 import {
-  compareBars, deltaText, resultSummary, summaryText, monthLabel, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes,
+  compareBars, deltaText, resultSummary, summaryText, monthLabel, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes, nearestPoint, hasPercentValues, sourceLine,
 } from './resultVisual';
 
 const MIN = 60 * 1000;
@@ -303,5 +303,63 @@ describe('seriesExtremes — mínimo, máximo e último do BTC depois da divulga
     expect(seriesExtremes([])).toBeNull();
     expect(seriesExtremes(null)).toBeNull();
     expect(seriesExtremes([{ m: 1, pct: NaN }])).toBeNull();
+  });
+});
+
+// Dica do minigráfico (11/11/2026): o usuário passou o mouse no gráfico e nada aparecia.
+describe('nearestPoint — o ponto do minigráfico que o ponteiro "pega"', () => {
+  const g = sparkGeometry([{ m: 0, pct: 0 }, { m: 5, pct: -0.59 }, { m: 30, pct: -0.89 }, { m: 60, pct: -0.2 }], { width: 300, height: 112, pad: 10 });
+
+  it('devolve o ponto mais perto na horizontal (x do desenho: 0 min = 10, 30 min = 150, 60 min = 290)', () => {
+    expect(nearestPoint(g, 150).m).toBe(30);
+    expect(nearestPoint(g, 140).m).toBe(30);
+    expect(nearestPoint(g, 33).m).toBe(5);
+    expect(nearestPoint(g, 12).m).toBe(0);
+  });
+
+  it('fora do desenho cai no primeiro ou no último ponto; no meio entre dois, em qualquer um dos dois', () => {
+    expect(nearestPoint(g, -50).m).toBe(0);
+    expect(nearestPoint(g, 999).m).toBe(60);
+    expect([5, 30]).toContain(nearestPoint(g, (33.3 + 150) / 2).m);
+  });
+
+  it('devolve o próprio ponto da geometria (com x, y, minuto e variação)', () => {
+    const p = nearestPoint(g, 150);
+    expect(p).toBe(g.points.find((q) => q.m === 30));
+    expect(p.pct).toBe(-0.89);
+  });
+
+  it('sem geometria, sem pontos ou posição inválida: null', () => {
+    expect(nearestPoint(null, 10)).toBeNull();
+    expect(nearestPoint({ points: [] }, 10)).toBeNull();
+    expect(nearestPoint(g, NaN)).toBeNull();
+    expect(nearestPoint(g, undefined)).toBeNull();
+  });
+});
+
+describe('hasPercentValues — o cartão tem números em %? (Payroll é "mil", sem casa decimal)', () => {
+  it('CPI e PPI (texto com %) sim; Payroll, vazio e valores inválidos não', () => {
+    expect(hasPercentValues({ previous: '+0,6% m/m · +3,7% a/a' })).toBe(true);
+    expect(hasPercentValues({ actual: '+0,4% m/m' })).toBe(true);
+    expect(hasPercentValues({ revised: '+0,5%' })).toBe(true);
+    expect(hasPercentValues({ previous: '+29 mil', actual: '+165 mil' })).toBe(false);
+    expect(hasPercentValues({})).toBe(false);
+    expect(hasPercentValues(null)).toBe(false);
+    expect(hasPercentValues({ previous: 5, actual: null })).toBe(false);
+  });
+});
+
+describe('sourceLine — a fonte e as casas decimais em UMA linha curta', () => {
+  it('só diz "1 casa decimal" quando há número em % e só diz "BTC (2 casas)" quando há painel do BTC', () => {
+    expect(sourceLine({ source: 'BLS', percent: false, btc: false })).toBe('BLS');
+    expect(sourceLine({ source: 'BLS', percent: true, btc: false })).toBe('BLS (1 casa decimal, como divulgado)');
+    expect(sourceLine({ source: 'BLS', percent: true, btc: true })).toBe('BLS (1 casa decimal, como divulgado) · BTC: Binance (2 casas)');
+    expect(sourceLine({ source: 'BLS', percent: false, btc: true })).toBe('BLS · BTC: Binance (2 casas)');
+  });
+
+  it('sem fonte: só o BTC, ou nada', () => {
+    expect(sourceLine({ btc: true })).toBe('BTC: Binance (2 casas)');
+    expect(sourceLine({})).toBe('');
+    expect(sourceLine()).toBe('');
   });
 });

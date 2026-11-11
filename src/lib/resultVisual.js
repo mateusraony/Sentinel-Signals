@@ -168,6 +168,37 @@ export function markerAt(geo, m) {
 }
 
 /**
+ * O ponto do minigráfico mais perto de uma posição horizontal `vx` (nas unidades do DESENHO, de 0 a `geo.width`): é o que o ponteiro do mouse ou o dedo
+ * "pega" para mostrar a dica. Fora do desenho cai no primeiro ou no último ponto. Devolve o próprio ponto da geometria; null sem pontos ou com `vx` inválido.
+ * @returns {{ m: number, x: number, y: number, pct: number } | null}
+ */
+export function nearestPoint(geo, vx) {
+  if (!Array.isArray(geo?.points) || geo.points.length === 0 || !Number.isFinite(vx)) return null;
+  let best = geo.points[0];
+  for (const p of geo.points) {
+    if (Math.abs(p.x - vx) < Math.abs(best.x - vx)) best = p;
+  }
+  return best;
+}
+
+/** Algum dos números oficiais do evento é uma porcentagem (CPI, PPI)? O Payroll é em "mil", sem casa decimal. */
+export function hasPercentValues(values) {
+  return [values?.previous, values?.actual, values?.revised].some((t) => typeof t === 'string' && t.includes('%'));
+}
+
+/**
+ * A linha "Fonte" do rodapé, com as casas decimais de cada número (o BLS divulga as variações com 1 casa; o BTC é quotado com 2): sem isso, "+0,4%" do
+ * CPI e "-0,59%" do BTC parecem inconsistentes. Só fala de "1 casa" quando há número em % e só fala do BTC quando o painel do BTC está na tela.
+ * @param {{ source?: string, percent?: boolean, btc?: boolean }} [opcoes]
+ */
+export function sourceLine({ source, percent = false, btc = false } = {}) {
+  const parts = [];
+  if (source) parts.push(percent ? `${source} (1 casa decimal, como divulgado)` : source);
+  if (btc) parts.push('BTC: Binance (2 casas)');
+  return parts.join(' · ');
+}
+
+/**
  * Andamento de um horizonte (5, 30 ou 60 min) depois da divulgação: já fechou? senão, quanto falta e que fração do caminho já passou.
  * @returns {{ closed: boolean, remainingMin: number, fraction: number }}
  */

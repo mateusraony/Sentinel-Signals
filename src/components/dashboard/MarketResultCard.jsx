@@ -1,4 +1,4 @@
-import React, { useId } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { ArrowUp, ArrowDown, Equal, BadgeCheck } from 'lucide-react';
 import {
   EVENT_META, CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, KIND_EMOJI, CONTEXT_EMOJI, resultRows, brtDayDiff, relativeDayLabel, formatEventClock, formatAge, groupEventsByDay,
@@ -6,7 +6,7 @@ import {
 import { reactionNote } from '@/lib/reactionStats';
 import { HORIZONS_MIN, horizonLabel, formatMove } from '@/lib/btcAfterRelease';
 import {
-  compareBars, deltaText, resultSummary, summaryText, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes,
+  compareBars, deltaText, resultSummary, summaryText, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes, nearestPoint, hasPercentValues, sourceLine,
 } from '@/lib/resultVisual';
 
 // Cartão de RESULTADO da Agenda (Contexto de Mercado, addendum 20 do item 285 — redesenho de 10/11/2026, a pedido do usuário: "muito simples, cores
@@ -231,34 +231,86 @@ function MeasureTile({ r, official, accent }) {
   );
 }
 
-/** O minigráfico "BTC desde a divulgação": a linha cresce com o tempo (eixo fixo de 0 a 60 min), zero tracejado no meio, marcadores em 5, 30 e 60 min. */
+/** Onde a dica fica em relação ao ponto: do lado de DENTRO do desenho (embaixo se o ponto está na metade de cima, em cima se está na de baixo). */
+const TIP_BELOW = 'translate(-50%, 14px)';
+const TIP_ABOVE = 'translate(-50%, calc(-100% - 14px))';
+
+/**
+ * O minigráfico "BTC desde a divulgação": a linha cresce com o tempo (eixo fixo de 0 a 60 min), zero tracejado no meio, marcadores em 5, 30 e 60 min.
+ * Passando o mouse (ou tocando e arrastando o dedo) mostra, junto do ponto mais perto, a variação e o minuto: antes o gráfico era só um desenho e não
+ * respondia a nada (achado do usuário, 11/11/2026). No toque a dica fica depois de levantar o dedo e some ao tocar fora; o gesto vertical continua rolando a página.
+ */
 function Spark({ geo }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const areaRef = useRef(null);
+  const touchRef = useRef(false);
+  // O MINUTO sob o ponteiro (não o ponto): a série cresce a cada minuto e o ponto é sempre lido da geometria atual.
+  const [hoverM, setHoverM] = useState(null);
+  const hp = hoverM === null ? null : markerAt(geo, hoverM);
   const xAt = (m) => geo.pad + (m / 60) * (geo.width - geo.pad * 2);
   const down = geo.points[geo.points.length - 1].pct < 0;
+
+  const pick = (ev) => {
+    touchRef.current = ev.pointerType !== 'mouse';
+    const rect = areaRef.current?.getBoundingClientRect();
+    if (!rect || !rect.width) return;
+    const p = nearestPoint(geo, ((ev.clientX - rect.left) / rect.width) * geo.width);
+    if (p) setHoverM(p.m);
+  };
+  // Toque: a dica fica até um toque FORA do gráfico.
+  const showing = hoverM !== null;
+  useEffect(() => {
+    if (!showing) return undefined;
+    const outside = (ev) => { if (!areaRef.current?.contains(ev.target)) setHoverM(null); };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [showing]);
+
   return (
-    <svg viewBox={`0 0 ${geo.width} ${geo.height + 12}`} role="img" aria-label="Variação do BTC minuto a minuto desde a divulgação, em porcentagem"
-      className="w-full h-auto" style={{ overflow: 'visible' }}>
-      <defs>
-        {/* O preenchimento é mais forte junto da LINHA do BTC e some perto do zero (sem virar um bloco): cai = opaco embaixo, subiu = opaco em cima. */}
-        <linearGradient id={`${uid}-area`} x1="0" y1={down ? 1 : 0} x2="0" y2={down ? 0 : 1}>
-          <stop offset="0%" stopColor={BTC.from} stopOpacity="0.34" />
-          <stop offset="100%" stopColor={BTC.from} stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      <line x1={geo.pad} x2={geo.width - geo.pad} y1={geo.zeroY} y2={geo.zeroY} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 4" />
-      <path d={geo.area} fill={`url(#${uid}-area)`} />
-      <path d={geo.line} fill="none" stroke={BTC.from} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-      {HORIZONS_MIN.map((n) => {
-        const p = markerAt(geo, n);
-        return p && <circle key={n} cx={p.x} cy={p.y} r="4.5" fill="#0b1220" stroke={BTC.from} strokeWidth="2.5" />;
-      })}
-      {HORIZONS_MIN.map((n) => (
-        <text key={n} x={xAt(n)} y={geo.height + 6} textAnchor={n === 60 ? 'end' : 'middle'} fontSize="9" fontFamily="monospace" fill="rgba(148,163,184,0.95)">
-          {n === 60 ? '1 h' : `${n} min`}
-        </text>
-      ))}
-    </svg>
+    <div ref={areaRef} className="relative cursor-crosshair" style={{ touchAction: 'pan-y' }}
+      onPointerDown={pick} onPointerMove={pick} onPointerCancel={() => setHoverM(null)}
+      onPointerLeave={(ev) => { if (ev.pointerType === 'mouse') setHoverM(null); }}>
+      <svg viewBox={`0 0 ${geo.width} ${geo.height + 12}`} role="img" aria-label="Variação do BTC minuto a minuto desde a divulgação, em porcentagem"
+        className="block w-full h-auto" style={{ overflow: 'visible' }}>
+        <defs>
+          {/* O preenchimento é mais forte junto da LINHA do BTC e some perto do zero (sem virar um bloco): cai = opaco embaixo, subiu = opaco em cima. */}
+          <linearGradient id={`${uid}-area`} x1="0" y1={down ? 1 : 0} x2="0" y2={down ? 0 : 1}>
+            <stop offset="0%" stopColor={BTC.from} stopOpacity="0.34" />
+            <stop offset="100%" stopColor={BTC.from} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <line x1={geo.pad} x2={geo.width - geo.pad} y1={geo.zeroY} y2={geo.zeroY} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 4" />
+        <path d={geo.area} fill={`url(#${uid}-area)`} />
+        <path d={geo.line} fill="none" stroke={BTC.from} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        {HORIZONS_MIN.map((n) => {
+          const p = markerAt(geo, n);
+          return p && <circle key={n} cx={p.x} cy={p.y} r="4.5" fill="#0b1220" stroke={BTC.from} strokeWidth="2.5" />;
+        })}
+        {hp && (
+          <>
+            <line x1={hp.x} x2={hp.x} y1={geo.pad} y2={geo.height - geo.pad + 4} stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+            <circle cx={hp.x} cy={hp.y} r="5" fill={BTC.from} stroke="#0b1220" strokeWidth="2" />
+          </>
+        )}
+        {HORIZONS_MIN.map((n) => (
+          <text key={n} x={xAt(n)} y={geo.height + 6} textAnchor={n === 60 ? 'end' : 'middle'} fontSize="9" fontFamily="monospace" fill="rgba(148,163,184,0.95)">
+            {n === 60 ? '1 h' : `${n} min`}
+          </text>
+        ))}
+      </svg>
+      {hp && (
+        <div role="tooltip" className="pointer-events-none absolute z-10 rounded-lg px-2.5 py-1.5 font-mono tabular-nums whitespace-nowrap"
+          style={{
+            left: `${Math.min(78, Math.max(22, (hp.x / geo.width) * 100))}%`,
+            top: `${(hp.y / (geo.height + 12)) * 100}%`,
+            transform: hp.y < geo.height / 2 ? TIP_BELOW : TIP_ABOVE,
+            background: 'rgba(8,12,22,0.96)', border: `1px solid ${BTC.from}`, boxShadow: '0 8px 24px -8px rgba(0,0,0,0.85)',
+          }}>
+          <span className="block text-sm font-black text-foreground leading-none">{formatMove(hp.pct)}</span>
+          <span className="block text-10px text-muted-foreground mt-1">{hp.m === 0 ? 'na divulgação' : `aos ${hp.m} min`}</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -440,7 +492,11 @@ export function ResultCard({ e, now, checkedAtMs, btc }) {
               ? `compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).${partial ? (gapRow ? ' Sem número oficial: o BLS não publicou o índice usado na comparação.' : ' Indisponível: não deu para calcular com os dados do BLS.') : ''}`
               : `o número entra na próxima coleta${age ? ` (última checagem ${age})` : ''}.`}
           </p>
-          {e.values?.source && <p className="text-10px font-mono text-muted-foreground whitespace-nowrap">Fonte: {e.values.source}</p>}
+          {e.values?.source && (
+            <p className="text-10px font-mono text-muted-foreground">
+              Fonte: {sourceLine({ source: e.values.source, percent: hasPercentValues(e.values), btc: hasBtc })}
+            </p>
+          )}
         </footer>
       </div>
     </article>
