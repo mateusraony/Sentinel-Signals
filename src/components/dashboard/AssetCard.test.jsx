@@ -782,3 +782,116 @@ describe('AssetCard — estado do aviso manda no rótulo e no contorno (item 290
     expect(screen.getAllByText(/📡 Atrasado/).length).toBeGreaterThan(0);
   });
 });
+
+// Opção B (11/11/2026, pedido do usuário: "se tivesse alguma que fosse Buy o sistema ficava verde, Sell vermelho, e uma luz bem fraca piscando ao fundo"):
+// o cartão com OPERAÇÃO ATIVA fica claramente verde (compra) ou vermelho (venda), com uma luz suave e lenta. Continua valendo o item 277: NUNCA por distância
+// até a linha nem por aviso (o aviso pendente é âmbar e "perto da linha" é azul).
+describe('AssetCard — operação ativa: verde/vermelho claro e luz suave e lenta (opção B)', () => {
+  const ASSET = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN() };
+  const OP = (side, extra = {}) => ({ id: 'op1', status: 'SIGNAL_CONFIRMED', side, entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 110, tp2: 120, ...extra });
+  const cartao = (container) => {
+    const raiz = container.querySelector('[role="button"][aria-label$="abrir detalhes"]');
+    if (!raiz) throw new Error('cartão do ativo não encontrado no DOM');
+    return raiz;
+  };
+  const estilo = (container) => cartao(container).getAttribute('style') ?? '';
+  const borda = (container) => estilo(container).match(/border: ([^;]+);/)?.[1] ?? '';
+  const alfaDaBorda = (container) => Number(borda(container).match(/,\s*([\d.]+)\)\s*$/)?.[1]);
+  const pulsa = (container) => /op-glow-(buy|sell)/.test(cartao(container).className);
+  const VERDE = /0, 255, 128/;
+  const ROSA = /255, 20, 120/;
+
+  it('REGRESSÃO: compra ativa = contorno verde forte (antes 0,22 de opacidade, quase invisível), fundo com tom verde e luz lenta', () => {
+    const { container } = renderCard({ asset: ASSET, tradeOp: OP('BUY') });
+    expect(borda(container)).toMatch(VERDE);
+    expect(alfaDaBorda(container)).toBeGreaterThanOrEqual(0.5);
+    expect(estilo(container)).toMatch(/background: linear-gradient\([^;]*0, 255, 128/);
+    expect(cartao(container).className).toMatch(/op-glow-buy/);
+    expect(cartao(container).className).not.toMatch(/op-glow-sell/);
+    expect(container.textContent).toMatch(/Compra Ativa/);
+  });
+
+  it('venda ativa = rosa/vermelho forte, fundo com tom vermelho e a luz da venda', () => {
+    const { container } = renderCard({ asset: ASSET, tradeOp: OP('SELL', { initial_stop: 105, current_stop: 105, tp1: 90, tp2: 80 }) });
+    expect(borda(container)).toMatch(ROSA);
+    expect(alfaDaBorda(container)).toBeGreaterThanOrEqual(0.5);
+    expect(estilo(container)).toMatch(/background: linear-gradient\([^;]*255, 20, 120/);
+    expect(cartao(container).className).toMatch(/op-glow-sell/);
+    expect(container.textContent).toMatch(/Venda Ativa/);
+  });
+
+  it('runner ativo (depois do TP1) mantém a cor do lado e a luz', () => {
+    const { container } = renderCard({ asset: ASSET, tradeOp: OP('BUY', { status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 102 }) });
+    expect(borda(container)).toMatch(VERDE);
+    expect(cartao(container).className).toMatch(/op-glow-buy/);
+  });
+
+  it('item 277 preservado: SEM operação ativa nenhum cartão ganha a luz nem o fundo colorido — perto da linha (azul), aviso esperando (âmbar), aviso expirado e só informação', () => {
+    const PERTO = [{ timeframe: '1h', rf_filter_value: 100, last_close: 100.4, rf_direction: 1 }];
+    const velho = RF4H({ created_date: new Date(Date.now() - 3 * 24 * 3600000).toISOString() });
+    const casos = [
+      { asset: ASSET },
+      { asset: ASSET, states: PERTO },
+      { asset: ASSET, latestSignal: RF4H({ signal_type: 'BUY' }) },
+      { asset: ASSET, latestSignal: RF4H({ signal_type: 'SELL' }) },
+      { asset: ASSET, latestSignal: velho },
+      { asset: ASSET, latestSignal: RF4H({ source: 'macd', timeframe: '4h' }) },
+      { asset: ASSET, states: PERTO, latestSignal: RF4H() },
+    ];
+    for (const props of casos) {
+      const { container, unmount } = renderCard(props);
+      expect(pulsa(container), JSON.stringify(props).slice(0, 80)).toBe(false);
+      expect(estilo(container)).not.toMatch(/linear-gradient/);
+      expect(borda(container)).not.toMatch(VERDE);
+      expect(borda(container)).not.toMatch(ROSA);
+      unmount();
+    }
+  });
+
+  it('operação já encerrada (stop, alvo final) não conta como ativa: sem luz', () => {
+    for (const status of ['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED']) {
+      const { container, unmount } = renderCard({ asset: ASSET, tradeOp: OP('BUY', { status }) });
+      expect(pulsa(container), status).toBe(false);
+      expect(borda(container)).not.toMatch(VERDE);
+      unmount();
+    }
+  });
+
+  it('dado do ativo ATRASADO com operação ativa: o contorno segue forte, mas a luz NÃO pulsa (pulsar sugeriria dado vivo) e o 📡 avisa', () => {
+    const { container } = renderCard({ asset: { ...ASSET, last_scan_at: new Date(Date.now() - 2 * 3600000).toISOString() }, tradeOp: OP('BUY') });
+    expect(borda(container)).toMatch(VERDE);
+    expect(pulsa(container)).toBe(false);
+    expect(screen.getAllByText(/📡 Atrasado/).length).toBeGreaterThan(0);
+  });
+
+  it('operação recém-aberta: o flash de 4 s manda (sem a luz lenta por cima) e depois a luz lenta assume', () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = renderCard({ asset: ASSET, tradeOp: OP('BUY', { created_date: new Date().toISOString() }) });
+      expect(cartao(container).className).toMatch(/flash-buy/);
+      expect(pulsa(container)).toBe(false);
+      act(() => { vi.advanceTimersByTime(4100); });
+      expect(cartao(container).className).not.toMatch(/flash-buy/);
+      expect(pulsa(container)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a luz é LENTA (≥ 3 s por ciclo) e SUAVE (opacidade máxima ≤ 0,3), e respeita prefers-reduced-motion', () => {
+    const { container } = renderCard({ asset: ASSET, tradeOp: OP('BUY') });
+    const css = container.querySelector('style').textContent;
+    for (const lado of ['buy', 'sell']) {
+      const classe = css.match(new RegExp(`\\.op-glow-${lado}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+      expect(classe, `.op-glow-${lado}`).toMatch(/infinite/);
+      const segundos = Number(classe.match(/([\d.]+)s/)?.[1]);
+      expect(segundos, `ciclo ${lado}`).toBeGreaterThanOrEqual(3);
+      const quadros = css.match(new RegExp(`@keyframes op-glow-${lado}\\s*\\{(.*?)\\}\\s*\\}`, 's'))?.[1] ?? '';
+      const alfas = [...quadros.matchAll(/rgba\([^)]*,\s*([\d.]+)\)/g)].map((m) => Number(m[1]));
+      expect(alfas.length, `quadros ${lado}`).toBeGreaterThan(0);
+      expect(Math.max(...alfas), `opacidade máxima ${lado}`).toBeLessThanOrEqual(0.3);
+    }
+    const reduzido = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([^@]*)\}\s*(?:\n|$|`)/)?.[1] ?? css.slice(css.indexOf('prefers-reduced-motion'));
+    expect(reduzido).toMatch(/\.op-glow-buy,\s*\.op-glow-sell\s*\{\s*animation:\s*none;?\s*\}/);
+  });
+});
