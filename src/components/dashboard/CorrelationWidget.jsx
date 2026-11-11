@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import moment from 'moment';
@@ -147,6 +148,7 @@ export default function CorrelationWidget() {
           {symbols.map(sym => (
             <span key={sym} className="flex items-center gap-1 text-9px font-mono px-2 py-1 rounded-md"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}>
+              <TokenIcon symbol={sym} size={12} />
               {sym.replace('USDT', '')}
               <button onClick={() => setSymbols(s => s.filter(x => x !== sym))} className="hover:opacity-70"
                 aria-label={`Remover ${sym.replace('USDT', '')} da comparação`}>
@@ -168,7 +170,7 @@ export default function CorrelationWidget() {
                 <button key={a.id} onClick={() => { setSymbols(s => [...s, a.symbol]); setShowAdd(false); }}
                   className="block w-full text-left px-3 py-1.5 text-9px font-mono hover:bg-white/[0.04]"
                   style={{ color: 'rgba(255,255,255,0.7)' }}>
-                  {a.display_name} <span className="text-muted-foreground">({a.symbol})</span>
+                  <TokenIcon symbol={a.symbol} size={12} className="mr-1.5" />{a.display_name} <span className="text-muted-foreground">({a.symbol})</span>
                 </button>
               ))}
             </div>
@@ -203,7 +205,7 @@ export default function CorrelationWidget() {
                   contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                   formatter={(value, name) => [`${value}%`, String(name).replace('USDT', '')]}
                 />
-                <Legend wrapperStyle={{ fontSize: 9, fontFamily: 'monospace' }} formatter={(v) => String(v).replace('USDT', '')} />
+                <Legend wrapperStyle={{ fontSize: 9, fontFamily: 'monospace' }} formatter={(v) => <span className="inline-flex items-center gap-1"><TokenIcon symbol={String(v)} size={12} />{String(v).replace('USDT', '')}</span>} />
                 {analysis.validSymbols.map((sym, i) => (
                   <Line key={sym} type="monotone" dataKey={sym} stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={1.5} dot={false} />
                 ))}
@@ -217,14 +219,14 @@ export default function CorrelationWidget() {
                 <tr>
                   <th className="text-left px-2 py-1 text-muted-foreground"></th>
                   {analysis.validSymbols.map(sym => (
-                    <th key={sym} className="px-2 py-1 text-muted-foreground text-center">{sym.replace('USDT', '')}</th>
+                    <th key={sym} className="px-2 py-1 text-muted-foreground text-center"><TokenIcon symbol={sym} size={12} className="mr-1" />{sym.replace('USDT', '')}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {analysis.validSymbols.map(rowSym => (
                   <tr key={rowSym}>
-                    <td className="px-2 py-1 text-muted-foreground font-bold">{rowSym.replace('USDT', '')}</td>
+                    <td className="px-2 py-1 text-muted-foreground font-bold"><TokenIcon symbol={rowSym} size={12} className="mr-1" />{rowSym.replace('USDT', '')}</td>
                     {analysis.validSymbols.map(colSym => {
                       const v = analysis.matrix[rowSym][colSym];
                       return (

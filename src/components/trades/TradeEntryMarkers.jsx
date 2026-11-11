@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useId, useMemo } from 'react';
 import {
   ComposedChart, Area, XAxis, YAxis, Tooltip,
@@ -64,7 +65,7 @@ const CustomTooltip = ({ active, payload }) => {
     <div className="rounded-lg px-3 py-2.5 text-10px font-mono space-y-1"
       style={{ background: 'rgba(6,8,15,0.97)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 180, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
       <div className="font-bold flex items-center gap-1.5" style={{ color: d.side === 'BUY' ? '#00ff80' : '#ff1478' }}>
-        {isEntry ? '▲ ENTRADA' : '● SAÍDA'} — {d.side} {d.symbol}
+        {isEntry ? '▲ ENTRADA' : '● SAÍDA'} — {d.side} <TokenIcon symbol={d.symbol} size={14} />{d.symbol}
       </div>
       <div className="text-muted-foreground">{d.date}</div>
       {!isEntry && (
@@ -240,6 +241,7 @@ export default function TradeEntryMarkers({ history }) {
             <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg text-9px font-mono"
               style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${color}22` }}>
               <span style={{ color: d.side === 'BUY' ? '#00ff80' : '#ff1478' }}>{d.side === 'BUY' ? '▲' : '▼'}</span>
+              <TokenIcon symbol={d.symbol} size={12} />
               <span style={{ color: 'rgba(255,255,255,0.5)' }}>{d.symbol}</span>
               <span style={{ color }} className="font-bold">{d.pnl >= 0 ? '+' : ''}{d.pnl?.toFixed(1)}%</span>
             </div>

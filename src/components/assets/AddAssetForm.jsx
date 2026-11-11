@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import TokenIcon, { hasTokenLogo } from '@/components/TokenIcon';
+import React, { useRef, useState } from 'react';
 import { backend } from '@/api/entities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,21 +28,29 @@ export default function AddAssetForm({ onSuccess }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [validated, setValidated] = useState(false);
+  // Número da consulta de validação em andamento. Qualquer edição do símbolo (digitar ou "Adicionar rápido") invalida a consulta pendente: a resposta que
+  // chegar depois pertence ao texto ANTIGO e não pode marcar o texto novo como válido (achado do Codex, PR #565: liberava "Adicionar Ativo" sem validar).
+  const validationRun = useRef(0);
 
   const handleValidate = async () => {
     if (!symbol.trim()) return;
+    const run = ++validationRun.current;
+    const validado = symbol; // o texto que esta consulta valida (a mensagem de erro cita ele, não o que estiver digitado quando a resposta voltar)
     setValidating(true);
     setError('');
     setValidated(false);
     try {
-      const isValid = await validateSymbol(symbol.toUpperCase().trim());
+      const isValid = await validateSymbol(validado.toUpperCase().trim());
+      if (run !== validationRun.current) return; // texto editado no meio: resposta antiga, descarta
       if (isValid) setValidated(true);
-      else setError(`"${symbol}" não encontrado na Binance`);
+      else setError(`"${validado}" não encontrado na Binance`);
     } catch (err) {
-      logError('AddAssetForm', `Falha ao validar símbolo ${symbol}`, { error: err.message });
+      logError('AddAssetForm', `Falha ao validar símbolo ${validado}`, { error: err.message });
+      if (run !== validationRun.current) return;
       setError('Falha ao validar símbolo — verifique sua conexão e tente de novo.');
     } finally {
-      setValidating(false);
+      // Só a consulta mais recente desliga o "validando": uma antiga que termina tarde não apaga o indicador da consulta nova.
+      if (run === validationRun.current) setValidating(false);
     }
   };
 
@@ -80,7 +89,10 @@ export default function AddAssetForm({ onSuccess }) {
     }
   };
 
-  const handleQuickAdd = (pair) => { setSymbol(pair.symbol); setDisplayName(pair.name); setValidated(true); setError(''); };
+  // Qualquer troca de símbolo cancela a consulta pendente (ver validationRun) e solta o "validando" que ela segurava.
+  const cancelPendingValidation = () => { validationRun.current += 1; setValidating(false); };
+
+  const handleQuickAdd = (pair) => { cancelPendingValidation(); setSymbol(pair.symbol); setDisplayName(pair.name); setValidated(true); setError(''); };
 
   return (
     <div className="space-y-5">
@@ -96,7 +108,7 @@ export default function AddAssetForm({ onSuccess }) {
                 border: symbol === pair.symbol ? '1px solid rgba(0,255,128,0.35)' : '1px solid rgba(255,255,255,0.07)',
                 color: symbol === pair.symbol ? '#00ff80' : 'rgba(255,255,255,0.5)',
               }}
-            >{pair.name}</button>
+            ><TokenIcon symbol={pair.symbol} size={14} className="mr-1.5" />{pair.name}</button>
           ))}
         </div>
       </div>
@@ -108,7 +120,7 @@ export default function AddAssetForm({ onSuccess }) {
           <div className="flex gap-2">
             <Input
               value={symbol}
-              onChange={e => { setSymbol(e.target.value); setValidated(false); setError(''); }}
+              onChange={e => { cancelPendingValidation(); setSymbol(e.target.value); setValidated(false); setError(''); }}
               placeholder="BTCUSDT"
               className="font-mono text-sm"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)' }}
@@ -136,8 +148,15 @@ export default function AddAssetForm({ onSuccess }) {
           </div>
         )}
         {validated && (
-          <div className="flex items-center gap-2 text-xs font-mono" style={{ color: '#00ff80' }}>
-            <CheckCircle2 className="w-3.5 h-3.5" />Símbolo válido na Binance
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-xs font-mono" style={{ color: '#00ff80' }}>
+              <CheckCircle2 className="w-3.5 h-3.5" />Símbolo válido na Binance
+            </div>
+            {/* Logo do token (11/11/2026): com logo na pasta, ele aparece; sem logo, o painel mostra a bolinha com a inicial. */}
+            <div className="flex items-center gap-2 text-10px font-mono text-muted-foreground">
+              <TokenIcon symbol={symbol} size={16} />
+              {hasTokenLogo(symbol) ? 'Logo do token encontrado' : 'Token ainda sem logo no painel: aparece uma bolinha com a inicial'}
+            </div>
           </div>
         )}
 

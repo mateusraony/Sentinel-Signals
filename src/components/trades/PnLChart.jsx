@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useId, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import moment from 'moment';
@@ -20,7 +21,7 @@ const CustomTooltip = ({ active, payload, label }) => {
           {d.cumulative >= 0 ? '+' : ''}{d.cumulative?.toFixed(2)}%
         </span>
       </div>
-      <div className="text-9px font-mono text-muted-foreground mt-0.5">{d.symbol} {d.side} {d.tf}</div>
+      <div className="text-9px font-mono text-muted-foreground mt-0.5 flex items-center gap-1"><TokenIcon symbol={d.symbol} size={12} />{d.symbol} {d.side} {d.tf}</div>
     </div>
   );
 };

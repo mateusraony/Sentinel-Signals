@@ -74,3 +74,14 @@ describe('ComparePanel — variação de 24h com rótulo (item 279)', () => {
     expect(screen.queryByText(/NaN/)).toBeNull();
   });
 });
+
+// Logo do token (11/11/2026): o cabeçalho de cada coluna do comparador mostra o logo do ativo.
+describe('ComparePanel — logo do token no cabeçalho de cada coluna', () => {
+  it('A mostra o logo do BTC e B o do ETH, e os nomes continuam achados por texto', () => {
+    const { container } = renderPanel();
+    expect(container.querySelector('img[data-token="BTC"]')).not.toBeNull();
+    expect(container.querySelector('img[data-token="ETH"]')).not.toBeNull();
+    expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('ETH/USDT').length).toBeGreaterThan(0);
+  });
+});

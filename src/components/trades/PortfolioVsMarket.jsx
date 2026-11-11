@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -77,7 +78,7 @@ function CustomTooltip({ active, payload, marketLabel }) {
         <div key={i} className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5" style={{ color: entry.color }}>
             <span className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
-            {entry.name === 'portfolio' ? 'Minha Carteira' : entry.name === 'market' ? `${marketLabel} (Mercado)` : entry.name}
+            {entry.name === 'portfolio' ? 'Minha Carteira' : entry.name === 'market' ? <>{marketLabel === 'BTC' && <TokenIcon symbol="BTC" size={12} className="mr-1" />}{`${marketLabel} (Mercado)`}</> : entry.name}
           </span>
           <span className="font-bold" style={{ color: entry.value >= 0 ? '#00ff80' : '#ff1478' }}>
             {fmtPct(entry.value)}
@@ -86,7 +87,7 @@ function CustomTooltip({ active, payload, marketLabel }) {
       ))}
       {data?.symbol && (
         <div className="mt-1.5 pt-1.5 text-9px text-muted-foreground" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          Trade: {data.symbol} {data.side} → {data.status}
+          Trade: <TokenIcon symbol={data.symbol} size={12} className="mx-1" />{data.symbol} {data.side} → {data.status}
         </div>
       )}
     </div>
@@ -181,7 +182,7 @@ export default function PortfolioVsMarket({ trades }) {
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ background: '#ff9f43' }} />
-            <span style={{ color: 'rgba(255,255,255,0.5)' }}>{benchmarkOption.label}</span>
+            <span style={{ color: 'rgba(255,255,255,0.5)' }}>{benchmarkOption.key === 'BTC' && <TokenIcon symbol="BTC" size={12} className="mr-1" />}{benchmarkOption.label}</span>
             <span className="font-bold" style={{ color: !hasMarketData ? 'rgba(255,255,255,0.3)' : finalMarket >= 0 ? '#00ff80' : '#ff1478' }}>
               {marketFetching ? '…' : hasMarketData ? fmtPct(finalMarket) : '—'}
             </span>

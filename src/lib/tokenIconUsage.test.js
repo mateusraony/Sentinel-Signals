@@ -19,13 +19,24 @@ const PONTOS = [
   ['src/pages/Trades.jsx', 4],
   ['src/pages/Alerts.jsx', 1],
   ['src/pages/Verification.jsx', 1],
+  // Gráficos (11/11/2026): dicas, legendas, chips e cabeçalhos onde o nome do token aparece.
+  ['src/components/trades/PnLChart.jsx', 1],
+  ['src/components/trades/PortfolioVsMarket.jsx', 3],
+  ['src/components/trades/TradeEntryMarkers.jsx', 2],
+  ['src/components/dashboard/PerformanceOverview.jsx', 1],
+  ['src/components/dashboard/CorrelationWidget.jsx', 5],
+  ['src/components/dashboard/ComparePanel.jsx', 2],
+  ['src/components/dashboard/PredictiveAnalysis.jsx', 1],
+  ['src/pages/MonthlyReport.jsx', 1],
+  ['src/pages/Backtest.jsx', 2],
+  ['src/components/assets/AddAssetForm.jsx', 2],
 ];
 
 describe('TokenIcon — presente em todos os pontos onde o nome do token aparece', () => {
   for (const [arquivo, vezes] of PONTOS) {
     it(`${arquivo}: importa o componente e o usa ${vezes}x`, () => {
       const texto = readFileSync(arquivo, 'utf8');
-      expect(texto).toMatch(/import TokenIcon from '@\/components\/TokenIcon';/);
+      expect(texto).toMatch(/import TokenIcon(?:, \{[^}]*\})? from '@\/components\/TokenIcon';/);
       expect((texto.match(/<TokenIcon\b/g) ?? []).length).toBe(vezes);
     });
   }

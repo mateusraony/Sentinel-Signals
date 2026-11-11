@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
@@ -14,7 +15,7 @@ const CustomTooltip = ({ active, payload }) => {
   return (
     <div className="rounded-lg px-3 py-2 text-10px font-mono space-y-1"
       style={{ background: 'rgba(6,8,15,0.95)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
-      <div className="text-muted-foreground">{d.label}</div>
+      <div className="text-muted-foreground flex items-center gap-1.5"><TokenIcon symbol={d.symbol} size={12} />{d.label}</div>
       <div style={{ color: d.pnl >= 0 ? '#00ff80' : '#ff1478' }}>
         Trade: {d.pnl >= 0 ? '+' : ''}{d.pnl?.toFixed(2)}%
       </div>
@@ -50,6 +51,7 @@ export default function PerformanceOverview() {
         };
         return {
           label: `${op.symbol?.replace('USDT', '/USDT')} ${op.timeframe?.toUpperCase()} · ${moment(op.created_date).format('DD/MM HH:mm')}`,
+          symbol: op.symbol,
           date: moment(op.created_date).format('DD/MM'),
           pnl: parseFloat(pnlPct.toFixed(2)),
           cumulative: parseFloat(cumulativePct.toFixed(2)),

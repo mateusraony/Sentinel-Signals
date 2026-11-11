@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Crown, Swords, TrendingUp, TrendingDown } from 'lucide-react';
@@ -98,6 +99,7 @@ function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, i
           style={{ background: 'rgba(0,229,255,0.1)', color: '#00e5ff', border: '1px solid rgba(0,229,255,0.2)' }}>
           {label}
         </span>
+        <TokenIcon symbol={asset.symbol} size={18} />
         <span className="font-bold text-sm text-foreground">{asset.display_name}</span>
       </div>
 
@@ -229,6 +231,7 @@ export default function ComparePanel({ assetA, assetB, statesA, statesB, signalA
           <span className="text-10px font-mono px-2.5 py-1 rounded-lg flex items-center gap-1"
             style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }}>
             <Crown className="w-3 h-3" />
+            <TokenIcon symbol={(winner === 'A' ? assetA : assetB).symbol} size={14} />
             {winner === 'A' ? assetA.display_name : assetB.display_name}
           </span>
         )}

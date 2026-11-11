@@ -95,3 +95,15 @@ describe('CorrelationWidget — eixo X do gráfico não está mais escondido (ac
     }
   });
 });
+
+// Logo do token (11/11/2026): cada símbolo escolhido para a comparação mostra o logo, e o nome do botão de remover não muda.
+describe('CorrelationWidget — logo do token nos símbolos escolhidos', () => {
+  it('BTC, ETH e SOL (os padrões) mostram o logo ao lado do nome', async () => {
+    const { container } = renderWidget();
+    await screen.findByRole('button', { name: 'Remover BTC da comparação' });
+    for (const t of ['BTC', 'ETH', 'SOL']) {
+      expect(container.querySelector(`img[data-token="${t}"]`), t).not.toBeNull();
+      expect(screen.getByRole('button', { name: `Remover ${t} da comparação` })).toBeTruthy();
+    }
+  });
+});

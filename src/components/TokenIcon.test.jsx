@@ -4,7 +4,7 @@
 import React from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import TokenIcon, { TOKEN_ICON_TICKERS } from './TokenIcon.jsx';
+import TokenIcon, { TOKEN_ICON_TICKERS, hasTokenLogo } from './TokenIcon.jsx';
 
 afterEach(() => cleanup());
 
@@ -82,5 +82,14 @@ describe('TokenIcon — entrada sem token', () => {
       expect(container.innerHTML, String(symbol)).toBe('');
       unmount();
     }
+  });
+});
+
+describe('hasTokenLogo — o token tem logo na pasta? (usado no cadastro de ativo novo)', () => {
+  it('token com logo (em qualquer grafia) sim; token novo, vazio e inválido não', () => {
+    for (const t of COM_LOGO) expect(hasTokenLogo(`${t}USDT`), t).toBe(true);
+    expect(hasTokenLogo('btc/usdt')).toBe(true);
+    for (const t of SEM_LOGO) expect(hasTokenLogo(`${t}USDT`), t).toBe(false);
+    for (const x of ['', '  ', null, undefined, 42]) expect(hasTokenLogo(x), String(x)).toBe(false);
   });
 });
