@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import moment from 'moment';
@@ -250,7 +251,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
                   <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
                   <Tooltip
                     contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
-                    formatter={(value, name, props) => [`${value}%`, props.payload.symbol || 'cumulativePct']}
+                    formatter={(value, name, props) => [`${value}%`, props.payload.symbol ? <span className="inline-flex items-center gap-1"><TokenIcon symbol={props.payload.symbol} size={12} />{props.payload.symbol}</span> : 'cumulativePct']}
                   />
                   <Area type="monotone" dataKey="cumulativePct" stroke={naiveGradColor} strokeWidth={1.5}
                     fill="url(#naiveEquityGrad)" dot={false} activeDot={{ r: 3, fill: naiveGradColor }} />
@@ -368,7 +369,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
                 <ReferenceLine y={initialCapital} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
                 <Tooltip
                   contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
-                  formatter={(value, name, props) => [fmtUsd(value), props.payload.symbol || 'capital']}
+                  formatter={(value, name, props) => [fmtUsd(value), props.payload.symbol ? <span className="inline-flex items-center gap-1"><TokenIcon symbol={props.payload.symbol} size={12} />{props.payload.symbol}</span> : 'capital']}
                 />
                 <Area type="monotone" dataKey="capitalAfter" stroke={realGradColor} strokeWidth={1.5}
                   fill="url(#realEquityGrad)" dot={false} activeDot={{ r: 3, fill: realGradColor }} />

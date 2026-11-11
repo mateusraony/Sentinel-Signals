@@ -1,3 +1,4 @@
+import TokenIcon, { hasTokenLogo } from '@/components/TokenIcon';
 import React, { useState } from 'react';
 import { backend } from '@/api/entities';
 import { Button } from '@/components/ui/button';
@@ -96,7 +97,7 @@ export default function AddAssetForm({ onSuccess }) {
                 border: symbol === pair.symbol ? '1px solid rgba(0,255,128,0.35)' : '1px solid rgba(255,255,255,0.07)',
                 color: symbol === pair.symbol ? '#00ff80' : 'rgba(255,255,255,0.5)',
               }}
-            >{pair.name}</button>
+            ><TokenIcon symbol={pair.symbol} size={14} className="mr-1.5" />{pair.name}</button>
           ))}
         </div>
       </div>
@@ -136,8 +137,15 @@ export default function AddAssetForm({ onSuccess }) {
           </div>
         )}
         {validated && (
-          <div className="flex items-center gap-2 text-xs font-mono" style={{ color: '#00ff80' }}>
-            <CheckCircle2 className="w-3.5 h-3.5" />Símbolo válido na Binance
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-xs font-mono" style={{ color: '#00ff80' }}>
+              <CheckCircle2 className="w-3.5 h-3.5" />Símbolo válido na Binance
+            </div>
+            {/* Logo do token (11/11/2026): com logo na pasta, ele aparece; sem logo, o painel mostra a bolinha com a inicial. */}
+            <div className="flex items-center gap-2 text-10px font-mono text-muted-foreground">
+              <TokenIcon symbol={symbol} size={16} />
+              {hasTokenLogo(symbol) ? 'Logo do token encontrado' : 'Token ainda sem logo no painel: aparece uma bolinha com a inicial'}
+            </div>
           </div>
         )}
 

@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -177,6 +178,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
                 {selected.signal_type === 'BUY'
                   ? <TrendingUp className="w-4 h-4" style={{ color: '#00ff80' }} />
                   : <TrendingDown className="w-4 h-4" style={{ color: '#ff1478' }} />}
+                <TokenIcon symbol={selected.symbol} size={16} />
                 <span className="text-sm font-bold text-foreground">
                   {selected.symbol?.replace('USDT', '/USDT')} — {selected.signal_type} {selected.timeframe?.toUpperCase()}
                 </span>

@@ -17,6 +17,12 @@ const BY_TICKER = Object.fromEntries(
 /** Os tokens que têm logo na pasta (para o teste conferir que nenhum sumiu nem entrou por engano). */
 export const TOKEN_ICON_TICKERS = Object.freeze(Object.keys(BY_TICKER));
 
+/** O token deste símbolo tem logo na pasta? (o cadastro de ativo usa isto para avisar quando só vai aparecer a bolinha com a inicial) */
+export function hasTokenLogo(symbol) {
+  const ticker = baseAsset(symbol);
+  return Boolean(ticker && BY_TICKER[ticker]);
+}
+
 /**
  * @param {{ symbol?: unknown, size?: number, className?: string }} props `symbol` aceita "BTCUSDT", "BTC/USDT" ou "BTC"
  */

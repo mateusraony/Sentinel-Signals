@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
@@ -474,7 +475,7 @@ export default function MonthlyReport() {
                     return (
                       <tr key={op.id} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
                         <td className="px-4 py-2 text-muted-foreground">{moment(op.created_date).format('DD/MM HH:mm')}</td>
-                        <td className="px-4 py-2 text-foreground font-semibold">{op.symbol?.replace('USDT', '/USDT')}</td>
+                        <td className="px-4 py-2 text-foreground font-semibold"><TokenIcon symbol={op.symbol} size={16} className="mr-2" />{op.symbol?.replace('USDT', '/USDT')}</td>
                         <td className="px-4 py-2" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</td>
                         <td className="px-4 py-2 text-right text-muted-foreground">${formatPrice(op.entry_price)}</td>
                         <td className="px-4 py-2 text-right text-muted-foreground">{exitPrice ? `$${formatPrice(exitPrice)}` : '—'}</td>
