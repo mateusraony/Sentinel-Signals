@@ -24,6 +24,9 @@ DENTRO de `main()` e só observa o retorno (não toca `scanner.js`, não faz con
 Telegram. **SEM BANCO, de propósito** (um medidor que acordasse o Neon gastaria a cota que mede): nada de `DATABASE_URL`, `pg`, `adminEntities` nem `adminTelegram`
 (importa o banco e grava log no Postgres) — o envio usa `contextTelegram.mjs`. Travado por `neonUsageTripwire.test.js`. A regra "usa o Neon" é `usesNeonDatabase`
 (não o `workflowTouchesDatabase`, que contaria o `TEST_DATABASE_URL` do CI).
+`logs-retention.mjs` (item 298, `logs-retention.yml`) é a **retenção do `system_logs`**: a ÚNICA rotina automática que apaga dado do banco. A lógica mora em `db/logsRetention.mjs`
+(puro, sem import, só a tabela `system_logs`, nunca lê o conteúdo dos logs). **Simular é o padrão**; só o agendado aplica. Em falha o log mostra só um CÓDIGO (nunca a mensagem crua
+do driver: o log do Actions é público e a mensagem pode trazer endereço e senha do banco). Travado por `logsRetentionTripwire.test.js`; o SQL é provado em `db/logsRetention.pg.test.js`.
 `health-audit.mjs` (diária às 04:40 UTC + manual, `health-audit.yml`) é a
 auditoria de saúde read-only dos itens 164/165 — teto de leitura explícito, o
 job falha se ela escrever, e ela avisa no Telegram só quando acha algo.

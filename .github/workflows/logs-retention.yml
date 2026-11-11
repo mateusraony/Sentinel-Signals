@@ -1,0 +1,78 @@
+name: Retenção dos logs do sistema (Sentinel Signals)
+
+# docs/known-risks.md item 298 (roadmap, "Prioridades de hoje", linha 4: a tabela `system_logs` cresce sem limite e nada a poda).
+# Apaga os logs do painel/scan MAIS VELHOS que N dias (padrão 30), em lotes, e NADA mais: nenhuma operação, ativo, sinal ou configuração é tocado.
+# Quem faz o trabalho é `scripts/logs-retention.mjs` (lógica em `db/logsRetention.mjs`, testada contra Postgres de verdade).
+#
+# COMO USAR (botão "Run workflow", dois campos):
+#  - "O que fazer?": `simular` (padrão) só CONTA e mostra o que seria apagado, sem apagar nada; `aplicar` apaga de verdade.
+#  - "Guardar quantos dias de log?": de 7 a 3650 (vazio = 30).
+# A execução AGENDADA (1x por dia, 04:52 UTC) sempre aplica, com 30 dias. Quem quer ver antes o que seria apagado roda a simulação à mão.
+#
+# TRAVAS (cada uma testada em db/logsRetention*.test.js e scripts/logsRetentionTripwire.test.js):
+#  - corte estrito (o log com exatamente N dias fica), linha sem data nunca é apagada;
+#  - se NÃO há nenhum log recente (queda longa do sistema ou relógio errado) não apaga nada: nessa hora os logs antigos são a evidência;
+#  - lotes de 5.000 e teto de 100 lotes por execução (o resto fica para a próxima).
+# Se algo sair errado, o backup diário do Postgres (`backup-postgres.yml`) guarda os últimos 30 dias de cópia, com os logs dentro.
+#
+# O QUE NÃO FAZ: no Neon grátis, apagar linhas não devolve espaço em disco na hora (o espaço volta a ser usado pelos logs novos, então a tabela
+# PARA de crescer, que é o que importa). O que encolhe de verdade é o backup e a leitura.
+#
+# Isolamento: só `DATABASE_URL` + `DATABASE_SSL_CA` (nenhum outro segredo, nada de Telegram, Firebase nem chave de backup), `contents: read`.
+# O repositório é PÚBLICO: o log e o resumo do job só têm números, níveis e datas, nunca o conteúdo de um log nem o endereço do banco.
+# Falha = job vermelho na aba Actions (não manda Telegram).
+on:
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "O que fazer? simular = só conta, não apaga nada (padrão) · aplicar = apaga de verdade"
+        type: choice
+        options:
+          - simular
+          - aplicar
+        default: simular
+      dias:
+        description: "Guardar quantos dias de log? (de 7 a 3650; vazio = 30)"
+        type: string
+        required: false
+        default: "30"
+  schedule:
+    # 1x por dia, depois da auditoria de saúde das 04:40 UTC (que lê os logs) e longe do backup das 03:37. Diária de propósito: o orçamento
+    # de computação do Neon (scripts/neonComputeBudget.mjs) só entende cron diário, e cada disparo custa ~6 min de banco acordado.
+    - cron: "52 4 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: logs-retention
+  cancel-in-progress: false
+
+jobs:
+  retencao:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apagar logs antigos (ou só simular)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Certificado da autoridade do banco (item 282): só precisa existir se o provedor assina com CA própria. Vazio = comportamento de sempre.
+          DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
+          # Agendado = aplicar; manual = o que foi escolhido (padrão simular). Entra só por `env:`, nunca dentro do `run:`.
+          RETENCAO_MODO: ${{ github.event_name == 'schedule' && 'aplicar' || inputs.modo }}
+          RETENCAO_DIAS: ${{ inputs.dias }}
+        # set -o pipefail: sem isso a falha do script ficaria mascarada pelo `tee` (mesmo cuidado de health-audit.yml).
+        run: |
+          set -o pipefail
+          node scripts/logs-retention.mjs | tee -a "$GITHUB_STEP_SUMMARY"
