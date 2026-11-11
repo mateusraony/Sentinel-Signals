@@ -75,6 +75,13 @@ export const CATEGORY_ACCENTS = Object.freeze({
 });
 /** O BTC: ciano (papel "BTC" no cartão de resultado). Nenhuma categoria usa este tom. */
 export const BTC_ACCENT = Object.freeze({ from: '#22d3ee', to: '#38bdf8' });
+/**
+ * Cor do SINAL da variação do PREÇO do BTC (pedido do usuário, 11/11/2026: "cores nos números quando for positivo ou negativo, pro visual ficar mais rápido"):
+ * verde = subiu, vermelho = caiu, neutro = sem variação. Vale SÓ para o BTC (dica do gráfico, fichas de 5 min / 30 min / 1 h, mínimo e máximo). NÃO vale para os
+ * números do BLS: lá "acima" ou "abaixo" não é "bom" nem "ruim" e verde/vermelho diria isso. O "+" e o "-" continuam escritos no texto (a cor reforça, não é a única
+ * pista: daltonismo). O vermelho é rosado de propósito: fica a ≥ 15° de matiz do coral da inflação e do rosa dos juros, que aparecem no MESMO cartão. Travado por teste.
+ */
+export const MOVE_COLORS = Object.freeze({ up: '#4ade80', down: '#ff5a6e', flat: '#f8fafc' });
 export const IMPACT_LABELS = Object.freeze({ 3: 'Impacto alto', 2: 'Impacto médio', 1: 'Impacto baixo' });
 export const EVENT_HINTS = Object.freeze({
   CPI: 'inflação dos EUA',

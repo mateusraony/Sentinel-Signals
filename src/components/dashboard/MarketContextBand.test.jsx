@@ -869,6 +869,72 @@ describe('MarketContextBand — cartão de resultado redesenhado', () => {
     });
   });
 
+  // ---- Cores do sinal nos números do BTC (11/11/2026): verde positivo, vermelho negativo, neutro zero; os números do BLS NÃO ganham essas cores ----------------------
+  describe('cores do sinal nos números do BTC', () => {
+    const VERDE = 'rgb(74, 222, 128)';
+    const VERMELHO = 'rgb(255, 90, 110)';
+    const NEUTRO = 'rgb(248, 250, 252)';
+    beforeAll(() => {
+      if (!window.PointerEvent) {
+        window.PointerEvent = class extends MouseEvent {
+          constructor(type, init = {}) { super(type, init); this.pointerType = init.pointerType ?? 'mouse'; }
+        };
+      }
+    });
+    async function montar(closes = COMPLETO, values = { previous: '+29 mil', actual: '+165 mil', source: 'BLS' }) {
+      btcMock.mockImplementation(async (t0) => velas(t0, closes));
+      dados([saiu('NFP-c', 'NFP', 3 * 60 * MIN, values)]);
+      renderPage(<MarketContextBand />);
+      const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
+      const area = within(bloco).getByRole('img', { name: /Variação do BTC minuto a minuto/ }).parentElement;
+      area.getBoundingClientRect = () => ({ left: 0, top: 0, width: 300, height: 124, right: 300, bottom: 124 });
+      return { bloco, area };
+    }
+
+    it('REGRESSÃO: as fichas de 5 min (+0,12%) ficam verdes e as de 30 min (-0,20%) e 1 h (-0,54%) ficam vermelhas', async () => {
+      const { bloco } = await montar();
+      expect(within(bloco).getByText('Em 5 min').nextSibling.style.color).toBe(VERDE);
+      expect(within(bloco).getByText('Em 30 min').nextSibling.style.color).toBe(VERMELHO);
+      expect(within(bloco).getByText('Em 1 h').nextSibling.style.color).toBe(VERMELHO);
+    });
+
+    it('mínimo (-0,54%) vermelho e máximo (+0,12%) verde', async () => {
+      const { bloco } = await montar();
+      expect(within(bloco).getByText('Mínimo').nextSibling.style.color).toBe(VERMELHO);
+      expect(within(bloco).getByText('Máximo').nextSibling.style.color).toBe(VERDE);
+    });
+
+    it('a dica do gráfico usa a cor do sinal do ponto (30 min vermelho, 5 min verde, o minuto 0 neutro)', async () => {
+      const { bloco, area } = await montar();
+      fireEvent.pointerMove(area, { clientX: 150, pointerType: 'mouse' });
+      expect(within(bloco).getByRole('tooltip').firstChild.style.color).toBe(VERMELHO);
+      fireEvent.pointerMove(area, { clientX: 34, pointerType: 'mouse' });
+      expect(within(bloco).getByRole('tooltip').firstChild.style.color).toBe(VERDE);
+      fireEvent.pointerMove(area, { clientX: 10, pointerType: 'mouse' });
+      expect(within(bloco).getByRole('tooltip').textContent).toBe('0,00%na divulgação');
+      expect(within(bloco).getByRole('tooltip').firstChild.style.color).toBe(NEUTRO);
+    });
+
+    it('o texto continua dizendo o sinal ("+" e "-"): a cor reforça, não é a única pista', async () => {
+      const { bloco } = await montar();
+      expect(within(bloco).getByText('Em 5 min').nextSibling.textContent).toBe('+0,12%');
+      expect(within(bloco).getByText('Em 30 min').nextSibling.textContent).toBe('-0,20%');
+    });
+
+    it('os números do BLS (anterior, atual) NÃO ganham verde nem vermelho: "acima" ou "abaixo" não é "bom" nem "ruim"', async () => {
+      btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+      dados([saiu('CPI-c', 'CPI', 3 * 60 * MIN, { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', source: 'BLS' })]);
+      renderPage(<MarketContextBand />);
+      const card = await screen.findByRole('article', { name: 'Resultado' });
+      await within(card).findByRole('complementary', { name: 'O BTC depois da divulgação' });
+      const painelBtc = within(card).getByRole('complementary', { name: 'O BTC depois da divulgação' });
+      const proibidas = [VERDE, VERMELHO];
+      const foraDoBtc = [...card.querySelectorAll('[style*="color"]')].filter((el) => !painelBtc.contains(el));
+      expect(foraDoBtc.length).toBeGreaterThan(5); // não-vacuidade: há muito texto colorido fora do painel do BTC (as cores do tipo de notícia)
+      for (const el of foraDoBtc) expect(proibidas, el.textContent.slice(0, 40)).not.toContain(el.style.color);
+    });
+  });
+
   // ---- Nota de casas decimais no rodapé (11/11/2026): "+0,4%" do BLS (1 casa) e "-0,59%" do BTC (2 casas) pareciam inconsistentes -----------------------------
   describe('rodapé: a fonte diz as casas decimais de cada número', () => {
     it('CPI sem painel do BTC: "Fonte: BLS (1 casa decimal, como divulgado)"', async () => {

@@ -1,7 +1,9 @@
 // Visual do cartão de resultado (addendum 20 do item 285): geometria e frases PURAS. Contas à mão; o vocabulário nunca vira "bom/ruim" nem previsão.
 import { describe, it, expect } from 'vitest';
+import { formatMove } from './btcAfterRelease';
+import { MOVE_COLORS } from './marketContextBand';
 import {
-  compareBars, deltaText, resultSummary, summaryText, monthLabel, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes, nearestPoint, hasPercentValues, sourceLine,
+  compareBars, deltaText, resultSummary, summaryText, monthLabel, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes, nearestPoint, hasPercentValues, sourceLine, moveColor,
 } from './resultVisual';
 
 const MIN = 60 * 1000;
@@ -361,5 +363,39 @@ describe('sourceLine — a fonte e as casas decimais em UMA linha curta', () => 
     expect(sourceLine({ btc: true })).toBe('BTC: Binance (2 casas)');
     expect(sourceLine({})).toBe('');
     expect(sourceLine()).toBe('');
+  });
+});
+
+// Cores do sinal (11/11/2026): verde para positivo, vermelho para negativo, neutro para zero — sempre o MESMO sinal que o texto mostra.
+describe('moveColor — a cor segue o sinal que está escrito na tela', () => {
+  it('positivo verde, negativo vermelho, zero neutro', () => {
+    expect(moveColor(0.12)).toBe(MOVE_COLORS.up);
+    expect(moveColor(-0.2)).toBe(MOVE_COLORS.down);
+    expect(moveColor(0)).toBe(MOVE_COLORS.flat);
+  });
+
+  it('o que arredonda para 0,00% não tem sinal na tela e fica neutro (a cor nunca contradiz o texto)', () => {
+    expect(formatMove(0.004)).toBe('0,00%');
+    expect(moveColor(0.004)).toBe(MOVE_COLORS.flat);
+    expect(moveColor(-0.004)).toBe(MOVE_COLORS.flat);
+    expect(moveColor(-0.005)).toBe(MOVE_COLORS.flat); // Math.round(-0,5) é -0: sem sinal
+    expect(moveColor(0.005)).toBe(MOVE_COLORS.up); // +0,01%
+    expect(moveColor(-0.006)).toBe(MOVE_COLORS.down); // -0,01%
+  });
+
+  it('PROPRIEDADE: para qualquer valor, "+" no texto = verde, "-" = vermelho, sem sinal = neutro', () => {
+    for (let i = -300; i <= 300; i += 1) {
+      const v = i / 997; // valores quebrados, inclusive os de fronteira de arredondamento
+      const texto = formatMove(v);
+      const esperado = texto.startsWith('+') ? MOVE_COLORS.up : texto.startsWith('-') ? MOVE_COLORS.down : MOVE_COLORS.flat;
+      expect(moveColor(v), `${v} → ${texto}`).toBe(esperado);
+    }
+  });
+
+  it('sem número (NaN, null, texto): neutro', () => {
+    expect(moveColor(NaN)).toBe(MOVE_COLORS.flat);
+    expect(moveColor(null)).toBe(MOVE_COLORS.flat);
+    expect(moveColor(undefined)).toBe(MOVE_COLORS.flat);
+    expect(moveColor('abc')).toBe(MOVE_COLORS.flat);
   });
 });

@@ -6,7 +6,7 @@ import {
 import { reactionNote } from '@/lib/reactionStats';
 import { HORIZONS_MIN, horizonLabel, formatMove } from '@/lib/btcAfterRelease';
 import {
-  compareBars, deltaText, resultSummary, summaryText, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes, nearestPoint, hasPercentValues, sourceLine,
+  compareBars, deltaText, resultSummary, summaryText, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes, nearestPoint, hasPercentValues, sourceLine, moveColor,
 } from '@/lib/resultVisual';
 
 // Cartão de RESULTADO da Agenda (Contexto de Mercado, addendum 20 do item 285 — redesenho de 10/11/2026, a pedido do usuário: "muito simples, cores
@@ -306,7 +306,7 @@ function Spark({ geo }) {
             transform: hp.y < geo.height / 2 ? TIP_BELOW : TIP_ABOVE,
             background: 'rgba(8,12,22,0.96)', border: `1px solid ${BTC.from}`, boxShadow: '0 8px 24px -8px rgba(0,0,0,0.85)',
           }}>
-          <span className="block text-sm font-black text-foreground leading-none">{formatMove(hp.pct)}</span>
+          <span className="block text-sm font-black leading-none" style={{ color: moveColor(hp.pct) }}>{formatMove(hp.pct)}</span>
           <span className="block text-10px text-muted-foreground mt-1">{hp.m === 0 ? 'na divulgação' : `aos ${hp.m} min`}</span>
         </div>
       )}
@@ -331,7 +331,7 @@ function HorizonTiles({ e, now, moves }) {
               <p className="text-10px font-mono text-muted-foreground whitespace-nowrap">
                 <Emoji className="mr-1">{CONTEXT_EMOJI.horizon}</Emoji>Em {horizonLabel(n)}
               </p>
-              <p className="text-lg sm:text-2xl font-black font-mono tabular-nums leading-none" style={{ color: has ? '#f8fafc' : 'rgba(248,250,252,0.35)' }}>
+              <p className="text-lg sm:text-2xl font-black font-mono tabular-nums leading-none" style={{ color: has ? moveColor(v) : 'rgba(248,250,252,0.35)' }}>
                 {formatMove(v)}
               </p>
               {has ? (
@@ -393,11 +393,11 @@ function BtcPanel({ e, now, btc, className = '' }) {
         <dl className="flex flex-wrap gap-x-5 gap-y-1 text-11px font-mono tabular-nums">
           <div className="flex items-baseline gap-1.5">
             <dt className="text-muted-foreground">Mínimo</dt>
-            <dd className="font-bold text-foreground">{formatMove(ext.min.pct)} <span className="font-normal text-muted-foreground">aos {ext.min.m} min</span></dd>
+            <dd className="font-bold" style={{ color: moveColor(ext.min.pct) }}>{formatMove(ext.min.pct)} <span className="font-normal text-muted-foreground">aos {ext.min.m} min</span></dd>
           </div>
           <div className="flex items-baseline gap-1.5">
             <dt className="text-muted-foreground">Máximo</dt>
-            <dd className="font-bold text-foreground">{formatMove(ext.max.pct)} <span className="font-normal text-muted-foreground">aos {ext.max.m} min</span></dd>
+            <dd className="font-bold" style={{ color: moveColor(ext.max.pct) }}>{formatMove(ext.max.pct)} <span className="font-normal text-muted-foreground">aos {ext.max.m} min</span></dd>
           </div>
         </dl>
       )}
