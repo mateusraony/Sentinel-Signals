@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useEffect, useRef, useState } from 'react';
 import { TrendingUp, TrendingDown, X } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -108,6 +109,7 @@ export default function SignalToast({ signals = [], assets = [], onSelectAsset }
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
+                    <TokenIcon symbol={sig.symbol} size={16} />
                     <span className="font-bold text-xs text-foreground">{symbol}</span>
                     <span className="text-9px font-mono px-1.5 py-0.5 rounded"
                       style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}>

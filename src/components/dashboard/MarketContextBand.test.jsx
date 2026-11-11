@@ -613,6 +613,23 @@ describe('MarketContextBand — o BTC depois da divulgação', () => {
     expect(btcMock).toHaveBeenCalledWith(Date.parse(iso(NOW - 3 * 60 * MIN)));
   });
 
+  it('o título "O BTC depois da divulgação" leva o LOGO do BTC (e não o emoji de moeda, que em algumas telas aparece como uma lua), no cartão de resultado e na lista', async () => {
+    comVelas(COMPLETO);
+    dados([saiu('NFP-b', 'NFP', 3 * 60 * MIN, VALORES), saiu('CPI-velho', 'CPI', 5 * 24 * 60 * MIN, { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', source: 'BLS' })]);
+    const { container } = renderPage(<MarketContextBand />);
+    await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
+    const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
+    await waitFor(() => expect(within(lista).getByText('O BTC depois da divulgação')).toBeTruthy());
+    const titulos = screen.getAllByText('O BTC depois da divulgação');
+    expect(titulos).toHaveLength(2); // o do cartão de resultado e o da lista
+    for (const t of titulos) {
+      const logo = t.querySelector('img[data-token="BTC"]');
+      expect(logo, t.tagName).not.toBeNull();
+      expect(logo.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(container.textContent).not.toContain('🪙');
+  });
+
   it('resultado de 20 min atrás: só o horizonte de 5 min tem número; os outros mostram "—"', async () => {
     comVelas(COMPLETO);
     dados([saiu('NFP-b', 'NFP', 20 * MIN, VALORES)]);

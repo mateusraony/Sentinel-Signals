@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -111,7 +112,7 @@ export default function GlobalSearch() {
                     <button key={a.id} onClick={() => handleSelectAsset(a)}
                       className="flex items-center justify-between w-full px-3 py-2 text-left transition-colors hover:bg-white/[0.04]"
                       style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                      <span className="text-xs font-mono text-foreground">{a.display_name}</span>
+                      <span className="flex items-center gap-2"><TokenIcon symbol={a.symbol} size={16} /><span className="text-xs font-mono text-foreground">{a.display_name}</span></span>
                       <span className="text-9px font-mono text-muted-foreground">{a.symbol}</span>
                     </button>
                   ))}

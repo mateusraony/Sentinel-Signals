@@ -99,7 +99,6 @@ export const EMOJI_REGISTRY = Object.freeze({
   '📭': entry('Agenda: ainda sem o número do BLS (aguardando a divulgação)', { context: /aguardando|ainda não/i, files: ['src/lib/marketContextBand.js'] }),
   '🕳️': entry('Agenda: medida que saiu sem número (indisponível ou lacuna oficial do BLS)', { context: /indispon|sem número|lacuna|por que não/i, files: ['src/lib/marketContextBand.js'] }),
   '🪟': entry('Agenda: janela alternativa — variação de um período mais curto, só com índices publicados (não é o número oficial)', { context: /janela/i, files: ['src/lib/marketContextBand.js'] }),
-  '🪙': entry('Agenda: o BTC depois da divulgação — só o que aconteceu, sem causa nem previsão', { context: /BTC/, files: ['src/lib/marketContextBand.js'] }),
   '🕒': entry('Agenda: horizonte de tempo depois da divulgação (5 min, 30 min, 1 h)', { context: /min|\bh\b|hora/i, files: ['src/lib/marketContextBand.js'] }),
   '🌡️': entry('Agenda: tamanho do movimento do BTC comparado a um dia normal — sem direção', { context: /movimento|mexe|dia normal/i, files: ['src/lib/marketContextBand.js'] }),
   '🎓': entry('Agenda: "Como ler" o cartão (notas de leitura)', { context: /como ler|ler/i, files: ['src/lib/marketContextBand.js'] }),

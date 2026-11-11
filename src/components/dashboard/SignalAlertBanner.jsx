@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useEffect, useRef, useState } from 'react';
 import { agreementLabel, AGREEMENT_HINT } from '@/lib/ruleAgreement';
 import { X, Bell } from 'lucide-react';
@@ -71,6 +72,7 @@ export default function SignalAlertBanner({ signals = [] }) {
               <span className="text-10px font-mono font-bold" style={{ color: textColor }}>
                 {NOTIFICATION_STAGES.SIGNAL_DETECTED.emoji} SINAL {sig.signal_type}
               </span>
+              <TokenIcon symbol={sig.symbol} size={16} />
               <span className="font-bold text-xs text-foreground">{symbol}</span>
               <span className="text-9px font-mono px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}>

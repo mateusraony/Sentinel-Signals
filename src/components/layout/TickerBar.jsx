@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React from 'react';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
@@ -58,6 +59,7 @@ export default function TickerBar() {
         <div className="ticker-inner">
           {doubled.map(({ item, change, view }, i) => (
             <span key={i} className="inline-flex items-center gap-2 px-6 text-xs font-mono">
+              <TokenIcon symbol={item.asset.symbol} size={14} />
               <span className="text-muted-foreground">{item.asset.symbol}</span>
               {/* Cor neutra: antes seguia a direção do Range Filter, o que ao
                   lado da variação de 24h podia dizer o contrário (item 279). */}

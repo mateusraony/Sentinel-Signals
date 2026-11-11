@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
@@ -277,6 +278,7 @@ export default function Assets() {
                     <Switch checked={asset.is_active} disabled={toggleMutation.isPending} onCheckedChange={(checked) => toggleMutation.mutate({ id: asset.id, is_active: checked })} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
+                        <TokenIcon symbol={asset.symbol} size={18} />
                         <span className="font-bold text-sm text-foreground">{asset.display_name}</span>
                         <span className="text-9px font-mono text-muted-foreground">{asset.symbol}</span>
                         <span className="text-8px font-mono px-1.5 py-0.5 rounded uppercase tracking-widest"

@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MANUAL_EDIT_REASON, MANUAL_CLOSE_REASON, MANUAL_INVALIDATE_REASON } from '@/lib/operationProvenance';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -53,7 +54,7 @@ function EditModal({ op, onClose, onSave }) {
         className="max-w-sm p-5 rounded-2xl"
         style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 0 40px rgba(0,0,0,0.5)' }}>
         <DialogHeader>
-          <DialogTitle className="font-bold text-sm text-foreground text-left">{op.symbol?.replace('USDT', '/USDT')}</DialogTitle>
+          <DialogTitle className="font-bold text-sm text-foreground text-left flex items-center gap-2"><TokenIcon symbol={op.symbol} size={18} />{op.symbol?.replace('USDT', '/USDT')}</DialogTitle>
           <div className="text-9px font-mono text-muted-foreground">{op.timeframe?.toUpperCase()} · {op.side}</div>
         </DialogHeader>
 
@@ -185,6 +186,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
         style={{ background: 'rgba(12,15,26,0.5)', border: '1px solid rgba(255,255,255,0.05)', borderLeft: `3px solid ${copy.color}` }}>
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
+            <TokenIcon symbol={signal.symbol} size={16} />
             <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.6)' }}>
               {signal.symbol?.replace('USDT', '/USDT')}
             </span>
@@ -245,7 +247,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
       {/* 1 · Identidade — e o ESTADO como elemento dominante, não a direção */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="font-bold text-sm text-foreground truncate">{signal.symbol?.replace('USDT', '/USDT')}</div>
+          <div className="font-bold text-sm text-foreground truncate flex items-center gap-2"><TokenIcon symbol={signal.symbol} size={18} />{signal.symbol?.replace('USDT', '/USDT')}</div>
           <div className="text-10px font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
             {isBuy ? 'Aviso de alta (compra)' : 'Aviso de baixa (venda)'} · {moment(signal.created_date).fromNow()}
           </div>
@@ -407,6 +409,7 @@ function HistoryRow({ op }) {
       style={{ background: 'rgba(12,15,26,0.55)', border: '1px solid rgba(255,255,255,0.05)', opacity: 0.8 }}>
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 min-w-0 flex-1">
+          <TokenIcon symbol={op.symbol} size={16} />
           <span className="font-semibold text-xs text-foreground shrink-0">{op.symbol?.replace('USDT', '/USDT')}</span>
           <span className="text-9px font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
           <span className="text-9px font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</span>

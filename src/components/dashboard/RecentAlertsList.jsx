@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import SignalBadge from './SignalBadge';
@@ -65,6 +66,7 @@ export default function RecentAlertsList({ signals = [], unavailable = false, as
                   <SignalBadge signal={signal.signal_type} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
+                      <TokenIcon symbol={signal.symbol} size={18} />
                       <span className="text-sm font-semibold text-foreground">{signal.symbol}</span>
                       <span className="text-10px font-mono text-muted-foreground">{signal.timeframe?.toUpperCase()}</span>
                       <PriorityBadge priority={signal.priority} />

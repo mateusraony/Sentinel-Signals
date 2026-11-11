@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React from 'react';
 import { agreementLabel } from '@/lib/ruleAgreement';
 import { Link } from 'react-router-dom';
@@ -110,6 +111,7 @@ export default function VerificationWidget() {
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
+                  <TokenIcon symbol={task.symbol} size={16} />
                   <span className="text-xs font-semibold text-foreground">{task.symbol?.replace('USDT', '/USDT')}</span>
                   <span className="text-9px font-mono text-muted-foreground">{task.timeframe?.toUpperCase()}</span>
                   <span className="text-9px font-mono" style={{ color: task.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>

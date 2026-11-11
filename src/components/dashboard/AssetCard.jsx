@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useEffect, useRef, useState } from 'react';
 import { agreementLabel } from '@/lib/ruleAgreement';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -492,6 +493,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
         <div className="flex items-start justify-between mb-2">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
+              <TokenIcon symbol={asset.symbol} size={18} />
               <span className="font-bold text-sm text-foreground tracking-tight">{asset.display_name}</span>
               <span className="text-8px font-mono text-muted-foreground">{asset.exchange?.toUpperCase() || 'BINANCE'}</span>
               <span className="flex items-center gap-0.5">
