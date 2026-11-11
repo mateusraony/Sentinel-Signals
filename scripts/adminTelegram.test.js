@@ -438,8 +438,9 @@ describe('send — falha de envio agora fica visível no SystemLog (item 166 Fas
     // logTelegramFailure precisa engolir um throw SÍNCRONO do backend (não só
     // uma promise rejeitada) — mesmo raciocínio de safeMirrorCall
     // (src/lib/rtdbMirror.js).
+    // 403 (não 500): um 5xx agora é tentado de novo com espera real; o que este teste prova não depende do código.
     systemLogCreateMock.mockImplementation(() => { throw new Error('SystemLog.create is not a function'); });
-    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'x' });
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 403, text: async () => 'x' });
     const { notifyStopHit } = await import('./adminTelegram.js');
     // Se o throw síncrono escapasse do try/catch de logTelegramFailure, este
     // await rejeitaria e o teste falharia sozinho.
@@ -457,7 +458,7 @@ describe('send — falha de envio agora fica visível no SystemLog (item 166 Fas
   it('send() aguarda a escrita do SystemLog terminar antes de resolver (corrida com forceExit)', async () => {
     let resolveCreate;
     systemLogCreateMock.mockImplementation(() => new Promise((resolve) => { resolveCreate = resolve; }));
-    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'x' });
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 403, text: async () => 'x' });
     const { notifyStopHit } = await import('./adminTelegram.js');
 
     let settled = false;
@@ -477,6 +478,121 @@ describe('send — falha de envio agora fica visível no SystemLog (item 166 Fas
     resolveCreate();
     await pending;
     expect(settled).toBe(true);
+  });
+});
+
+// Achado real (10/11/2026, Debug Log): "Falha ao enviar mensagem ao Telegram (exceção) {error: 'fetch failed'}" duas vezes na mesma tarde. O "fetch
+// failed" é a mensagem genérica do Node (undici) para queda de rede; a causa de verdade (timeout de conexão, DNS, conexão derrubada) fica em
+// `err.cause` e o log não a mostrava. E o envio fazia UMA tentativa só: um tropeço de rede de 1 segundo no runner do GitHub perdia o alerta.
+describe('send — rede instável: tenta de novo e deixa a causa real no log (11/11/2026)', () => {
+  function baseOp(overrides = {}) {
+    return { symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h', current_stop: 95, tp1_hit: false, ...overrides };
+  }
+  /** O erro que o Node dá numa queda de rede: TypeError('fetch failed') com a causa em `cause`. */
+  function falhaDeRede(code = 'UND_ERR_CONNECT_TIMEOUT', causeMessage = 'Connect Timeout Error') {
+    return new TypeError('fetch failed', { cause: Object.assign(new Error(causeMessage), { code }) });
+  }
+  const ok = () => ({ ok: true, text: vi.fn(async () => '') });
+  let warnSpy;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warnSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  /** Dispara o envio e deixa o relógio falso passar o tempo das esperas entre tentativas. */
+  async function enviar(milissegundos = 60_000) {
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    const pendente = notifyStopHit(baseOp(), 95);
+    await vi.advanceTimersByTimeAsync(milissegundos);
+    return pendente;
+  }
+
+  it('REGRESSÃO: duas quedas de rede seguidas e a 3ª tentativa entrega — o alerta não se perde e não há aviso de falha', async () => {
+    global.fetch = vi.fn()
+      .mockRejectedValueOnce(falhaDeRede())
+      .mockRejectedValueOnce(falhaDeRede('ECONNRESET', 'read ECONNRESET'))
+      .mockResolvedValue(ok());
+    await enviar();
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    expect(systemLogCreateMock).not.toHaveBeenCalled();
+  });
+
+  it('REGRESSÃO: sem sucesso em nenhuma das 3 tentativas, grava UM aviso com a causa real (código), não só "fetch failed"', async () => {
+    global.fetch = vi.fn().mockRejectedValue(falhaDeRede());
+    await enviar();
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    expect(systemLogCreateMock).toHaveBeenCalledTimes(1);
+    expect(systemLogCreateMock.mock.calls[0][0]).toMatchObject({
+      level: 'warn', module: 'telegram', message: 'Falha ao enviar mensagem ao Telegram (exceção)',
+      details: { error: 'fetch failed', cause: 'UND_ERR_CONNECT_TIMEOUT' },
+    });
+  });
+
+  it('a causa só entra se for um CÓDIGO em maiúsculas (nunca o texto livre, que pode trazer endereço com o token) — e nada do token vaza no log nem no console', async () => {
+    process.env.TELEGRAM_BOT_TOKEN = 'TOKEN-SECRETO-123';
+    global.fetch = vi.fn().mockRejectedValue(
+      falhaDeRede('algo estranho', 'connect https://api.telegram.org/botTOKEN-SECRETO-123/sendMessage falhou'),
+    );
+    await enviar();
+    const gravado = JSON.stringify(systemLogCreateMock.mock.calls);
+    const console_ = JSON.stringify(warnSpy.mock.calls);
+    expect(gravado).not.toContain('TOKEN-SECRETO-123');
+    expect(console_).not.toContain('TOKEN-SECRETO-123');
+    expect(systemLogCreateMock.mock.calls[0][0].details).toEqual({ error: 'fetch failed' });
+  });
+
+  it('o aviso de nova tentativa no console (HTTP 5xx) nunca traz o endereço do envio — que tem o token do bot', async () => {
+    process.env.TELEGRAM_BOT_TOKEN = 'TOKEN-SECRETO-123';
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 503, text: async () => 'Service Unavailable' });
+    await enviar();
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    expect(warnSpy.mock.calls.some((c) => String(c[0]).includes('[httpRetry]'))).toBe(true);
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain('TOKEN-SECRETO-123');
+    expect(systemLogCreateMock.mock.calls[0][0].details).toMatchObject({ status: 503 });
+  });
+
+  it('erro do Telegram que repetir não adianta (401 token inválido) falha na hora, sem nova tentativa', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'Unauthorized' });
+    await enviar();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(systemLogCreateMock.mock.calls[0][0].details).toMatchObject({ status: 401 });
+  });
+
+  it('429 do Telegram: respeita o "Retry-After" (espera 3 s) e entrega na segunda tentativa', async () => {
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 429, headers: { get: (h) => (h === 'retry-after' ? '3' : null) }, text: async () => 'Too Many Requests' })
+      .mockResolvedValue(ok());
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    const pendente = notifyStopHit(baseOp(), 95);
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(global.fetch).toHaveBeenCalledTimes(1); // ainda dentro dos 3 s pedidos pelo Telegram
+    await vi.advanceTimersByTimeAsync(1_000);
+    await pendente;
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(systemLogCreateMock).not.toHaveBeenCalled();
+  });
+
+  it('conexão que trava sem responder é cortada (8 s por tentativa) e vira UM aviso — antes ficava pendurada até o limite do scan', async () => {
+    global.fetch = vi.fn((url, { signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' })));
+    }));
+    await enviar();
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    expect(systemLogCreateMock).toHaveBeenCalledTimes(1);
+    expect(systemLogCreateMock.mock.calls[0][0].details).toEqual({ error: 'This operation was aborted' });
+  });
+
+  it('envio bem-sucedido lê o corpo da resposta: o cronômetro de tentativa não fica pendente segurando o processo por 8 s', async () => {
+    const resposta = ok();
+    global.fetch = vi.fn().mockResolvedValue(resposta);
+    await enviar(1_000);
+    expect(resposta.text).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

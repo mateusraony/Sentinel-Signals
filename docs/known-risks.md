@@ -34770,3 +34770,21 @@ encerrada à mão); a resposta foi **"não entendi essa dúvida"** — então **
 - Continuam abertos (não fazem parte deste item): o modo de observação independente do banco (itens 283/286), o teste de restauração num banco novo (precisa de um Supabase do usuário), a configuração do healthchecks.io (passo do usuário) e a retenção da tabela `system_logs`.
 
 *Testes:* 69 novos em 3 arquivos (`neonUsageMeter` 33, `neonUsage` 29, `neonUsageTripwire` 7), **47 mutações plantadas, todas mortas** (2 exigiram teste novo: janela contida dentro de outra; dia com 900-999 execuções que não pode virar falso "cortado").
+
+## 295. Logs do painel: erro de extensão do navegador fora do SystemLog e Telegram do cron com nova tentativa (2026-11-11)
+
+**Pedido do usuário:** três linhas do Debug Log ("investigar e corrigir"): `[09/11 19:08] ERROR (global) Unhandled Promise: Failed to connect to MetaMask` e dois `WARN (telegram) Falha ao enviar mensagem ao Telegram (exceção) {"error":"fetch failed"}` (10/11, 14:00:52 e 15:01:01).
+
+**Fatos (lidos no código e nas linhas coladas):**
+- **MetaMask:** a pilha é `chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js`. Quem lança é a **extensão MetaMask do navegador do usuário** (ela injeta um script em toda página). O Sentinel não tem código de carteira (busca por `metamask|ethereum|web3|wagmi|ethers` em `src/`, `server/`, `scripts/`, `index.html` e `package.json` só achou o texto deste PR). O logger global (`src/lib/logger.js`) gravava qualquer erro do `window` como "ERROR", sem separar o do app do de extensão.
+- **Telegram "fetch failed":** é a mensagem do Node (undici) para queda de rede; o navegador diria "Failed to fetch" — logo veio do **cron** (`scripts/adminTelegram.js`), não do canal "ao vivo" (**inferência de alta confiança**, o log não traz o executor). O `send()` fazia **uma** tentativa, sem limite de tempo, e o log não mostrava a causa real (`err.cause`: timeout de conexão, DNS, conexão derrubada).
+
+**Mudança:**
+- `src/lib/logger.js`: `isBrowserExtensionNoise({ stack, filename })` — o erro é ignorado só se o **primeiro frame** da pilha (quem lançou) ou o arquivo do erro de janela for de `chrome-extension://`, `moz-extension://`, `safari-web-extension://` ou `safari-extension://`. Erro do app que apenas passa por uma extensão no meio da pilha continua gravado; o texto da mensagem nunca conta.
+- `scripts/adminTelegram.js` (`send()`): usa `fetchWithRetry` (`src/lib/httpRetry.js`) com 3 tentativas (esperas de 1 s e 2 s; o `Retry-After` do Telegram manda quando vem) e 8 s por tentativa (pior caso ~27 s, abaixo do teto de 90 s do scan; antes uma conexão pendurada não tinha limite). Só repete o transitório (queda de rede, 429, 5xx); 400/401 falha na hora. O aviso final passa a trazer `cause` com o **código** da causa (`UND_ERR_CONNECT_TIMEOUT`, `ECONNRESET`…): só código em maiúsculas entra, nunca o texto livre (pode trazer o endereço com o token do bot, e o log chega ao Job Summary de um repositório público). `context: 'telegram'` fixo no retry: o padrão é a URL, que tem o token e iria para o console a cada nova tentativa. O corpo da resposta é lido e descartado no sucesso (é o que desarma o cronômetro de tentativa; sem isso ele seguraria o processo por 8 s).
+
+**Risco aceito:** se o Telegram receber a mensagem mas a resposta se perder, ela pode chegar em dobro. Melhor do que um alerta de operação perdido.
+
+**Não feito, com motivo:** o canal "ao vivo" do navegador (`src/lib/telegram.js`) segue com uma tentativa (não é a origem dos dois avisos e a aba aberta tenta de novo no próximo evento); a causa da queda de rede em si (runner do GitHub ↔ `api.telegram.org`) é desconhecida — o `cause` do próximo aviso diz qual foi. A causa real da falha de 10/11 não foi confirmada.
+
+**Verificação:** 8 testes novos no logger (`src/lib/logger.test.js`, jsdom) e 8 no Telegram (`scripts/adminTelegram.test.js`) falhavam antes da mudança; **3 mutações no logger e 5 no Telegram plantadas, todas mortas** (sem retry, `context` padrão, causa sem filtro de código, sem ler o corpo, sem limite por tentativa; filtro de extensão desligado nos dois caminhos e "qualquer frame"). Dois testes antigos usavam HTTP 500 só para forçar falha e passaram a usar 403 (500 agora é repetido com espera real). Pacote do scan (`scripts/build-scan.mjs`) gerado sem erro.
