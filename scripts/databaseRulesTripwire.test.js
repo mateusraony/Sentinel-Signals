@@ -16,6 +16,27 @@ export const NO_OBSERVACAO = 'observation';
 const fechado = (v) => v === undefined || v === false;
 
 /**
+ * Percorre `no` e TODOS os descendentes (inclusive curingas `$x` mais fundo) e acusa cada `.read`/`.write` que não seja exatamente `false`.
+ * Achado do Codex (PR #567): olhar só o nó e os filhos imediatos deixava passar `observation/snapshot/operations` aberto.
+ * @param {unknown} no regra do nó (objeto)
+ * @param {string} caminho nome do nó para a mensagem
+ * @param {string} rotulo prefixo legível do problema
+ * @returns {string[]}
+ */
+function regrasAbertasAbaixo(no, caminho, rotulo) {
+  const p = [];
+  if (!no || typeof no !== 'object') return p;
+  for (const campo of ['.read', '.write']) {
+    if (!fechado(no[campo])) p.push(`${rotulo}: "${caminho}" com "${campo}" aberto`);
+  }
+  for (const [k, filho] of Object.entries(no)) {
+    if (k.startsWith('.') || !filho || typeof filho !== 'object') continue;
+    p.push(...regrasAbertasAbaixo(filho, `${caminho}/${k}`, rotulo));
+  }
+  return p;
+}
+
+/**
  * Problemas nas regras do RTDB que expõem (ou poderiam expor) o nó do retrato.
  * @param {string} texto conteúdo de `database.rules.json`
  * @returns {string[]}
@@ -32,24 +53,15 @@ export function problemasDasRegrasDoRtdb(texto) {
   // 1) As regras CASCATEIAM: um `.read`/`.write` na raiz vale para todos os filhos, inclusive o retrato.
   if (!fechado(regras['.read'])) p.push('raiz com ".read" aberto: vale para todos os nós, inclusive o do retrato');
   if (!fechado(regras['.write'])) p.push('raiz com ".write" aberto: vale para todos os nós, inclusive o do retrato');
-  // 2) Curinga no 1º nível (`$qualquer`) casa com "observation": se ele abre leitura/escrita, o retrato abre junto.
+  // 2) Curinga no 1º nível (`$qualquer`) casa com "observation": qualquer regra aberta em QUALQUER profundidade sob ele pode alcançar o retrato.
   for (const [chave, no] of Object.entries(regras)) {
-    if (!chave.startsWith('$') || !no || typeof no !== 'object') continue;
-    if (!fechado(no['.read']) || !fechado(no['.write'])) p.push(`curinga "${chave}" abre leitura/escrita e alcança o nó "${NO_OBSERVACAO}"`);
+    if (chave.startsWith('$')) p.push(...regrasAbertasAbaixo(no, chave, `curinga "${chave}" alcança "${NO_OBSERVACAO}"`));
   }
-  // 3) O próprio nó: não precisa existir (negado por padrão); se existir, só pode ser explicitamente fechado.
-  const no = regras[NO_OBSERVACAO];
-  if (no !== undefined) {
-    if (!no || typeof no !== 'object') p.push(`o nó "${NO_OBSERVACAO}" tem regra que não é um objeto`);
-    else {
-      if (!fechado(no['.read'])) p.push(`"${NO_OBSERVACAO}" com ".read" aberto`);
-      if (!fechado(no['.write'])) p.push(`"${NO_OBSERVACAO}" com ".write" aberto`);
-      // Um filho com regra aberta também alcançaria o retrato (ex.: observation/snapshot).
-      for (const [k, filho] of Object.entries(no)) {
-        if (k.startsWith('.') || !filho || typeof filho !== 'object') continue;
-        if (!fechado(filho['.read']) || !fechado(filho['.write'])) p.push(`"${NO_OBSERVACAO}/${k}" abre leitura/escrita`);
-      }
-    }
+  // 3) O próprio nó: não precisa existir (negado por padrão); se existir, tudo abaixo dele (em qualquer profundidade) só pode ser explicitamente fechado.
+  const noObs = regras[NO_OBSERVACAO];
+  if (noObs !== undefined) {
+    if (!noObs || typeof noObs !== 'object') p.push(`o nó "${NO_OBSERVACAO}" tem regra que não é um objeto`);
+    else p.push(...regrasAbertasAbaixo(noObs, NO_OBSERVACAO, `"${NO_OBSERVACAO}"`));
   }
   return p;
 }
@@ -84,6 +96,12 @@ describe('tripwire: regras do RTDB não podem expor o retrato do modo de observa
     ['filho observation/snapshot aberto', () => comRegras((r) => { r[NO_OBSERVACAO] = { snapshot: { '.read': 'auth != null' } }; })],
     ['filho observation/alerts aberto', () => comRegras((r) => { r[NO_OBSERVACAO] = { alerts: { '.write': 'auth != null' } }; })],
     ['regra do nó que não é objeto', () => comRegras((r) => { r[NO_OBSERVACAO] = 'auth != null'; })],
+    // Achado do Codex (PR #567, P2): a regra aberta mais FUNDO na árvore também expõe o retrato.
+    ['neto aberto: observation/snapshot/operations', () => comRegras((r) => { r[NO_OBSERVACAO] = { snapshot: { operations: { '.read': 'auth != null', '.write': true } } }; })],
+    ['bisneto aberto bem fundo em observation', () => comRegras((r) => { r[NO_OBSERVACAO] = { a: { b: { c: { '.write': 'auth != null' } } } }; })],
+    ['curinga de 1º nível com filho aberto ($node/snapshot)', () => comRegras((r) => { r.$node = { snapshot: { '.read': 'auth != null' } }; })],
+    ['curinga com neto aberto ($node/a/b)', () => comRegras((r) => { r.$node = { a: { b: { '.write': true } } }; })],
+    ['curinga DENTRO de observation aberto', () => comRegras((r) => { r[NO_OBSERVACAO] = { $id: { '.read': 'auth != null' } }; })],
     ['JSON quebrado', () => '{ "rules": '],
     ['sem o objeto rules', () => '{}'],
   ];
@@ -95,6 +113,11 @@ describe('tripwire: regras do RTDB não podem expor o retrato do modo de observa
   it('o nó observation explicitamente FECHADO (`false`) é aceito, e a ausência também', () => {
     expect(problemasDasRegrasDoRtdb(comRegras((r) => { r[NO_OBSERVACAO] = { '.read': false, '.write': false }; }))).toEqual([]);
     expect(problemasDasRegrasDoRtdb(comRegras((r) => { r[NO_OBSERVACAO] = { snapshot: { '.read': false } }; }))).toEqual([]);
+  });
+
+  it('fechado em profundidade (`false` em todos os níveis, também sob curinga) é aceito', () => {
+    expect(problemasDasRegrasDoRtdb(comRegras((r) => { r[NO_OBSERVACAO] = { snapshot: { operations: { '.read': false, '.write': false } } }; }))).toEqual([]);
+    expect(problemasDasRegrasDoRtdb(comRegras((r) => { r.$node = { snapshot: { '.read': false } }; }))).toEqual([]);
   });
 
   it('abrir OUTRO nó (regra normal do projeto) não é acusado: a trava é só sobre o retrato', () => {
