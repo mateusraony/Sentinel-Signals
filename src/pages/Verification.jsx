@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { agreementLabel } from '@/lib/ruleAgreement';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -375,6 +376,7 @@ export default function Verification() {
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
+                      <TokenIcon symbol={task.symbol} size={18} />
                       <span className="text-sm font-bold text-foreground">{task.symbol?.replace('USDT', '/USDT')}</span>
                       <span className="text-9px font-mono px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)' }}>
                         {task.timeframe?.toUpperCase()}

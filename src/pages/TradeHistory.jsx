@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useState, useMemo } from 'react';
 import { operationProvenance, PROVENANCE_LABEL, splitByProvenance, provenanceExclusionText } from '@/lib/operationProvenance';
 import { useQuery } from '@tanstack/react-query';
@@ -201,6 +202,7 @@ function HistoryCard({ op }) {
         {/* Symbol + meta */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
+            <TokenIcon symbol={op.symbol} size={18} />
             <span className="font-bold text-sm text-foreground">{op.symbol?.replace('USDT', '/USDT')}</span>
             <span className="text-9px font-mono px-1.5 py-0.5 rounded"
               style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.07)' }}>

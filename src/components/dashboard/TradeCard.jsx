@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useState, useEffect } from 'react';
 import { operationProvenance, PROVENANCE_LABEL } from '@/lib/operationProvenance';
 import { agreementLabel, AGREEMENT_HINT } from '@/lib/ruleAgreement';
@@ -575,6 +576,7 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
         {/* 1 · Identidade e estado */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <TokenIcon symbol={op.symbol} size={20} />
             <span className="font-bold text-base text-foreground">{op.symbol?.replace('USDT', '/USDT')}</span>
             <span className="flex items-center gap-0.5 text-10px font-mono px-1.5 py-0.5 rounded font-bold"
               style={{ background: `${sideColor}1f`, color: sideColor, border: `1px solid ${sideColor}4d` }}>

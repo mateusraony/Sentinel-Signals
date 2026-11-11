@@ -56,7 +56,6 @@ export const CONTEXT_EMOJI = Object.freeze({
   waiting: '📭', // ainda sem o número do BLS
   unavailable: '🕳️', // saiu, mas esta medida ficou sem número (indisponível, ou lacuna oficial do BLS)
   window: '🪟', // "janela alternativa": período mais curto, só com índices publicados
-  btc: '🪙', // "O BTC depois da divulgação"
   horizon: '🕒', // horizonte de tempo (5 min, 30 min, 1 h)
   gauge: '🌡️', // tamanho do movimento do BTC comparado a um dia normal
   howto: '🎓', // "Como ler"

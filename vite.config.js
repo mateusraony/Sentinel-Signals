@@ -11,6 +11,9 @@ export default defineConfig({
     },
   },
   build: {
+    // Logos dos tokens (src/assets/tokens, item 297): o Vite embute no JavaScript todo arquivo abaixo de 4 KB, e 29 dos 32 logos passam disso por pouco — o pacote principal
+    // crescia ~42 KB (14 KB comprimido) só por isso. SVG fica sempre como arquivo à parte (nome com hash, cache longo): só baixa o logo que aparece na tela.
+    assetsInlineLimit: (filePath) => (filePath.endsWith('.svg') ? false : undefined),
     rollupOptions: {
       output: {
         // docs/roadmap.md Bloco 5 (bundle >500kB) — recharts é usado na

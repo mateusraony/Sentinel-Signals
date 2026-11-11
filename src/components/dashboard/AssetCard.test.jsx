@@ -895,3 +895,25 @@ describe('AssetCard — operação ativa: verde/vermelho claro e luz suave e len
     expect(reduzido).toMatch(/\.op-glow-buy,\s*\.op-glow-sell\s*\{\s*animation:\s*none;?\s*\}/);
   });
 });
+
+// Logo do token (11/11/2026, pedido do usuário: "o símbolo original de cada token, assim fica profissional").
+describe('AssetCard — logo do token ao lado do nome', () => {
+  const ASSET = (symbol, display_name) => ({ id: 'a1', symbol, display_name, is_active: true, last_scan_at: RECENT_5MIN() });
+
+  it('BTC mostra o logo (decorativo) e o nome continua achável por texto', () => {
+    const { container } = renderCard({ asset: ASSET('BTCUSDT', 'BTC/USDT') });
+    const logo = container.querySelector('img[data-token="BTC"]');
+    expect(logo).not.toBeNull();
+    expect(logo.getAttribute('aria-hidden')).toBe('true');
+    expect(screen.getByText('BTC/USDT')).toBeTruthy();
+  });
+
+  it('token sem logo (ENA) mostra a bolinha com a inicial, sem texto no DOM', () => {
+    const { container } = renderCard({ asset: ASSET('ENAUSDT', 'ENA/USDT') });
+    expect(container.querySelector('img[data-token="ENA"]')).toBeNull();
+    const bolinha = container.querySelector('span[data-token="ENA"]');
+    expect(bolinha).not.toBeNull();
+    expect(bolinha.textContent).toBe('');
+    expect(screen.getByText('ENA/USDT')).toBeTruthy();
+  });
+});

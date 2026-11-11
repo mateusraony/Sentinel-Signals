@@ -1,3 +1,4 @@
+import TokenIcon from '@/components/TokenIcon';
 import React, { useEffect, useState } from 'react';
 import { TrendingUp, TrendingDown, Clock, Activity } from 'lucide-react';
 import moment from 'moment';
@@ -339,7 +340,7 @@ export default function AssetDrawer({
           style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
         >
           <div>
-            <SheetTitle className="font-bold text-base text-foreground">{asset.display_name}</SheetTitle>
+            <SheetTitle className="font-bold text-base text-foreground flex items-center gap-2"><TokenIcon symbol={asset.symbol} size={22} />{asset.display_name}</SheetTitle>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-9px font-mono text-muted-foreground">{asset.exchange?.toUpperCase()}</span>
               <span className="flex items-center gap-1">

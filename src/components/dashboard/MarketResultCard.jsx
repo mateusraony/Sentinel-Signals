@@ -4,6 +4,7 @@ import {
   EVENT_META, CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, KIND_EMOJI, CONTEXT_EMOJI, resultRows, brtDayDiff, relativeDayLabel, formatEventClock, formatAge, groupEventsByDay,
 } from '@/lib/marketContextBand';
 import { reactionNote } from '@/lib/reactionStats';
+import TokenIcon from '@/components/TokenIcon';
 import { HORIZONS_MIN, horizonLabel, formatMove } from '@/lib/btcAfterRelease';
 import {
   compareBars, deltaText, resultSummary, summaryText, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes, nearestPoint, hasPercentValues, sourceLine, moveColor,
@@ -361,7 +362,7 @@ function BtcHeading({ e, now, className = '' }) {
   return (
     <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 ${className}`}>
       <h4 className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider" style={{ color: BTC.from }}>
-        <Emoji className="text-base">{CONTEXT_EMOJI.btc}</Emoji>
+        <TokenIcon symbol="BTC" size={20} />
         O BTC depois da divulgação
       </h4>
       {btcPending(e, now) && (
@@ -558,7 +559,7 @@ export function HistoryCard({ e, now, moves = null }) {
         {hasBtc && (
           <div className="lg:col-span-5 space-y-2 min-w-0">
             <h5 className="flex items-center gap-2 text-10px font-mono font-bold uppercase tracking-wider" style={{ color: BTC.from }}>
-              <Emoji className="text-base">{CONTEXT_EMOJI.btc}</Emoji>
+              <TokenIcon symbol="BTC" size={16} />
               O BTC depois da divulgação
             </h5>
             <HorizonTiles e={e} now={now} moves={moves} />
