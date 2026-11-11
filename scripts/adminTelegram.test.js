@@ -594,6 +594,85 @@ describe('send — rede instável: tenta de novo e deixa a causa real no log (11
     expect(resposta.text).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  // Achado do Codex (PR #561, P1): o "Retry-After" do Telegram podia chegar a 120 s e o envio esperava isso DUAS vezes (240 s), estourando o teto de
+  // 90 s do scan (e o de 200 s por etapa de run-scan.mjs, onde checkAssetHealthchecks aguarda os envios). O orçamento do envio inteiro agora é fixo.
+  describe('orçamento do envio (achado do Codex, PR #561)', () => {
+    /** Dispara o envio sem esperar o fim e devolve se ele já terminou quando o relógio falso chega em `ms`. */
+    async function terminouEm(ms) {
+      const { notifyStopHit } = await import('./adminTelegram.js');
+      let settled = false;
+      const pendente = notifyStopHit(baseOp(), 95).then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(ms);
+      return { settled, pendente };
+    }
+    const retryAfter = (segundos) => ({ ok: false, status: 429, headers: { get: (h) => (h === 'retry-after' ? String(segundos) : null) }, text: async () => 'Too Many Requests' });
+
+    it('REGRESSÃO: "Retry-After: 120" não segura o envio: a espera é cortada em 5 s, o envio termina em menos de 40 s e o aviso registra o 429', async () => {
+      global.fetch = vi.fn().mockResolvedValue(retryAfter(120));
+      const { settled } = await terminouEm(40_000);
+      expect(settled).toBe(true);
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(systemLogCreateMock.mock.calls[0][0].details).toMatchObject({ status: 429 });
+    });
+
+    it('REGRESSÃO: conexão que ignora o cancelamento e nunca responde: o envio desiste aos 30 s e registra o aviso (não fica pendurado)', async () => {
+      global.fetch = vi.fn(() => new Promise(() => {})); // nunca resolve, nem com o AbortController
+      const { settled } = await terminouEm(36_000);
+      expect(settled).toBe(true);
+      expect(systemLogCreateMock).toHaveBeenCalledTimes(1);
+      expect(String(systemLogCreateMock.mock.calls[0][0].details.error)).toMatch(/Timeout: telegramSend não retornou em 30000ms/);
+    });
+
+    it('REGRESSÃO: depois que um envio esgota as tentativas, os seguintes NESTA execução tentam uma vez só (uma queda longa não vira 30 s por mensagem)', async () => {
+      const { notifyStopHit } = await import('./adminTelegram.js');
+      global.fetch = vi.fn().mockRejectedValue(falhaDeRede());
+      const primeiro = notifyStopHit(baseOp(), 95);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await primeiro;
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+
+      global.fetch.mockClear();
+      const segundo = notifyStopHit(baseOp(), 95);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await segundo;
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('um envio que dá certo reabre as tentativas (a rede voltou)', async () => {
+      const { notifyStopHit } = await import('./adminTelegram.js');
+      global.fetch = vi.fn().mockRejectedValue(falhaDeRede());
+      const queda = notifyStopHit(baseOp(), 95);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await queda;
+
+      global.fetch = vi.fn().mockResolvedValue(ok()); // voltou: este envio entrega (1 tentativa) e reabre as tentativas
+      const volta = notifyStopHit(baseOp(), 95);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await volta;
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+
+      global.fetch = vi.fn().mockRejectedValueOnce(falhaDeRede()).mockResolvedValue(ok());
+      const tropeco = notifyStopHit(baseOp(), 95);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await tropeco;
+      expect(global.fetch).toHaveBeenCalledTimes(2); // tentou de novo: o retry está de volta
+    });
+
+    it('erro que repetir não adianta (401) não conta como rede caída: o envio seguinte continua com as 3 tentativas', async () => {
+      const { notifyStopHit } = await import('./adminTelegram.js');
+      global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'Unauthorized' });
+      const recusado = notifyStopHit(baseOp(), 95);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await recusado;
+
+      global.fetch = vi.fn().mockRejectedValue(falhaDeRede());
+      const seguinte = notifyStopHit(baseOp(), 95);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await seguinte;
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+  });
 });
 
 // docs/known-risks.md item 142 addendum: notifyFirestoreQuotaExhausted é
