@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   STALE_AFTER_MS, JUST_RELEASED_MS, MAX_EVENTS_SHOWN, APPROACH_HORIZON_MS, BAND_STATES, EVENT_LABELS, EVENT_META, IMPACT_LABELS,
-  CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, parseEventValues, eventValueSlots,
+  CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, MOVE_COLORS, parseEventValues, eventValueSlots,
   RESULT_CARD_MS, RESULT_KINDS, HISTORY_SHOWN, splitValueText, valueNumber, compareValues, resultRows, resultEvents, releaseHistory,
   parseEvents, parseCheckedAt, upcomingEvents, bandState, formatCountdown, formatCountdownBare, formatEventWhen, formatAge,
   isBandEnabled, setBandEnabled, parseAlt, shiftMonth, GAP_REASONS, KIND_EMOJI, CONTEXT_EMOJI,
@@ -613,5 +613,52 @@ describe('CATEGORY_ACCENTS / BTC_ACCENT — a paleta por tipo de notícia', () =
   it('as três categorias são tons diferentes entre si (inflação, emprego e juros)', () => {
     const froms = Object.values(CATEGORY_ACCENTS).map((a) => a.from);
     expect(new Set(froms).size).toBe(3);
+  });
+});
+
+// Cores do SINAL dos números do BTC (11/11/2026): o usuário pediu verde para positivo e vermelho para negativo, "pro visual ficar mais rápido".
+describe('MOVE_COLORS — verde (subiu), vermelho (caiu) e neutro (sem variação) para a variação do BTC', () => {
+  const HEX = /^#[0-9a-f]{6}$/;
+  const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const lum = (h) => {
+    const [r, g, b] = rgb(h).map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contraste = (h, fundo) => { const a = lum(h); const b = lum(fundo); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); };
+  const matiz = (h) => {
+    const [r, g, b] = rgb(h).map((v) => v / 255);
+    const max = Math.max(r, g, b); const d = max - Math.min(r, g, b);
+    if (d === 0) return 0;
+    const m = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (m * 60 + 360) % 360;
+  };
+  const dist = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
+
+  it('três cores em hex, todas diferentes', () => {
+    for (const k of ['up', 'down', 'flat']) expect(MOVE_COLORS[k], k).toMatch(HEX);
+    expect(new Set([MOVE_COLORS.up, MOVE_COLORS.down, MOVE_COLORS.flat]).size).toBe(3);
+  });
+
+  it('o verde é verde e o vermelho é vermelho (matiz), e nenhum é igual ao ciano do BTC nem a uma cor de categoria', () => {
+    const hUp = matiz(MOVE_COLORS.up);
+    const hDown = matiz(MOVE_COLORS.down);
+    expect(hUp).toBeGreaterThan(90);
+    expect(hUp).toBeLessThan(170);
+    expect(hDown < 15 || hDown > 340).toBe(true);
+    const usadas = new Set([BTC_ACCENT.from, BTC_ACCENT.to, ...Object.values(CATEGORY_ACCENTS).flatMap((a) => [a.from, a.to])]);
+    for (const k of ['up', 'down', 'flat']) expect(usadas.has(MOVE_COLORS[k]), k).toBe(false);
+  });
+
+  it('o vermelho do BTC não se confunde com o coral da inflação nem com o rosa dos juros (≥ 15° de matiz): os dois aparecem no MESMO cartão', () => {
+    for (const cat of ['inflacao', 'juros']) {
+      expect(dist(matiz(MOVE_COLORS.down), matiz(CATEGORY_ACCENTS[cat].from)), cat).toBeGreaterThanOrEqual(15);
+    }
+  });
+
+  it('contraste ≥ 4,5:1 sobre o fundo do cartão e sobre a caixa do BTC (texto pequeno)', () => {
+    for (const k of ['up', 'down', 'flat']) {
+      expect(contraste(MOVE_COLORS[k], '#0f1522'), `${k} no cartão`).toBeGreaterThanOrEqual(4.5);
+      expect(contraste(MOVE_COLORS[k], '#12212b'), `${k} na caixa do BTC`).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

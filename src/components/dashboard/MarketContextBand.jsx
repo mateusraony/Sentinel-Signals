@@ -14,6 +14,7 @@ import {
 import { ResultCard, ReactionPanel, HistoryCard } from '@/components/dashboard/MarketResultCard';
 import { useBtcAfterRelease } from '@/hooks/useBtcAfterRelease';
 import { lastMove } from '@/lib/btcAfterRelease';
+import { hasPercentValues, sourceLine } from '@/lib/resultVisual';
 
 const BOX = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' };
 const SOFT = { background: 'rgba(255,255,255,0.025)' };
@@ -174,9 +175,11 @@ function ReleaseHistory({ items, now, reactions }) {
       <ul className="flex flex-col gap-3">
         {shown.map((e) => <HistoryCard key={e.id} e={e} now={now} moves={reactions?.get(e.id)?.moves} />)}
       </ul>
-      <p className="text-10px font-mono text-muted-foreground">Fonte: BLS. Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).</p>
+      <p className="text-10px font-mono text-muted-foreground">
+        {`Fonte: ${sourceLine({ source: 'BLS', percent: shown.some((e) => hasPercentValues(e.values)) })}. Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).`}
+      </p>
       {shown.some((e) => lastMove(reactions?.get(e.id)?.moves)) && (
-        <p className="text-10px font-mono text-muted-foreground">O BTC vem das velas de 1 minuto da Binance e só mostra o que aconteceu depois; não prova que a divulgação causou o movimento.</p>
+        <p className="text-10px font-mono text-muted-foreground">O BTC (2 casas) vem das velas de 1 minuto da Binance e só mostra o que aconteceu depois; não prova que a divulgação causou o movimento.</p>
       )}
       {items.length > HISTORY_SHOWN && (
         <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}

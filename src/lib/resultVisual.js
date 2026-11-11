@@ -1,7 +1,7 @@
 // Contexto de Mercado — o VISUAL do cartão de resultado (redesenho de 10/11/2026, docs/known-risks.md item 285, addendum 20).
 // Parte PURA: só geometria (barras, minigráfico, andamento) e frases em português simples. Sem rede, sem relógio próprio (o "agora" vem de fora),
 // sem banco. A cor NUNCA diz "bom" ou "ruim": quem manda é o PAPEL do número (anterior, atual, BTC); a direção vai por seta + palavra.
-import { valueNumber, shiftMonth } from '@/lib/marketContextBand';
+import { valueNumber, shiftMonth, MOVE_COLORS } from '@/lib/marketContextBand';
 
 const MIN = 60 * 1000;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
@@ -165,6 +165,47 @@ export function sparkGeometry(series, { width = 300, height = 112, pad = 10 } = 
 /** O ponto do minigráfico num minuto exato (para os marcadores de 5, 30 e 60 min); null se aquele minuto não existe na série. */
 export function markerAt(geo, m) {
   return geo?.points.find((p) => p.m === m) ?? null;
+}
+
+/**
+ * O ponto do minigráfico mais perto de uma posição horizontal `vx` (nas unidades do DESENHO, de 0 a `geo.width`): é o que o ponteiro do mouse ou o dedo
+ * "pega" para mostrar a dica. Fora do desenho cai no primeiro ou no último ponto. Devolve o próprio ponto da geometria; null sem pontos ou com `vx` inválido.
+ * @returns {{ m: number, x: number, y: number, pct: number } | null}
+ */
+export function nearestPoint(geo, vx) {
+  if (!Array.isArray(geo?.points) || geo.points.length === 0 || !Number.isFinite(vx)) return null;
+  let best = geo.points[0];
+  for (const p of geo.points) {
+    if (Math.abs(p.x - vx) < Math.abs(best.x - vx)) best = p;
+  }
+  return best;
+}
+
+/**
+ * A cor do sinal de uma variação do BTC (em %): verde se subiu, vermelho se caiu, neutro se não mexeu ou se não é número. Usa o MESMO arredondamento de 2 casas do texto
+ * (`formatMove`): o que aparece como "0,00%" (sem sinal) fica neutro, então a cor nunca contradiz o "+" ou o "-" escrito ao lado.
+ */
+export function moveColor(pct) {
+  if (typeof pct !== 'number' || !Number.isFinite(pct)) return MOVE_COLORS.flat;
+  const r = Math.round(pct * 100) / 100;
+  return r > 0 ? MOVE_COLORS.up : r < 0 ? MOVE_COLORS.down : MOVE_COLORS.flat;
+}
+
+/** Algum dos números oficiais do evento é uma porcentagem (CPI, PPI)? O Payroll é em "mil", sem casa decimal. */
+export function hasPercentValues(values) {
+  return [values?.previous, values?.actual, values?.revised].some((t) => typeof t === 'string' && t.includes('%'));
+}
+
+/**
+ * A linha "Fonte" do rodapé, com as casas decimais de cada número (o BLS divulga as variações com 1 casa; o BTC é quotado com 2): sem isso, "+0,4%" do
+ * CPI e "-0,59%" do BTC parecem inconsistentes. Só fala de "1 casa" quando há número em % e só fala do BTC quando o painel do BTC está na tela.
+ * @param {{ source?: string, percent?: boolean, btc?: boolean }} [opcoes]
+ */
+export function sourceLine({ source, percent = false, btc = false } = {}) {
+  const parts = [];
+  if (source) parts.push(percent ? `${source} (1 casa decimal, como divulgado)` : source);
+  if (btc) parts.push('BTC: Binance (2 casas)');
+  return parts.join(' · ');
 }
 
 /**

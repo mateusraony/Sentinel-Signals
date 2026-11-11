@@ -6,7 +6,7 @@
 // ocultar persistindo, o "Ver todos" e que a rede nunca é chamada de verdade nos testes.
 // O relógio é fixo (só `Date`, os temporizadores seguem reais): os rótulos de dia dependem de "agora".
 import React from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderPage } from '@/pages/__fixtures__/renderPage.jsx';
 
@@ -350,7 +350,7 @@ describe('MarketContextBand — resultado', () => {
     expect(within(ano).getByText('1,0 ponto a mais')).toBeTruthy();
     expect(within(ano).queryByText(/Anterior revisado/)).toBeNull(); // o 12 meses não foi revisado
     expect(within(card).getByText(/compara com o mês anterior, não com a expectativa do mercado/)).toBeTruthy();
-    expect(within(card).getByText('Fonte: BLS')).toBeTruthy();
+    expect(within(card).getByText('Fonte: BLS (1 casa decimal, como divulgado)')).toBeTruthy();
   });
 
   it('abaixo e igual também aparecem em palavras; a direção usa a cor do TIPO da notícia, igual para "acima" e "abaixo" (nunca bom/ruim)', async () => {
@@ -425,7 +425,7 @@ describe('MarketContextBand — resultado', () => {
     expect(segunda).toContain('No mês: +0,1%, abaixo dos +0,3% da divulgação anterior.');
     expect(segunda).toContain('Em 12 meses: +3,0%, igual ao da divulgação anterior (+3,0%).');
     expect(segunda).not.toMatch(/revisado/);
-    expect(within(lista).getByText('Fonte: BLS. Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).')).toBeTruthy();
+    expect(within(lista).getByText('Fonte: BLS (1 casa decimal, como divulgado). Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).')).toBeTruthy();
     fireEvent.click(within(lista).getByRole('button', { name: 'Ver todas (7)' }));
     expect(within(lista).getAllByRole('listitem').length).toBe(7);
     fireEvent.click(within(lista).getByRole('button', { name: 'Mostrar menos' }));
@@ -777,6 +777,198 @@ describe('MarketContextBand — cartão de resultado redesenhado', () => {
     const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
     expect(within(screen.getByRole('article', { name: 'Resultado' })).queryByText('atualiza a cada minuto')).toBeNull();
     expect(within(bloco).queryByText(/faltam/)).toBeNull();
+  });
+
+  // ---- Dica do minigráfico (11/11/2026): o usuário passava o mouse no gráfico e nada aparecia ---------------------------------------------------------------
+  describe('dica do minigráfico do BTC (mouse e toque)', () => {
+    // O jsdom não tem PointerEvent: um MouseEvent que carrega o tipo do ponteiro basta para o React e para o fireEvent.
+    beforeAll(() => {
+      if (!window.PointerEvent) {
+        window.PointerEvent = class extends MouseEvent {
+          constructor(type, init = {}) { super(type, init); this.pointerType = init.pointerType ?? 'mouse'; }
+        };
+      }
+    });
+    // x do desenho (largura 300, margem 10): 0 min = 10, 5 min = 33,3, 30 min = 150, 60 min = 290. O jsdom não mede nada: o retângulo é fingido com 300 de largura.
+    async function montar() {
+      btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+      dados([saiu('NFP-b', 'NFP', 3 * 60 * MIN, { previous: '+29 mil', actual: '+165 mil', source: 'BLS' })]);
+      renderPage(<MarketContextBand />);
+      const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
+      const grafico = within(bloco).getByRole('img', { name: /Variação do BTC minuto a minuto/ });
+      const area = grafico.parentElement;
+      area.getBoundingClientRect = () => ({ left: 0, top: 0, width: 300, height: 124, right: 300, bottom: 124 });
+      return { bloco, grafico, area };
+    }
+    const mouse = (x) => ({ clientX: x, pointerType: 'mouse' });
+
+    it('REGRESSÃO: passar o mouse sobre o gráfico mostra a variação e o minuto do ponto mais perto', async () => {
+      const { bloco, area } = await montar();
+      expect(within(bloco).queryByRole('tooltip')).toBeNull(); // parado, sem dica
+      fireEvent.pointerMove(area, mouse(150));
+      expect(within(bloco).getByRole('tooltip').textContent).toBe('-0,20%aos 30 min');
+      fireEvent.pointerMove(area, mouse(290));
+      expect(within(bloco).getByRole('tooltip').textContent).toBe('-0,54%aos 60 min');
+      fireEvent.pointerMove(area, mouse(34));
+      expect(within(bloco).getByRole('tooltip').textContent).toBe('+0,12%aos 5 min');
+    });
+
+    it('o minuto 0 é a própria divulgação (referência, 0,00%)', async () => {
+      const { bloco, area } = await montar();
+      fireEvent.pointerMove(area, mouse(10));
+      expect(within(bloco).getByRole('tooltip').textContent).toBe('0,00%na divulgação');
+    });
+
+    it('o ponto sob o ponteiro ganha a linha-guia e a bolinha dentro do desenho (e some junto com a dica)', async () => {
+      const { bloco, grafico, area } = await montar();
+      expect(grafico.querySelectorAll('line')).toHaveLength(1); // só o zero tracejado
+      expect(grafico.querySelectorAll('circle')).toHaveLength(3);
+      fireEvent.pointerMove(area, mouse(150));
+      expect(grafico.querySelectorAll('line')).toHaveLength(2);
+      expect(grafico.querySelectorAll('circle')).toHaveLength(4);
+      const guia = grafico.querySelectorAll('line')[1];
+      expect(guia.getAttribute('x1')).toBe('150');
+      expect(guia.getAttribute('x2')).toBe('150');
+      fireEvent.pointerLeave(area, mouse(150));
+      expect(within(bloco).queryByRole('tooltip')).toBeNull();
+      expect(grafico.querySelectorAll('line')).toHaveLength(1);
+      expect(grafico.querySelectorAll('circle')).toHaveLength(3);
+    });
+
+    it('a dica não sai da caixa nas pontas (esquerda 22%, direita 78%) e vai para o lado de dentro do desenho (embaixo se o ponto está no alto, em cima se está embaixo)', async () => {
+      const { bloco, area } = await montar();
+      fireEvent.pointerMove(area, mouse(10)); // 0 min: ponta esquerda
+      expect(within(bloco).getByRole('tooltip').style.left).toBe('22%');
+      fireEvent.pointerMove(area, mouse(290)); // 60 min: ponta direita, ponto mais baixo da série
+      const direita = within(bloco).getByRole('tooltip');
+      expect(direita.style.left).toBe('78%');
+      expect(direita.style.transform).toBe('translate(-50%, calc(-100% - 14px))'); // ponto embaixo → dica em cima
+      fireEvent.pointerMove(area, mouse(34)); // 5 min: ponto mais alto da série
+      expect(within(bloco).getByRole('tooltip').style.transform).toBe('translate(-50%, 14px)'); // ponto no alto → dica embaixo
+    });
+
+    it('toque: a dica fica depois de levantar o dedo e some ao tocar fora do gráfico; um novo toque no gráfico a troca de lugar', async () => {
+      const { bloco, area } = await montar();
+      const dedo = (x) => ({ clientX: x, pointerType: 'touch' });
+      fireEvent.pointerDown(area, dedo(150));
+      expect(within(bloco).getByRole('tooltip').textContent).toBe('-0,20%aos 30 min');
+      fireEvent.pointerLeave(area, dedo(150)); // levantou o dedo
+      expect(within(bloco).getByRole('tooltip').textContent).toBe('-0,20%aos 30 min');
+      fireEvent.pointerDown(area, dedo(290));
+      expect(within(bloco).getByRole('tooltip').textContent).toBe('-0,54%aos 60 min');
+      fireEvent.pointerDown(document.body, dedo(0)); // tocou fora
+      expect(within(bloco).queryByRole('tooltip')).toBeNull();
+    });
+
+    it('o navegador tomou o gesto (rolagem da página): a dica some', async () => {
+      const { bloco, area } = await montar();
+      fireEvent.pointerDown(area, { clientX: 150, pointerType: 'touch' });
+      expect(within(bloco).getByRole('tooltip')).toBeTruthy();
+      fireEvent.pointerCancel(area, { clientX: 150, pointerType: 'touch' });
+      expect(within(bloco).queryByRole('tooltip')).toBeNull();
+    });
+  });
+
+  // ---- Cores do sinal nos números do BTC (11/11/2026): verde positivo, vermelho negativo, neutro zero; os números do BLS NÃO ganham essas cores ----------------------
+  describe('cores do sinal nos números do BTC', () => {
+    const VERDE = 'rgb(74, 222, 128)';
+    const VERMELHO = 'rgb(255, 90, 110)';
+    const NEUTRO = 'rgb(248, 250, 252)';
+    beforeAll(() => {
+      if (!window.PointerEvent) {
+        window.PointerEvent = class extends MouseEvent {
+          constructor(type, init = {}) { super(type, init); this.pointerType = init.pointerType ?? 'mouse'; }
+        };
+      }
+    });
+    async function montar(closes = COMPLETO, values = { previous: '+29 mil', actual: '+165 mil', source: 'BLS' }) {
+      btcMock.mockImplementation(async (t0) => velas(t0, closes));
+      dados([saiu('NFP-c', 'NFP', 3 * 60 * MIN, values)]);
+      renderPage(<MarketContextBand />);
+      const bloco = await screen.findByRole('complementary', { name: 'O BTC depois da divulgação' });
+      const area = within(bloco).getByRole('img', { name: /Variação do BTC minuto a minuto/ }).parentElement;
+      area.getBoundingClientRect = () => ({ left: 0, top: 0, width: 300, height: 124, right: 300, bottom: 124 });
+      return { bloco, area };
+    }
+
+    it('REGRESSÃO: as fichas de 5 min (+0,12%) ficam verdes e as de 30 min (-0,20%) e 1 h (-0,54%) ficam vermelhas', async () => {
+      const { bloco } = await montar();
+      expect(within(bloco).getByText('Em 5 min').nextSibling.style.color).toBe(VERDE);
+      expect(within(bloco).getByText('Em 30 min').nextSibling.style.color).toBe(VERMELHO);
+      expect(within(bloco).getByText('Em 1 h').nextSibling.style.color).toBe(VERMELHO);
+    });
+
+    it('mínimo (-0,54%) vermelho e máximo (+0,12%) verde', async () => {
+      const { bloco } = await montar();
+      expect(within(bloco).getByText('Mínimo').nextSibling.style.color).toBe(VERMELHO);
+      expect(within(bloco).getByText('Máximo').nextSibling.style.color).toBe(VERDE);
+    });
+
+    it('a dica do gráfico usa a cor do sinal do ponto (30 min vermelho, 5 min verde, o minuto 0 neutro)', async () => {
+      const { bloco, area } = await montar();
+      fireEvent.pointerMove(area, { clientX: 150, pointerType: 'mouse' });
+      expect(within(bloco).getByRole('tooltip').firstChild.style.color).toBe(VERMELHO);
+      fireEvent.pointerMove(area, { clientX: 34, pointerType: 'mouse' });
+      expect(within(bloco).getByRole('tooltip').firstChild.style.color).toBe(VERDE);
+      fireEvent.pointerMove(area, { clientX: 10, pointerType: 'mouse' });
+      expect(within(bloco).getByRole('tooltip').textContent).toBe('0,00%na divulgação');
+      expect(within(bloco).getByRole('tooltip').firstChild.style.color).toBe(NEUTRO);
+    });
+
+    it('o texto continua dizendo o sinal ("+" e "-"): a cor reforça, não é a única pista', async () => {
+      const { bloco } = await montar();
+      expect(within(bloco).getByText('Em 5 min').nextSibling.textContent).toBe('+0,12%');
+      expect(within(bloco).getByText('Em 30 min').nextSibling.textContent).toBe('-0,20%');
+    });
+
+    it('os números do BLS (anterior, atual) NÃO ganham verde nem vermelho: "acima" ou "abaixo" não é "bom" nem "ruim"', async () => {
+      btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+      dados([saiu('CPI-c', 'CPI', 3 * 60 * MIN, { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', source: 'BLS' })]);
+      renderPage(<MarketContextBand />);
+      const card = await screen.findByRole('article', { name: 'Resultado' });
+      await within(card).findByRole('complementary', { name: 'O BTC depois da divulgação' });
+      const painelBtc = within(card).getByRole('complementary', { name: 'O BTC depois da divulgação' });
+      const proibidas = [VERDE, VERMELHO];
+      const foraDoBtc = [...card.querySelectorAll('[style*="color"]')].filter((el) => !painelBtc.contains(el));
+      expect(foraDoBtc.length).toBeGreaterThan(5); // não-vacuidade: há muito texto colorido fora do painel do BTC (as cores do tipo de notícia)
+      for (const el of foraDoBtc) expect(proibidas, el.textContent.slice(0, 40)).not.toContain(el.style.color);
+    });
+  });
+
+  // ---- Nota de casas decimais no rodapé (11/11/2026): "+0,4%" do BLS (1 casa) e "-0,59%" do BTC (2 casas) pareciam inconsistentes -----------------------------
+  describe('rodapé: a fonte diz as casas decimais de cada número', () => {
+    it('CPI sem painel do BTC: "Fonte: BLS (1 casa decimal, como divulgado)"', async () => {
+      dados([saiu('CPI-x', 'CPI', 40 * MIN, { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', source: 'BLS' })]);
+      renderPage(<MarketContextBand />);
+      const card = await screen.findByRole('article', { name: 'Resultado' });
+      expect(within(card).getByText('Fonte: BLS (1 casa decimal, como divulgado)')).toBeTruthy();
+    });
+
+    it('CPI com o BTC ao lado: acrescenta "BTC: Binance (2 casas)" na MESMA linha (uma frase curta, não duas)', async () => {
+      btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+      dados([saiu('CPI-x', 'CPI', 3 * 60 * MIN, CPI_SO_MES)]);
+      renderPage(<MarketContextBand />);
+      const card = await screen.findByRole('article', { name: 'Resultado' });
+      await within(card).findByRole('complementary', { name: 'O BTC depois da divulgação' });
+      expect(within(card).getByText('Fonte: BLS (1 casa decimal, como divulgado) · BTC: Binance (2 casas)')).toBeTruthy();
+    });
+
+    it('Payroll ("mil", sem casa decimal) nunca diz "1 casa decimal": só o BTC, se houver', async () => {
+      dados([saiu('NFP-x', 'NFP', 40 * MIN, { previous: '+29 mil', actual: '+165 mil', source: 'BLS' })]);
+      const sem = renderPage(<MarketContextBand />);
+      const cardSem = await screen.findByRole('article', { name: 'Resultado' });
+      expect(within(cardSem).getByText('Fonte: BLS')).toBeTruthy();
+      expect(cardSem.textContent).not.toMatch(/casa decimal/);
+      sem.unmount();
+      cleanup();
+      btcMock.mockImplementation(async (t0) => velas(t0, COMPLETO));
+      dados([saiu('NFP-x', 'NFP', 3 * 60 * MIN, { previous: '+29 mil', actual: '+165 mil', source: 'BLS' })]);
+      renderPage(<MarketContextBand />);
+      const cardCom = await screen.findByRole('article', { name: 'Resultado' });
+      await within(cardCom).findByRole('complementary', { name: 'O BTC depois da divulgação' });
+      expect(within(cardCom).getByText('Fonte: BLS · BTC: Binance (2 casas)')).toBeTruthy();
+      expect(cardCom.textContent).not.toMatch(/casa decimal/);
+    });
   });
 
   it('com o painel do BTC ao lado as fichas empilham; sem BTC elas ficam lado a lado (a grade usa a largura toda)', async () => {
