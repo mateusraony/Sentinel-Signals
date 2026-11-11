@@ -416,9 +416,11 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
     cardGlow = `0 0 30px ${fc}60, 0 0 60px ${fc}30`;
     flashStyle = isBuy ? 'flash-buy' : 'flash-sell';
   } else if (hasActiveOp && isBuy) {
-    cardBorder = 'rgba(0,255,128,0.22)'; cardGlow = '0 0 20px rgba(0,255,128,0.07)';
+    // Opção B (11/11/2026, pedido do usuário): operação ATIVA = verde/vermelho CLARO (antes 0,22 de opacidade, quase invisível) + luz suave e lenta (`op-glow-*`).
+    // Só vale com operação ativa: nunca por distância até a linha nem por aviso (item 277).
+    cardBorder = 'rgba(0,255,128,0.55)'; cardGlow = '0 0 22px rgba(0,255,128,0.16)';
   } else if (hasActiveOp && isSell) {
-    cardBorder = 'rgba(255,20,120,0.22)'; cardGlow = '0 0 20px rgba(255,20,120,0.07)';
+    cardBorder = 'rgba(255,20,120,0.55)'; cardGlow = '0 0 22px rgba(255,20,120,0.16)';
   } else if (sigStyle?.border) {
     // Item 290: aviso ESPERANDO confirmação = âmbar parado (não é a cor do lado: item 277). Vem antes de "perto da linha"
     // porque, com mercado lateral, vários ativos ficam perto da linha ao mesmo tempo e o Dashboard virava tudo azul.
@@ -431,6 +433,12 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   } else if (isStale) {
     cardBorder = healthReason === 'persistent_error' ? 'rgba(255,20,120,0.22)' : 'rgba(255,159,67,0.22)';
   }
+
+  // A luz lenta só com operação ativa, com o dado em dia e fora do flash de 4 s da operação recém-aberta (o flash manda). Com o dado atrasado o contorno
+  // segue forte, mas a luz NÃO pulsa: pulsar sugeriria dado vivo (o 📡 do cartão já avisa o atraso). `prefers-reduced-motion` desliga a animação (CSS abaixo).
+  const opSideColor = hasActiveOp ? (isBuy ? '0, 255, 128' : isSell ? '255, 20, 120' : null) : null;
+  const pulseStyle = opSideColor && !flashStyle && !isStale && !dataUnreliable ? (isBuy ? 'op-glow-buy' : 'op-glow-sell') : '';
+  const cardBackground = opSideColor ? `linear-gradient(160deg, rgba(${opSideColor}, 0.12) 0%, rgba(10, 13, 22, 0.82) 58%)` : 'rgba(10, 13, 22, 0.82)';
 
   const priceVals = hasActiveOp
     ? [tradeOp.entry_price, tradeOp.initial_stop, tradeOp.tp1, tradeOp.tp2, tradeOp.current_stop]
@@ -455,15 +463,20 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
         @keyframes flash-sell { 0%,100%{box-shadow:0 0 20px rgba(255,20,120,0.07)} 50%{box-shadow:0 0 40px rgba(255,20,120,0.5),0 0 80px rgba(255,20,120,0.2)} }
         .flash-buy { animation: flash-buy 0.8s ease-in-out 5; }
         .flash-sell { animation: flash-sell 0.8s ease-in-out 5; }
+        @keyframes op-glow-buy { 0%,100%{box-shadow:0 0 18px rgba(0,255,128,0.10)} 50%{box-shadow:0 0 34px rgba(0,255,128,0.26),0 0 64px rgba(0,255,128,0.10)} }
+        @keyframes op-glow-sell { 0%,100%{box-shadow:0 0 18px rgba(255,20,120,0.10)} 50%{box-shadow:0 0 34px rgba(255,20,120,0.26),0 0 64px rgba(255,20,120,0.10)} }
+        .op-glow-buy { animation: op-glow-buy 4.5s ease-in-out infinite; }
+        .op-glow-sell { animation: op-glow-sell 4.5s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
           .flash-buy, .flash-sell { animation: none; }
+          .op-glow-buy, .op-glow-sell { animation: none; }
         }
       `}</style>
       <div
         role="button"
         tabIndex={0}
         aria-label={`${asset.display_name} — abrir detalhes`}
-        className={`rounded-xl p-4 relative overflow-hidden transition-all duration-300 cursor-pointer hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${flashStyle}`}
+        className={`rounded-xl p-4 relative overflow-hidden transition-all duration-300 cursor-pointer hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${flashStyle} ${pulseStyle}`}
         onClick={onClick}
         onKeyDown={(e) => {
           // Achado A-8 do Raio-X de UI/UX: card só abria por clique de
@@ -473,7 +486,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); }
         }}
-        style={{ background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: `1px solid ${cardBorder}`, boxShadow: cardGlow }}>
+        style={{ background: cardBackground, backdropFilter: 'blur(20px)', border: `1px solid ${cardBorder}`, boxShadow: cardGlow }}>
 
         {/* Row 1: Symbol + Price */}
         <div className="flex items-start justify-between mb-2">
