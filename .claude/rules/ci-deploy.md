@@ -420,11 +420,19 @@ paths:
     (estes só quando há envio). Travado por `scripts/neonUsageTripwire.test.js`.
   - **Calibração opcional** (variáveis do repositório): `NEON_BASELINE_CU_HOURS` + `NEON_BASELINE_AT`; `NEON_BILLING_DAY`.
 
+- `logs-retention.yml` — **retenção do `system_logs`** (`docs/known-risks.md` item 298). 1x/dia (04:52 UTC, `schedule`) + botão manual com 2 campos
+  ("O que fazer?" = `simular`/`aplicar`, padrão **simular**; "Guardar quantos dias de log?", 7 a 3650, vazio = 30).
+  - **O que faz:** `scripts/logs-retention.mjs` (lógica em `db/logsRetention.mjs`, puro) apaga só os logs com **mais de N dias** (padrão 30), em lotes de 5.000
+    (teto 100 lotes por execução). **O agendado SEMPRE aplica**; o manual segue o campo. Só a tabela `system_logs`, só nível e data (nunca o conteúdo: o repo é público).
+  - **Travas:** corte estrito (o log com exatamente N dias fica), linha sem data nunca é apagada, e **sem nenhum log recente (queda longa ou relógio errado) não apaga nada**.
+  - **Isolamento:** `contents: read`, só `DATABASE_URL` + `DATABASE_SSL_CA`, nenhum Telegram/Firebase; entrada só por `env:`. Falha = job vermelho (sem Telegram). Travado por
+    `scripts/logsRetentionTripwire.test.js` (18 variantes plantadas). No Neon grátis apagar **não encolhe** o armazenamento, só para o crescimento.
+
 - **Orçamento de computação do Neon (item 286, travado por
   `scripts/neonComputeBudget.test.js`):** todo workflow com `schedule:` que
   cita `DATABASE_URL` é descoberto sozinho e somado ao disparo externo
   (`SCAN_CADENCE_MIN`). O modelo (compute dorme após 5 min; 0,25 CU) reproduz o
-  estouro real de 5 min (~180 h) e hoje dá ~79 h/mês com 15 min; o teste
+  estouro real de 5 min (~180 h) e hoje dá ~80 h/mês com 15 min (inclui a retenção diária do item 298, +0,7 h); o teste
   **reprova acima de 85 h**. Ao criar/alterar um agendamento que toca o banco,
   rode `npm test` e confira — cada disparo custa ~6 min de banco acordado.
 
