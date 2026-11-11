@@ -13,6 +13,7 @@
 // decidindo SE envia (shouldSend, lido de env/Firestore) e COMO envia
 // (send, credencial via env var). Ver docs/known-risks.md item 250.
 import { formatBackfillLag } from '../src/lib/backfillDetection.js';
+import { fetchWithRetry } from '../src/lib/httpRetry.js';
 import {
   buildSignalDetectedMessage, buildVerificationTaskMessage, buildSignalCanceledMessage,
   buildTradeCreatedMessage, buildTp1HitMessage, buildTp2HitMessage, buildStopHitMessage,
@@ -180,26 +181,63 @@ async function logTelegramFailure(message, details) {
 // dedup marker, see checkAssetHealthchecks in run-scan.mjs) must not assume
 // a resolved promise means the message went out; existing fire-and-forget
 // callers in scanner.js are unaffected, they already ignore the return value.
+// Rede instável (achado de 10/11/2026: "fetch failed" duas vezes na mesma tarde, alerta perdido): o envio fazia UMA tentativa, sem limite de tempo.
+// Agora tenta até 3 vezes (esperas de 1 s e 2 s), corta cada tentativa em 8 s e limita o "Retry-After" do Telegram a 5 s (o padrão do fetchWithRetry
+// aceita até 120 s: achado do Codex, PR #561). Só repete o transitório (queda de rede, 429, 5xx); um 401/400 falha na hora.
+// ORÇAMENTO TOTAL do envio: 30 s (+ até 5 s do registro da falha) — o scan tem teto de 90 s e `checkAssetHealthchecks` aguarda os envios um a um.
+// Por isso, depois que um envio ESGOTA as tentativas, os seguintes nesta execução tentam uma vez só (uma queda longa do Telegram não vira 30 s por
+// mensagem); um envio que dá certo reabre as tentativas.
+// Risco aceito: se o Telegram recebeu a mensagem mas a resposta se perdeu, ela pode chegar em dobro — melhor do que um alerta de operação perdido.
+const TELEGRAM_RETRY = { maxRetries: 2, baseDelayMs: 500, attemptTimeoutMs: 8_000, maxRetryAfterMs: 5_000 };
+const SEND_BUDGET_MS = 30_000;
+const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]); // os mesmos que o fetchWithRetry repete
+let canalInstavel = false; // por processo: cada `npm run scan` é um processo novo
+
+/**
+ * O código da causa de uma queda de rede ("UND_ERR_CONNECT_TIMEOUT", "ECONNRESET", "ENOTFOUND"…): o Node só diz "fetch failed" e esconde o motivo em
+ * `err.cause`. Só o CÓDIGO (maiúsculas/dígitos/_) entra no log: o texto livre da causa pode trazer o endereço da requisição, que contém o token do bot,
+ * e este log é lido no Job Summary de um repositório público.
+ */
+function networkCauseCode(err) {
+  const code = err?.cause?.code ?? err?.code;
+  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{2,39}$/.test(code) ? code : null;
+}
+
+/** Lê e descarta o corpo: é a leitura que desarma o cronômetro de tentativa do fetchWithRetry (senão ele segura o processo por 8 s depois do envio). */
+async function descartarCorpo(res) {
+  try { await res.text?.(); } catch { /* corpo ilegível: o envio já deu certo */ }
+}
+
 async function send(html) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!botToken || !chatId) return false;
   try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
-    });
+    // `context` fixo de propósito: o padrão é a própria URL, que tem o token e iria para o console (log público do Actions) a cada nova tentativa.
+    const res = await withTimeout(fetchWithRetry(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      context: 'telegram',
+      ...(canalInstavel ? { ...TELEGRAM_RETRY, maxRetries: 0 } : TELEGRAM_RETRY),
+      fetchOptions: {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
+      },
+    }), SEND_BUDGET_MS, 'telegramSend');
     if (!res.ok) {
       const body = await res.text();
+      if (TRANSIENT_STATUSES.has(res.status)) canalInstavel = true; // esgotou as tentativas num erro transitório (429/5xx)
       console.warn('[Telegram] send failed:', res.status, body);
       await logTelegramFailure('Falha ao enviar mensagem ao Telegram', { status: res.status, body });
       return false;
     }
+    canalInstavel = false;
+    await descartarCorpo(res);
     return true;
   } catch (e) {
-    console.warn('[Telegram] send failed:', e.message);
-    await logTelegramFailure('Falha ao enviar mensagem ao Telegram (exceção)', { error: e.message });
+    canalInstavel = true; // queda de rede ou orçamento estourado
+    const cause = networkCauseCode(e);
+    console.warn('[Telegram] send failed:', e.message, cause ?? '');
+    await logTelegramFailure('Falha ao enviar mensagem ao Telegram (exceção)', cause ? { error: e.message, cause } : { error: e.message });
     return false;
   }
 }

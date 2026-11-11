@@ -78,6 +78,26 @@ export function logDebug(module, message, details, extra) {
   addToQueue('debug', module, message, details, extra);
 }
 
+// ─── Ruído de extensão do navegador ───
+
+// Extensões (MetaMask, bloqueadores, tradutores…) injetam scripts em TODA página e, quando falham, o erro cai no `window` do app. O Sentinel não usa
+// carteira nenhuma: "Failed to connect to MetaMask" (achado de 11/11/2026) é a extensão do navegador do usuário, não um defeito nosso.
+const EXTENSION_URL = /(?:chrome|moz|safari-web|safari)-extension:\/\//;
+// Um frame de pilha: "    at fn (url:1:2)" (Chrome/Node) ou "fn@url:1:2" (Firefox/Safari).
+const STACK_FRAME = /^\s*at\s|^\S*@\S+:\d+(?::\d+)?\s*$/;
+
+/**
+ * O erro nasceu dentro de uma extensão do navegador? Só vale o PRIMEIRO frame da pilha (quem lançou) ou o arquivo do erro de janela: um erro do app
+ * que apenas passa por uma extensão no meio da pilha continua sendo nosso e continua sendo gravado. O texto da mensagem nunca conta.
+ * @param {{ stack?: unknown, filename?: unknown }} [origem]
+ */
+export function isBrowserExtensionNoise({ stack, filename } = {}) {
+  if (typeof filename === 'string' && EXTENSION_URL.test(filename)) return true;
+  if (typeof stack !== 'string') return false;
+  const firstFrame = stack.split('\n').find((line) => STACK_FRAME.test(line));
+  return Boolean(firstFrame && EXTENSION_URL.test(firstFrame));
+}
+
 // ─── Auto-capture initialization ───
 
 let initialized = false;
@@ -88,6 +108,7 @@ export function initLogger() {
 
   // Capture global JS errors
   window.addEventListener('error', (event) => {
+    if (isBrowserExtensionNoise({ filename: event.filename })) return;
     addToQueue('error', 'global', `JS Error: ${event.message}`, {
       filename: event.filename?.split('/').pop(),
       lineno: event.lineno,
@@ -97,6 +118,7 @@ export function initLogger() {
 
   // Capture unhandled promise rejections
   window.addEventListener('unhandledrejection', (event) => {
+    if (isBrowserExtensionNoise({ stack: event.reason?.stack })) return;
     const reason = event.reason?.message || String(event.reason)?.slice(0, 200);
     addToQueue('error', 'global', `Unhandled Promise: ${reason}`, {
       stack: event.reason?.stack?.slice(0, 500),
