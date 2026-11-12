@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
-import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
+import { STALE_TIME_MS } from '@/lib/pollingIntervals';
 import { DB_QUOTA_CODE } from '@/lib/dbQuotaError';
 
 /**
@@ -28,7 +28,7 @@ export const queryClientInstance = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: true,
-      staleTime: POLL_OPERATIONAL_MS,
+      staleTime: STALE_TIME_MS,
       retry: shouldRetryQuery,
     },
   },

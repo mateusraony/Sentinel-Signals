@@ -13,6 +13,7 @@
 // (Authorization: Bearer <idToken>) e tratamento de erro — o mesmo helper já
 // usado por /api/telegram-notify e /api/backtest/*.
 import { callBackend } from '@/lib/apiBackend';
+import { noteDbRead } from '@/lib/dbReadClock';
 
 function buildEntityQuery(filters, sort, limitCount) {
   const params = new URLSearchParams();
@@ -31,18 +32,25 @@ function buildEntityQuery(filters, sort, limitCount) {
 function createEntity(collectionName) {
   const base = `/api/entities/${collectionName}`;
   return {
+    // Toda LEITURA que dá certo registra o horário em `dbReadClock` (o chip "Atualizado às" do painel, item 301). Escrita e erro não contam.
     async list(sort, limitCount) {
-      return callBackend(`${base}${buildEntityQuery({}, sort, limitCount)}`, undefined, { method: 'GET' });
+      const result = await callBackend(`${base}${buildEntityQuery({}, sort, limitCount)}`, undefined, { method: 'GET' });
+      noteDbRead();
+      return result;
     },
 
     async filter(filters = {}, sort, limitCount) {
-      return callBackend(`${base}${buildEntityQuery(filters, sort, limitCount)}`, undefined, { method: 'GET' });
+      const result = await callBackend(`${base}${buildEntityQuery(filters, sort, limitCount)}`, undefined, { method: 'GET' });
+      noteDbRead();
+      return result;
     },
 
     // Retorna null para documento inexistente — mesmo contrato do
     // Firestore original (snap.exists() ? ... : null) — em vez de lançar.
     async get(id) {
-      return callBackend(`${base}/${id}`, undefined, { method: 'GET', allow404: true });
+      const result = await callBackend(`${base}/${id}`, undefined, { method: 'GET', allow404: true });
+      noteDbRead();
+      return result;
     },
 
     async set(id, data) {

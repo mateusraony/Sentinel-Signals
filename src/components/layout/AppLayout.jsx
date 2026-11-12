@@ -6,7 +6,7 @@ import TickerBar from './TickerBar';
 import AuroraBg from './AuroraBg';
 import DebugLogButton from './DebugLogButton';
 import DbQuotaBanner from './DbQuotaBanner';
-import LiveStatusBar from './LiveStatusBar';
+import LastUpdateChip from './LastUpdateChip';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAutoScan } from '@/hooks/useAutoScan';
 import { useQueryClient } from '@tanstack/react-query';
@@ -29,7 +29,6 @@ export default function AppLayout() {
         <div className="md:pl-14 pb-16 md:pb-0">
           <TickerBar />
           <TopBar />
-          <LiveStatusBar />
           <main className="p-4 lg:p-6">
             <DbQuotaBanner />
             {/* key={pathname} remounts the boundary on every route change,
@@ -42,6 +41,7 @@ export default function AppLayout() {
         </div>
       </div>
       <DebugLogButton />
+      <LastUpdateChip />
     </div>
   );
 }

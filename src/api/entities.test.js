@@ -13,6 +13,7 @@ const { callBackendMock } = vi.hoisted(() => ({ callBackendMock: vi.fn() }));
 vi.mock('@/lib/apiBackend', () => ({ callBackend: callBackendMock }));
 
 const { backend } = await import('./entities.js');
+const { getLastDbRead, resetDbReadClock } = await import('@/lib/dbReadClock');
 
 beforeEach(() => {
   callBackendMock.mockReset();
@@ -199,5 +200,61 @@ describe('entities — backend.quota', () => {
   it('getAndResetOpCounts() é um stub local — nunca chama a rede', () => {
     expect(backend.quota.getAndResetOpCounts()).toEqual({ reads: 0, writes: 0 });
     expect(callBackendMock).not.toHaveBeenCalled();
+  });
+});
+
+// Item 301: o chip "Atualizado às" mostra a última LEITURA do banco que deu certo. Escrita e erro não podem contar.
+describe('entities — registra a última leitura do banco (dbReadClock)', () => {
+  beforeEach(() => resetDbReadClock());
+
+  it('list(), filter() e get() bem-sucedidos registram a leitura', async () => {
+    await backend.entities.MonitoredAsset.list();
+    const a = getLastDbRead();
+    expect(a).toBeGreaterThan(0);
+    resetDbReadClock();
+    await backend.entities.MonitoredAsset.filter({ is_active: true });
+    expect(getLastDbRead()).toBeGreaterThan(0);
+    resetDbReadClock();
+    await backend.entities.MonitoredAsset.get('x');
+    expect(getLastDbRead()).toBeGreaterThan(0);
+  });
+
+  it('o horário registrado é o da resposta (depois da chamada), não o do início', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-12T14:00:00Z'));
+    callBackendMock.mockImplementationOnce(async () => { vi.setSystemTime(new Date('2026-11-12T14:00:07Z')); return []; });
+    await backend.entities.MonitoredAsset.list();
+    expect(getLastDbRead()).toBe(Date.parse('2026-11-12T14:00:07Z'));
+    vi.useRealTimers();
+  });
+
+  it('leitura que FALHA não registra (o dado não atualizou)', async () => {
+    for (const chamada of [
+      () => backend.entities.MonitoredAsset.list(),
+      () => backend.entities.MonitoredAsset.filter({}),
+      () => backend.entities.MonitoredAsset.get('x'),
+    ]) {
+      callBackendMock.mockRejectedValueOnce(new Error('503'));
+      await expect(chamada()).rejects.toThrow('503');
+      expect(getLastDbRead()).toBe(0);
+    }
+  });
+
+  it('ESCRITA não registra (o logger gravando não pode fazer o chip dizer que a tela atualizou)', async () => {
+    await backend.entities.SignalEvent.create({ a: 1 });
+    await backend.entities.SignalEvent.set('id', { a: 1 });
+    await backend.entities.SignalEvent.createUnique('id', { a: 1 });
+    await backend.entities.SignalEvent.update('id', { a: 2 });
+    await backend.entities.SignalEvent.delete('id');
+    await backend.entities.SignalEvent.bulkCreate([{ a: 1 }]);
+    await backend.entities.SignalEvent.deleteMany({});
+    expect(getLastDbRead()).toBe(0);
+  });
+
+  it('a leitura devolve o mesmo resultado de antes (a marcação não altera o contrato)', async () => {
+    callBackendMock.mockResolvedValueOnce([{ id: 1 }]);
+    expect(await backend.entities.MonitoredAsset.list()).toEqual([{ id: 1 }]);
+    callBackendMock.mockResolvedValueOnce(null);
+    expect(await backend.entities.MonitoredAsset.get('x')).toBeNull();
   });
 });
