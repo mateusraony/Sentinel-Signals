@@ -2,7 +2,7 @@
 // Regras provadas aqui: só entra em repouso depois de IDLE_REST_MS SEM atividade; qualquer atividade acorda na hora e reinicia a contagem; aba que volta a ficar
 // visível conta como atividade; cada transição avisa uma vez; parar remove todos os ouvintes; não depende de `window` no carregamento do módulo.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createIdleRest, IDLE_REST_MS, ACTIVITY_EVENTS } from './idleRest.js';
+import { createIdleRest, IDLE_REST_MS, REST_REFRESH_MS, LIVE_MS, ACTIVITY_EVENTS } from './idleRest.js';
 
 const MIN = 60_000;
 
@@ -18,8 +18,16 @@ describe('idleRest — constantes', () => {
   it('20 minutos, a decisão do usuário (item 300, opção 1)', () => {
     expect(IDLE_REST_MS).toBe(20 * MIN);
   });
-  it('os eventos de atividade cobrem mouse, teclado, toque e rolagem', () => {
-    for (const e of ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel', 'scroll']) expect(ACTIVITY_EVENTS).toContain(e);
+  it('os eventos de atividade cobrem mouse, teclado, toque e roda do mouse', () => {
+    for (const e of ['mousemove', 'mousedown', 'pointerdown', 'keydown', 'touchstart', 'wheel']) expect(ACTIVITY_EVENTS).toContain(e);
+  });
+  it('`scroll` NÃO é atividade: o navegador o dispara sozinho (scroll anchoring) e acordaria o painel sem ninguém', () => {
+    expect(ACTIVITY_EVENTS).not.toContain('scroll');
+  });
+  it('em repouso a tela atualiza a cada 30 min (não congela); "Manter ao vivo" dura 60 min, MAIS que os 20 min do repouso (senão o botão não mudaria nada)', () => {
+    expect(REST_REFRESH_MS).toBe(30 * MIN);
+    expect(LIVE_MS).toBe(60 * MIN);
+    expect(LIVE_MS).toBeGreaterThan(IDLE_REST_MS);
   });
 });
 
@@ -300,5 +308,178 @@ describe('idleRest — o módulo não faz trabalho ao ser importado', () => {
     const mod = await import('./idleRest.js');
     expect(typeof mod.isResting).toBe('function');
     expect(mod.isResting()).toBe(false); // sem start(): nunca em repouso
+  });
+});
+
+
+describe('idleRest — "Manter ao vivo" (tempo limitado)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('ao vivo o painel NÃO entra em repouso nem depois de 20 min sem ninguém mexer', async () => {
+    const { idle } = montar();
+    idle.start();
+    idle.startLive();
+    await vi.advanceTimersByTimeAsync(59 * MIN);
+    expect(idle.isResting()).toBe(false);
+    expect(idle.isLive()).toBe(true);
+    idle.stop();
+  });
+  it('acabado o prazo (60 min) sem ninguém ter mexido, entra em repouso NA HORA (já passou muito mais que 20 min)', async () => {
+    const { idle } = montar();
+    idle.start();
+    idle.startLive();
+    await vi.advanceTimersByTimeAsync(60 * MIN + 1000);
+    expect(idle.isLive()).toBe(false);
+    expect(idle.isResting()).toBe(true);
+    idle.stop();
+  });
+  it('acabado o prazo com atividade recente, continua ativo e a contagem normal de 20 min recomeça da última atividade', async () => {
+    const { idle, target } = montar();
+    idle.start();
+    idle.startLive();
+    await vi.advanceTimersByTimeAsync(55 * MIN);
+    atividade(target); // t = 55 min
+    await vi.advanceTimersByTimeAsync(6 * MIN); // t = 61: o prazo acabou, só 6 min desde a atividade
+    expect(idle.isLive()).toBe(false);
+    expect(idle.isResting()).toBe(false);
+    await vi.advanceTimersByTimeAsync(15 * MIN); // 21 min desde a atividade
+    expect(idle.isResting()).toBe(true);
+    idle.stop();
+  });
+  it('clicar em repouso acorda e fica ao vivo', async () => {
+    const { idle } = montar();
+    idle.start();
+    await vi.advanceTimersByTimeAsync(21 * MIN);
+    expect(idle.isResting()).toBe(true);
+    idle.startLive();
+    expect(idle.isResting()).toBe(false);
+    expect(idle.isLive()).toBe(true);
+    idle.stop();
+  });
+  it('avisa quem ouve o repouso (boolean) ao acordar pelo botão', async () => {
+    const { idle } = montar();
+    const ouvinte = vi.fn();
+    idle.subscribe(ouvinte);
+    idle.start();
+    await vi.advanceTimersByTimeAsync(21 * MIN);
+    idle.startLive();
+    expect(ouvinte.mock.calls.map((c) => c[0])).toEqual([true, false]);
+    idle.stop();
+  });
+  it('clicar de novo RENOVA o prazo a partir de agora', async () => {
+    const { idle } = montar();
+    idle.start();
+    idle.startLive();
+    await vi.advanceTimersByTimeAsync(50 * MIN);
+    idle.startLive();
+    await vi.advanceTimersByTimeAsync(30 * MIN); // t = 80 min: o prazo antigo (60) já teria acabado
+    expect(idle.isLive()).toBe(true);
+    expect(idle.isResting()).toBe(false);
+    idle.stop();
+  });
+  it('a fotografia de estado traz { resting, liveUntil } e só muda de referência quando algo muda', async () => {
+    const { idle } = montar();
+    const inicial = idle.getState();
+    expect(inicial).toEqual({ resting: false, liveUntil: null });
+    idle.start();
+    expect(idle.getState()).toBe(inicial); // nada mudou: mesma referência (useSyncExternalStore não pode re-renderizar à toa)
+    idle.startLive();
+    const ao_vivo = idle.getState();
+    expect(ao_vivo.resting).toBe(false);
+    expect(ao_vivo.liveUntil).toBe(Date.now() + LIVE_MS);
+    await vi.advanceTimersByTimeAsync(61 * MIN);
+    expect(idle.getState()).toEqual({ resting: true, liveUntil: null });
+    idle.stop();
+  });
+  it('quem ouve a fotografia é avisado em cada transição, e parar de ouvir funciona', async () => {
+    const { idle } = montar();
+    const ouvinte = vi.fn();
+    const cancelar = idle.subscribeState(ouvinte);
+    idle.start();
+    idle.startLive();
+    expect(ouvinte).toHaveBeenCalledTimes(1);
+    expect(ouvinte.mock.calls[0][0].liveUntil).not.toBeNull();
+    cancelar();
+    await vi.advanceTimersByTimeAsync(61 * MIN);
+    expect(ouvinte).toHaveBeenCalledTimes(1);
+    idle.stop();
+  });
+  it('stop() encerra o "ao vivo" e volta ao estado inicial', () => {
+    const { idle } = montar();
+    idle.start();
+    idle.startLive();
+    idle.stop();
+    expect(idle.isLive()).toBe(false);
+    expect(idle.getState()).toEqual({ resting: false, liveUntil: null });
+  });
+  it('sem start() ou com prazo inválido, startLive() não faz nada', () => {
+    const { idle } = montar();
+    idle.startLive();
+    expect(idle.isLive()).toBe(false);
+    idle.start();
+    idle.startLive(0);
+    idle.startLive(-5);
+    expect(idle.isLive()).toBe(false);
+    idle.stop();
+  });
+  it('o "ao vivo" não acorda por rolagem nem depende dela: rolar sozinho não é atividade', async () => {
+    const { idle, target } = montar();
+    idle.start();
+    await vi.advanceTimersByTimeAsync(21 * MIN);
+    target.dispatchEvent(new Event('scroll'));
+    expect(idle.isResting()).toBe(true);
+    idle.stop();
+  });
+  it('depois de repouso, "Manter ao vivo" também EXPIRA (o temporizador é rearmado) e volta ao repouso', async () => {
+    const { idle } = montar();
+    idle.start();
+    await vi.advanceTimersByTimeAsync(21 * MIN);
+    idle.startLive();
+    expect(idle.isLive()).toBe(true);
+    await vi.advanceTimersByTimeAsync(61 * MIN);
+    expect(idle.isLive()).toBe(false);
+    expect(idle.isResting()).toBe(true);
+    idle.stop();
+  });
+  it('o fim do prazo atualiza a fotografia mesmo continuando ativo (a barra para de dizer "ao vivo até")', async () => {
+    const { idle, target } = montar();
+    const ouvinte = vi.fn();
+    idle.subscribeState(ouvinte);
+    idle.start();
+    idle.startLive();
+    await vi.advanceTimersByTimeAsync(55 * MIN);
+    atividade(target);
+    await vi.advanceTimersByTimeAsync(6 * MIN);
+    expect(idle.getState()).toEqual({ resting: false, liveUntil: null });
+    const ultima = ouvinte.mock.calls.at(-1)[0];
+    expect(ultima).toEqual({ resting: false, liveUntil: null });
+    idle.stop();
+  });
+  it('disparo do temporizador ANTES do fim do prazo (ex.: o de repouso, já agendado) não entra em repouso: reagenda só o que falta', () => {
+    let agora = 0;
+    const timers = [];
+    const { idle } = montar({ now: () => agora, setTimer: (fn, ms) => { timers.push({ fn, ms }); return timers.length; }, clearTimer: () => {} });
+    idle.start(); // timers[0]: o de repouso (20 min)
+    idle.startLive(); // timers[1]: o do fim do prazo (60 min)
+    agora = 25 * MIN; // já passou dos 20 min sem atividade, mas o "ao vivo" vai até 60 min
+    timers[0].fn();
+    expect(idle.isResting()).toBe(false);
+    expect(idle.isLive()).toBe(true);
+    expect(timers.at(-1).ms).toBe(35 * MIN); // reagendou exatamente o que falta para o fim do prazo
+    idle.stop();
+  });
+  it('com "ao vivo" MENOR que o repouso, a contagem de inatividade conta a partir do clique (não da última atividade antiga)', async () => {
+    const { idle } = montar({ liveMs: 5 * MIN });
+    idle.start();
+    await vi.advanceTimersByTimeAsync(10 * MIN); // 10 min sem mexer
+    idle.startLive(); // clique: conta como atividade; ao vivo até o minuto 15
+    await vi.advanceTimersByTimeAsync(5 * MIN + 1000); // minuto 15: o prazo acabou, só 5 min desde o clique
+    expect(idle.isResting()).toBe(false);
+    await vi.advanceTimersByTimeAsync(10 * MIN); // minuto 25: 15 min desde o clique: ainda ativo (20 min)
+    expect(idle.isResting()).toBe(false);
+    await vi.advanceTimersByTimeAsync(6 * MIN); // minuto 31: 21 min desde o clique
+    expect(idle.isResting()).toBe(true);
+    idle.stop();
   });
 });

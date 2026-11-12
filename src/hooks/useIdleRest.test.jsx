@@ -2,7 +2,8 @@
  * @vitest-environment jsdom
  *
  * Repouso do painel (docs/known-risks.md item 301). Usa o React Query DE VERDADE: a prova que importa é que o intervalo de atualização das telas
- * PARA em repouso (o banco não é consultado) e que a primeira atividade refaz as consultas na hora.
+ * PARA em repouso (o banco não é consultado entre as atualizações lentas de 30 min), que a tela NÃO congela (atualiza a cada 30 min) e que a primeira
+ * atividade refaz as consultas na hora.
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -11,25 +12,25 @@ import { QueryClient, QueryClientProvider, useQuery, focusManager } from '@tanst
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { useIdleRest } from './useIdleRest';
-import { isResting, stopIdleRest } from '@/lib/idleRest';
+import { isResting, stopIdleRest, keepLive } from '@/lib/idleRest';
 
 const MIN = 60_000;
 
-function montar() {
+function montar({ intervalo = MIN } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: Infinity } } });
   const wrapper = ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   const buscar = vi.fn().mockResolvedValue('ok');
   const tela = renderHook(() => {
-    const resting = useIdleRest();
-    useQuery({ queryKey: ['dado'], queryFn: buscar, refetchInterval: MIN });
-    return resting;
+    const estado = useIdleRest();
+    useQuery({ queryKey: ['dado'], queryFn: buscar, refetchInterval: intervalo });
+    return estado;
   }, { wrapper });
   return { client, buscar, tela };
 }
 
 const atividade = () => act(() => { window.dispatchEvent(new Event('mousemove')); });
 
-describe('useIdleRest — o intervalo das telas para em repouso e volta ao acordar', () => {
+describe('useIdleRest — o intervalo das telas para em repouso, a tela não congela e volta ao acordar', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     focusManager.setFocused(undefined);
@@ -49,13 +50,36 @@ describe('useIdleRest — o intervalo das telas para em repouso e volta ao acord
     expect(buscar.mock.calls.length - inicio).toBeGreaterThanOrEqual(3);
   });
 
-  it('em repouso: NENHUMA atualização automática, por mais que o tempo passe', async () => {
+  it('em repouso: o intervalo de 60 s PARA; só a atualização lenta (a cada 30 min) consulta', async () => {
+    const { buscar, tela } = montar();
+    await vi.advanceTimersByTimeAsync(21 * MIN); // entra em repouso aos 20 min
+    expect(tela.result.current.resting).toBe(true);
+    const base = buscar.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(28 * MIN); // t = 49 min (29 min em repouso): ainda nenhuma atualização
+    expect(buscar.mock.calls.length).toBe(base);
+    await vi.advanceTimersByTimeAsync(2 * MIN); // t = 51 min (31 min em repouso): UMA atualização
+    expect(buscar.mock.calls.length).toBe(base + 1);
+  });
+
+  it('a tela não congela: em 3 h de repouso ela atualiza ~6 vezes (a cada 30 min), nunca 180', async () => {
     const { buscar, tela } = montar();
     await vi.advanceTimersByTimeAsync(21 * MIN);
-    expect(tela.result.current).toBe(true);
-    const congelado = buscar.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(60 * MIN);
-    expect(buscar.mock.calls.length).toBe(congelado);
+    const base = buscar.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(180 * MIN);
+    expect(tela.result.current.resting).toBe(true);
+    const feitas = buscar.mock.calls.length - base;
+    expect(feitas).toBeGreaterThanOrEqual(5);
+    expect(feitas).toBeLessThanOrEqual(7);
+  });
+
+  it('aba escondida em repouso NÃO atualiza (ninguém olha; ao voltar o foco refaz na hora)', async () => {
+    const { buscar } = montar();
+    await vi.advanceTimersByTimeAsync(21 * MIN);
+    const base = buscar.mock.calls.length;
+    const espia = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    await vi.advanceTimersByTimeAsync(95 * MIN);
+    expect(buscar.mock.calls.length).toBe(base);
+    espia.mockRestore();
   });
 
   it('a primeira atividade acorda, atualiza as telas NA HORA e o intervalo volta', async () => {
@@ -64,30 +88,84 @@ describe('useIdleRest — o intervalo das telas para em repouso e volta ao acord
     const congelado = buscar.mock.calls.length;
     atividade();
     await vi.advanceTimersByTimeAsync(50);
-    expect(tela.result.current).toBe(false);
+    expect(tela.result.current.resting).toBe(false);
     expect(buscar.mock.calls.length).toBeGreaterThan(congelado); // refez na hora (voltou o foco)
     const depois = buscar.mock.calls.length;
     await vi.advanceTimersByTimeAsync(3 * MIN + 100);
     expect(buscar.mock.calls.length - depois).toBeGreaterThanOrEqual(3); // e o intervalo normal voltou
   });
 
-  it('o valor devolvido acompanha o repouso (a faixa de aviso lê isto)', async () => {
-    const { tela } = montar();
-    expect(tela.result.current).toBe(false);
+  it('ao acordar a atualização lenta PARA (não sobra temporizador de 30 min rodando)', async () => {
+    const { buscar } = montar();
     await vi.advanceTimersByTimeAsync(21 * MIN);
-    expect(tela.result.current).toBe(true);
     atividade();
-    expect(tela.result.current).toBe(false);
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    // com o painel ativo de novo (e atividade a cada 5 min, para não voltar ao repouso) o ritmo é o de 60 s, não somado ao de 30 min
+    const base = buscar.mock.calls.length;
+    for (let i = 0; i < 6; i += 1) { atividade(); await vi.advanceTimersByTimeAsync(5 * MIN); }
+    const feitas = buscar.mock.calls.length - base;
+    expect(feitas).toBeGreaterThanOrEqual(29);
+    expect(feitas).toBeLessThanOrEqual(32); // 30 min ativos a 60 s = ~30; a atualização lenta não soma
   });
 
-  it('rolagem que NÃO borbulha, num elemento interno, também acorda (ouvinte em captura)', async () => {
+  it('ativo, a atualização lenta NÃO roda (uma tela sem intervalo próprio não é consultada de novo só pelo tempo)', async () => {
+    const { buscar } = montar({ intervalo: false });
+    await vi.advanceTimersByTimeAsync(10);
+    const base = buscar.mock.calls.length;
+    for (let i = 0; i < 20; i += 1) { atividade(); await vi.advanceTimersByTimeAsync(5 * MIN); } // 100 min ativo, sempre mexendo
+    expect(buscar.mock.calls.length).toBe(base);
+  });
+
+  it('depois de acordar, o temporizador da atualização lenta é DESARMADO (nenhuma consulta extra aos 30 min)', async () => {
+    const { buscar, tela } = montar({ intervalo: false });
+    await vi.advanceTimersByTimeAsync(21 * MIN);
+    expect(tela.result.current.resting).toBe(true);
+    atividade();
+    await vi.advanceTimersByTimeAsync(50); // refaz na hora ao voltar o foco
+    const base = buscar.mock.calls.length;
+    for (let i = 0; i < 20; i += 1) { atividade(); await vi.advanceTimersByTimeAsync(5 * MIN); }
+    expect(buscar.mock.calls.length).toBe(base);
+  });
+
+  it('o valor devolvido é { resting, liveUntil } e acompanha o repouso', async () => {
+    const { tela } = montar();
+    expect(tela.result.current).toEqual({ resting: false, liveUntil: null });
+    await vi.advanceTimersByTimeAsync(21 * MIN);
+    expect(tela.result.current.resting).toBe(true);
+    expect(isResting()).toBe(true); // o que o useAutoScan e o monitor do logger leem
+    atividade();
+    expect(tela.result.current.resting).toBe(false);
+    expect(isResting()).toBe(false);
+  });
+
+  it('"Manter ao vivo": não entra em repouso, o intervalo de 60 s segue, e o horário final aparece', async () => {
+    const { buscar, tela } = montar();
+    act(() => keepLive());
+    expect(tela.result.current.liveUntil).toBe(Date.now() + 60 * MIN);
+    await vi.advanceTimersByTimeAsync(40 * MIN);
+    expect(tela.result.current.resting).toBe(false);
+    expect(buscar.mock.calls.length).toBeGreaterThanOrEqual(38); // continua a ~60 s
+  });
+
+  it('"Manter ao vivo" em repouso acorda e devolve o foco ao React Query', async () => {
+    const { tela } = montar();
+    await vi.advanceTimersByTimeAsync(21 * MIN);
+    expect(focusManager.isFocused()).toBe(false);
+    act(() => keepLive());
+    expect(tela.result.current.resting).toBe(false);
+    expect(focusManager.isFocused()).toBe(true);
+  });
+
+  it('rolagem SOZINHA (scroll anchoring, sem roda/toque/tecla) NÃO acorda o painel', async () => {
     const { tela } = montar();
     const caixa = document.createElement('div');
     document.body.appendChild(caixa);
     await vi.advanceTimersByTimeAsync(21 * MIN);
-    expect(tela.result.current).toBe(true);
-    act(() => { caixa.dispatchEvent(new Event('scroll', { bubbles: false })); });
-    expect(tela.result.current).toBe(false);
+    expect(tela.result.current.resting).toBe(true);
+    act(() => { caixa.dispatchEvent(new Event('scroll', { bubbles: false })); window.dispatchEvent(new Event('scroll')); });
+    expect(tela.result.current.resting).toBe(true);
+    act(() => { caixa.dispatchEvent(new Event('wheel', { bubbles: false })); }); // roda do mouse num elemento interno: acorda (captura)
+    expect(tela.result.current.resting).toBe(false);
     caixa.remove();
   });
 
@@ -102,13 +180,16 @@ describe('useIdleRest — o intervalo das telas para em repouso e volta ao acord
   });
 
   it('desmontar para tudo: o foco do React Query volta ao normal e nada fica ouvindo', async () => {
-    const { tela } = montar();
+    const { tela, buscar } = montar();
     await vi.advanceTimersByTimeAsync(21 * MIN);
     expect(focusManager.isFocused()).toBe(false);
     tela.unmount();
     expect(focusManager.isFocused()).toBe(true);
     expect(isResting()).toBe(false);
     expect(() => window.dispatchEvent(new Event('mousemove'))).not.toThrow();
+    const base = buscar.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(90 * MIN);
+    expect(buscar.mock.calls.length).toBe(base); // nem o temporizador de 30 min sobrou
   });
 
   it('em repouso o React Query considera a aba "sem foco" e ao acordar volta a "com foco"', async () => {

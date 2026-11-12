@@ -22,7 +22,7 @@ O que manda agora é **continuidade do sistema**, depois a camada de contexto.
 
 _Tabela revisada em 2026-11-12 (linhas 1, 2, 3, 4 e 5)._
 
-> **Neon, 12/11/2026 (item 300):** o console mostra **26,72 CU-h** de 100 (o medidor dizia 19,6: ele só vê o GitHub); projeção do mês **~63 CU-h**, folga ~37. **O maior risco fora do scan é uma aba do painel esquecida aberta**: qualquer aba consulta o banco a cada ≤ 2 min (mesmo escondida) e o Neon só dorme depois de 5 min, então a aba vira ~3,6 CU-h/dia. Opções no item 300; **a recomendada (repouso por inatividade, 20 min) foi implementada no item 301** (aguarda o "aprovado" do visual para mesclar). **Pendente do usuário:** as duas variáveis de calibração do medidor (item 300). PR #513 fechado sem mesclar em 12/11 (linha 3 concluída).
+> **Neon, 12/11/2026 (item 300):** o console mostra **26,72 CU-h** de 100 (o medidor dizia 19,6: ele só vê o GitHub); projeção do mês **~63 CU-h**, folga ~37. **O maior risco fora do scan é uma aba do painel esquecida aberta**: qualquer aba consulta o banco a cada ≤ 2 min (mesmo escondida) e o Neon só dorme depois de 5 min, então a aba vira ~3,6 CU-h/dia. Opções no item 300; **a recomendada (repouso por inatividade) foi implementada no item 301 **sem congelar a tela** (atualiza a cada 30 min em repouso, botão "Manter ao vivo" por 60 min, último horário sempre visível); aguarda o "aprovado" do visual para mesclar). **Pendente do usuário:** as duas variáveis de calibração do medidor (item 300). PR #513 fechado sem mesclar em 12/11 (linha 3 concluída).
 
 **Passos manuais que dependem de você** (a regra do projeto é só considerar
 concluído depois que você confirmar):
