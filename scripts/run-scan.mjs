@@ -12,6 +12,7 @@ import {
 import { withTimeout, forceExit } from './scanTimeout.mjs';
 import { classifyFailure, isFirestoreQuotaExhausted, isDatabaseQuotaExhausted } from './failureClassification.mjs';
 import { publishObservationSnapshot, describePublishResult } from './observationPublish.mjs';
+import { runObservationWatch, closeObservationEpisode, describeWatchResult, describeCloseResult } from './observationWatcher.mjs';
 import { instrumentTradeOps, summarizeScanPass, formatScanSummary } from './scanSummary.mjs';
 import { pathToFileURL } from 'node:url';
 
@@ -103,6 +104,33 @@ async function announceQuotaRecoveryIfClean() {
     await notifyDatabaseQuotaRecovered().catch((e) =>
       console.warn('[scan] Falha ao notificar recuperação do banco (não crítico):', e.message)
     );
+  }
+}
+
+// Modo de observação sem banco, fase O2b (docs/known-risks.md item 299): o vigia de stop/alvo roda SÓ quando o Postgres está sem cota e NUNCA toca o Postgres
+// (lê o retrato no RTDB, as velas na Binance e avisa pelo Telegram sem banco). Sem OBSERVATION_DATABASE_URL não faz nada. Nunca fatal, no máximo uma vez por
+// processo, e o log é PÚBLICO: mensagem FIXA no erro (o texto da exceção não passa por sanitização), resultado só com contagem e código.
+const OBSERVATION_WATCH_TIMEOUT_MS = 150 * 1000;
+const OBSERVATION_CLOSE_TIMEOUT_MS = 40 * 1000;
+let observationWatchRan = false;
+
+async function runObservationWatchSafely() {
+  if (observationWatchRan) return;
+  observationWatchRan = true;
+  try {
+    console.log(describeWatchResult(await withTimeout(runObservationWatch({}), OBSERVATION_WATCH_TIMEOUT_MS, 'observationWatch')));
+  } catch {
+    console.warn('[scan] vigia indisponível (não crítico)');
+  }
+}
+
+// Passada limpa = o banco voltou: fecha o episódio da queda (e avisa na volta se o vigia falou). Sem episódio aberto: 1 leitura pequena do RTDB, nada mais.
+async function closeObservationEpisodeSafely() {
+  try {
+    const linha = describeCloseResult(await withTimeout(closeObservationEpisode({}), OBSERVATION_CLOSE_TIMEOUT_MS, 'observationClose'));
+    if (linha) console.log(linha);
+  } catch {
+    console.warn('[scan] fechamento do episódio do vigia indisponível (não crítico)');
   }
 }
 
@@ -205,6 +233,7 @@ async function main() {
   // só contagem e código. Pulado quando o banco falhou nesta passada: o retrato precisa refletir o Postgres, não um estado pela metade.
   try {
     const bancoComFalha = failed.some((r) => isDatabaseQuotaExhausted(r.error)) || priceCheckErrors.some((e) => isDatabaseQuotaExhausted(e.error));
+    if (bancoComFalha) await runObservationWatchSafely(); // O2b: o banco falhou nesta passada => o vigia assume (o retrato NÃO é regravado)
     const retrato = bancoComFalha
       ? { ok: false, skipped: 'banco_com_falha' }
       : await publishObservationSnapshot({ backend, assets, nowMs: Date.now() });
@@ -229,6 +258,7 @@ async function main() {
     console.log(`[scan] leitura do banco: ${readUsage.queries} consulta(s), ${readUsage.rows} linha(s), ~${(readUsage.bytes / 1024).toFixed(1)} KB`);
   }
   await announceQuotaRecoveryIfClean();
+  if (!sawDbQuotaFailure) await closeObservationEpisodeSafely();
   await pingHealthcheck();
 
   // Achado do sentinel-security-review (P1, 2026-09-14): falha por-ativo
@@ -284,6 +314,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.error('[scan] FAILED:', err);
       await alertOnFailure(err?.message);
       await pingHealthcheck('/fail');
+      // O2b (item 299): numa queda real o `scanAllAssets()` LANÇA (a 1ª leitura do banco falha), então o fim de main() não roda e o vigia tem que assumir AQUI.
+      if (classifyFailure(err?.message).kind === 'db_quota') await runObservationWatchSafely();
       // forceExit (não só process.exitCode) — docs/known-risks.md item 142: se o
       // erro veio de um withTimeout acima, a chamada real ao Firestore perdeu a
       // corrida mas continua rodando (e re-tentando) em segundo plano; sem um
