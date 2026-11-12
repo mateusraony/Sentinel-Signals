@@ -359,6 +359,8 @@ const STEP_TIMEOUT_MARKER_DOC = 'stepTimeout';
 // outra causa, outro texto: nunca compartilha o de cota do Firestore.
 const DB_QUOTA_MARKER_DOC = 'dbQuota';
 
+const DEFAULT_FIREBASE_APP_NAME = '[DEFAULT]'; // o nome que o firebase-admin dá ao app sem nome
+
 /**
  * Item 175 addendum (2026-09-13) — desde a Fase 10 (`adminEntities.js` virou
  * o re-export do Postgres), NADA no processo do cron/backfill chama
@@ -378,7 +380,10 @@ const DB_QUOTA_MARKER_DOC = 'dbQuota';
  * bootstrap inteiro do Firebase Admin).
  */
 function ensureFirebaseAppInitialized() {
-  if (getApps().length) return;
+  // Olha o NOME, não a quantidade: o scan registra também o app NOMEADO `observation` (scripts/observationStore.mjs,
+  // item 299). Com `getApps().length`, esse app fazia o guard concluir "já existe um app", o padrão nunca era criado
+  // e o `getFirestore()`/`getDatabase()` abaixo lançava "The default Firebase app does not exist".
+  if (getApps().some((app) => app?.name === DEFAULT_FIREBASE_APP_NAME)) return;
   if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) return;
   try {
     initializeApp({
