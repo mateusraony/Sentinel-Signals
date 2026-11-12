@@ -433,6 +433,8 @@ paths:
   - **Isolamento:** `contents: read`, só `DATABASE_URL` + `DATABASE_SSL_CA`, nenhum Telegram/Firebase; entrada só por `env:`. Falha = job vermelho (sem Telegram). Travado por
     `scripts/logsRetentionTripwire.test.js` (18 variantes plantadas). No Neon grátis apagar **não encolhe** o armazenamento, só para o crescimento.
 
+- `observation-rehearsal.yml` — **ensaio do vigia de stop/alvo** (`docs/known-risks.md` item 299, addendum 6). Disparo **manual** (`workflow_dispatch`, sem campos). Lê o retrato real no RTDB, confere as regras publicadas, busca as velas reais da Binance e manda 2 mensagens "ENSAIO" no Telegram (relatório + exemplo do formato do aviso, valores inventados). **Só lê**: `contents: read`, nenhum `DATABASE_URL` (não acorda o Neon), nenhuma gravação no RTDB, nenhum artefato; o log (público) leva só contagem e código. Segredos: os mesmos do scan (`FIREBASE_DATABASE_URL` entrando como `OBSERVATION_DATABASE_URL`, a credencial do Firebase e os dois do Telegram). Job vermelho = algum ponto do caminho falhou. Travado por `scripts/observationRehearsalTripwire.test.js`.
+
 - **Orçamento de computação do Neon (item 286, travado por
   `scripts/neonComputeBudget.test.js`):** todo workflow com `schedule:` que
   cita `DATABASE_URL` é descoberto sozinho e somado ao disparo externo
