@@ -8,9 +8,10 @@ const NOW = Date.parse('2026-11-11T12:00:00Z');
 const OP = { id: 'op-1', asset_id: 'a1', symbol: 'BTCUSDT', side: 'BUY', status: 'SIGNAL_CONFIRMED', entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 107.5, tp2: 115 };
 const ASSET = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true };
 
-function setup({ ops = [OP], filters = { sources: ['cron'] }, opsErro = null, filtrosErro = null, writeErro = null, writeResultado = { ok: true } } = {}) {
+function setup({ ops = [OP], filters = { sources: ['cron'] }, opsErro = null, filtrosErro = null, writeErro = null, writeResultado = { ok: true }, ativos = [ASSET], ativosErro = null } = {}) {
   const backend = {
     entities: {
+      MonitoredAsset: { filter: vi.fn(async () => { if (ativosErro) throw ativosErro; return ativos; }) },
       TradeOperation: { filter: vi.fn(async () => { if (opsErro) throw opsErro; return ops; }) },
       TelegramFilters: { get: vi.fn(async () => { if (filtrosErro) throw filtrosErro; return filters; }) },
     },
@@ -68,6 +69,51 @@ describe('publishObservationSnapshot — caminho feliz', () => {
     const r = await rodar(s);
     expect(r.ok).toBe(true);
     expect(s.store.write.mock.calls[0][0].telegram_filters).toBeNull();
+  });
+});
+
+// Achado do Codex (PR #568, P2): com o lock do scan completo ocupado, scanAllAssets() devolve `{ total: 0, results: [], skipped: true }` SEM a lista `assets`.
+// Tratar "sem lista" como "lista vazia" gravaria um retrato com ativos vazios e carimbo de frescor novo (uma ausência registrada como retrato válido).
+describe('publishObservationSnapshot — lista de ativos ausente (scan completo pulado pelo lock)', () => {
+  const NOVO = { id: 'a2', symbol: 'ETHUSDT', display_name: 'ETH/USDT', is_active: true };
+
+  it('SEM a lista (undefined): lê os ativos ativos do banco e grava com eles, não com uma lista vazia', async () => {
+    const s = setup({ ativos: [ASSET, NOVO] });
+    const r = await rodar(s, { assets: undefined });
+    expect(s.backend.entities.MonitoredAsset.filter).toHaveBeenCalledTimes(1);
+    expect(s.backend.entities.MonitoredAsset.filter).toHaveBeenCalledWith({ is_active: true });
+    const gravado = s.store.write.mock.calls[0][0];
+    expect(gravado.assets.map((a) => a.id)).toEqual(['a1', 'a2']);
+    expect(r).toMatchObject({ ok: true, assets: 2 });
+  });
+
+  it.each([[null], ['texto'], [{}], [42]])('lista inválida (%j) conta como ausente: lê do banco', async (invalida) => {
+    const s = setup({ ativos: [ASSET] });
+    await rodar(s, { assets: invalida });
+    expect(s.backend.entities.MonitoredAsset.filter).toHaveBeenCalledTimes(1);
+    expect(s.store.write.mock.calls[0][0].assets).toHaveLength(1);
+  });
+
+  it('COM a lista (vetor) NÃO faz leitura extra: reaproveita a do scan', async () => {
+    const s = setup();
+    await rodar(s, { assets: [ASSET] });
+    expect(s.backend.entities.MonitoredAsset.filter).not.toHaveBeenCalled();
+  });
+
+  it('lista VAZIA de verdade (vetor vazio: não há ativos ativos) é válida e não dispara leitura', async () => {
+    const s = setup({ ops: [] });
+    const r = await rodar(s, { assets: [] });
+    expect(s.backend.entities.MonitoredAsset.filter).not.toHaveBeenCalled();
+    expect(s.store.write.mock.calls[0][0].assets).toEqual([]);
+    expect(r).toMatchObject({ ok: true, assets: 0 });
+  });
+
+  it('não conseguir ler os ativos: NÃO grava (melhor sem retrato novo do que um retrato com ativos faltando) e devolve só o código', async () => {
+    const s = setup({ ativosErro: Object.assign(new Error('connect ECONNREFUSED postgresql://u:SENHA@host/db'), { code: 'ECONNREFUSED' }) });
+    const r = await rodar(s, { assets: undefined });
+    expect(r).toMatchObject({ ok: false, erro: 'ECONNREFUSED' });
+    expect(s.store.write).not.toHaveBeenCalled();
+    expect(JSON.stringify(r)).not.toContain('SENHA');
   });
 });
 
