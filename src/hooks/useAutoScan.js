@@ -9,6 +9,7 @@
 
 import { useEffect, useRef } from 'react';
 import { scanAllAssets, priceCheckActiveOps, hasActiveTradeOps } from '@/lib/scanner';
+import { isResting } from '@/lib/idleRest';
 
 const PRICE_CHECK_INTERVAL = 2 * 60 * 1000; // 2 min
 const FULL_SCAN_INTERVAL = 60 * 60 * 1000;  // 60 min
@@ -20,6 +21,13 @@ export function useAutoScan({ queryClient, onActivity } = {}) {
 
   useEffect(() => {
     const tick = async () => {
+      // Repouso do painel (docs/known-risks.md item 301): sem atividade há 20 min o tick NÃO toca o banco (`hasActiveTradeOps` abaixo consulta o Neon a
+      // cada 2 min, e o Neon grátis só dorme depois de 5 min parado). O ciclo de agendamento continua vivo: ao acordar, o próximo tick (≤ 2 min) roda
+      // normalmente, inclusive o full scan atrasado (`lastFullScan` não avançou). Enquanto isso o cron do GitHub cobre stop/TP a cada ~15 min.
+      if (isResting()) {
+        scheduleNext();
+        return;
+      }
       const now = Date.now();
 
       // Full scan every 60 min. Achado do sentinel-security-review (P1,

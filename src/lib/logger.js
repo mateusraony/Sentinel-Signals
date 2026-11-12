@@ -11,6 +11,7 @@
  */
 
 import { backend } from '@/api/entities';
+import { isResting } from '@/lib/idleRest';
 
 const QUEUE = [];
 let flushing = false;
@@ -127,6 +128,8 @@ export function initLogger() {
 
   // Periodic anomaly detection — every 5 minutes
   setInterval(async () => {
+    // Repouso do painel (docs/known-risks.md item 301): sem atividade há 20 min este monitor não consulta o banco (o Neon grátis só dorme depois de 5 min parado).
+    if (isResting()) return;
     try {
       const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
       const now = Date.now();

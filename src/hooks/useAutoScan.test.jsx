@@ -13,6 +13,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useAutoScan } from './useAutoScan';
 
+const { restingState } = vi.hoisted(() => ({ restingState: { resting: false } }));
+vi.mock('@/lib/idleRest', () => ({ isResting: () => restingState.resting }));
+
 const { scanAllAssetsMock, priceCheckActiveOpsMock, hasActiveTradeOpsMock } = vi.hoisted(() => ({
   scanAllAssetsMock: vi.fn(),
   priceCheckActiveOpsMock: vi.fn(),
@@ -170,5 +173,56 @@ describe('useAutoScan — aba escondida não faz full scan (item 257)', () => {
     setVisibility('visible');
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
     expect(scanAllAssetsMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Repouso do painel (docs/known-risks.md item 301): o tick de 2 min consulta o banco (`hasActiveTradeOps`) mesmo com a aba escondida, e o Neon grátis só
+// dorme depois de 5 min parado. Em repouso o tick NÃO pode tocar o banco nem o scanner; ao acordar, volta no ritmo de sempre.
+describe('useAutoScan — respeita o repouso do painel', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    restingState.resting = false;
+    scanAllAssetsMock.mockReset().mockResolvedValue({ total: 0, results: [] });
+    priceCheckActiveOpsMock.mockReset().mockResolvedValue(undefined);
+    hasActiveTradeOpsMock.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('ativo: o tick consulta o banco e roda o price-check (comportamento de sempre)', async () => {
+    renderHook(() => useAutoScan());
+    await vi.advanceTimersByTimeAsync(90 * 1000);
+    expect(hasActiveTradeOpsMock).toHaveBeenCalledTimes(1);
+    expect(priceCheckActiveOpsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('em repouso: nenhum tick toca o banco, o price-check nem o full scan', async () => {
+    restingState.resting = true;
+    renderHook(() => useAutoScan());
+    await vi.advanceTimersByTimeAsync(90 * 60 * 1000);
+    expect(hasActiveTradeOpsMock).not.toHaveBeenCalled();
+    expect(priceCheckActiveOpsMock).not.toHaveBeenCalled();
+    expect(scanAllAssetsMock).not.toHaveBeenCalled();
+  });
+
+  it('ao acordar, o tick volta sozinho no próximo ciclo (≤ 2 min) e o full scan atrasado roda', async () => {
+    restingState.resting = true;
+    renderHook(() => useAutoScan());
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    expect(hasActiveTradeOpsMock).not.toHaveBeenCalled();
+    restingState.resting = false;
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000 + 100);
+    expect(hasActiveTradeOpsMock).toHaveBeenCalled();
+    expect(scanAllAssetsMock).toHaveBeenCalledTimes(1); // lastFullScan nunca avançou: o scan atrasado roda
+  });
+
+  it('o ciclo de agendamento continua vivo durante o repouso (não morre e depois não acorda)', async () => {
+    restingState.resting = true;
+    renderHook(() => useAutoScan());
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+    restingState.resting = false;
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000 + 100);
+    expect(hasActiveTradeOpsMock).toHaveBeenCalled();
   });
 });

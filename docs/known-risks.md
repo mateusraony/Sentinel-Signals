@@ -35047,3 +35047,30 @@ GitHub → Settings → Secrets and variables → Actions → **Variables** → 
 ### Limites desta análise (honesto)
 - O consumo por hora de aba aberta (0,15 CU-h) vem do medidor (modelo: compute 0,25 CU, dorme após 5 min), não de uma medição isolada; a diferença de ~7 CU-h entre medidor e console é a única prova direta de que há consumo fora do GitHub, e **não diz quanto é painel e quanto é Render**.
 - Não verifiquei no navegador se abas escondidas disparam o `tick` na prática (o Chrome limita timers de aba escondida a ~1 por minuto, que ainda é menos que 2 min), só pelo código.
+
+## 301. Repouso do painel por inatividade: depois de 20 min parado o painel deixa de consultar o banco (implementado, 2026-11-12)
+Decisão do usuário ("segue com o repouso por inatividade") sobre a opção 1 do item 300, para uma aba esquecida aberta não manter o Neon acordado o dia todo (~3,6 CU-h/dia extra).
+
+### O que muda (só o painel no navegador; nada no motor, no cron nem no banco)
+- **Detecção** (`src/lib/idleRest.js`, módulo puro com relógio e alvo de eventos injetados): sem mouse, tecla, toque, rolagem, roda do mouse ou foco por `IDLE_REST_MS` = **20 min** → "em repouso". Qualquer atividade acorda na hora. Aba que VOLTA a ficar visível conta como atividade; aba que ESCONDE não conta (uma aba esquecida tem que dormir). Um único temporizador confere o tempo decorrido quando dispara (uma rajada de `mousemove` custa uma atribuição por evento); ouvintes em captura (`scroll` não borbulha); nada toca `window`/`document` ao importar.
+- **O que pausa em repouso:** (1) **todas as atualizações automáticas das telas**: o hook `useIdleRest` (`src/hooks/useIdleRest.js`) diz ao React Query que a aba está "sem foco" (`focusManager.setFocused(false)`), e o React Query só dispara `refetchInterval` com foco; ao acordar devolve o foco ao padrão do navegador e o `refetchOnWindowFocus` já configurado refaz na hora as consultas velhas (a tela volta atualizada); (2) o **`useAutoScan`** (`tick` volta sem consultar, mas segue se reagendando; o full scan atrasado roda no 1º tick depois de acordar); (3) o **monitor de anomalias do logger** (5 min).
+- **Faixa "Painel em repouso"** (`src/components/layout/IdleRestBanner.jsx`, montada no `AppLayout`): diz o que pausou, que o scan do GitHub segue a cada ~15 min e como voltar (mexer o mouse/tecla ou o botão "Retomar agora"). É uma **sobreposição FIXA** no topo, não uma faixa no fluxo — **achado desta rodada, medido no Chromium:** uma faixa que ocupa espaço acima do conteúdo rolado faz o navegador reajustar a rolagem (scroll anchoring), isso dispara `scroll` e o painel acordava sozinho no mesmo instante em que dormiu (a faixa piscava e sumia; com a página rolada o repouso nunca durava). Com a sobreposição fixa: zero eventos de rolagem. Travado por teste (`IdleRestBanner.test.jsx`, "sobreposição FIXA").
+
+### O que o usuário perde enquanto está em repouso (trade-off aceito na decisão)
+- O acompanhamento de **stop/alvo pelo navegador** (preço a cada 2 min) pausa. Quem cobre é o cron do GitHub (~15 min), exatamente como já é com a aba fechada. Se a operação for sensível ao minuto, basta mexer o mouse (volta no próximo tick, ≤ 2 min).
+- A tela fica parada até a primeira atividade; por isso a faixa.
+
+### Não muda
+- Scan agendado, price-check do GitHub, alertas do Telegram "24 h", vigia do item 299, retrato do RTDB. O preço ao vivo (`useLivePrice`) e os relógios locais (`useNow`, "há N min") não consultam o banco e seguem como estavam.
+- Há cadeias `setInterval` que não consultam o banco (`AssetDrawer`, `useNow`, contador de `Trades.jsx`); `TriggerBacktestPanel` consulta o GitHub, não o Neon, e só depois de um disparo manual.
+
+### Prova
+- 34 testes do núcleo + 10 do hook com o **React Query de verdade** (intervalo para em repouso; acordar refaz na hora e o intervalo volta; desmontar restaura o foco; rolagem que não borbulha acorda; foco volta a seguir a visibilidade real) + 9 da faixa + 4 do `useAutoScan` + 3 do monitor do logger + trava estática de que nenhum arquivo liga `refetchIntervalInBackground: true` (faria a tela continuar consultando em repouso).
+- **Mutações plantadas: 39 de 39 derrubadas** (núcleo 18, hook 6, faixa 8 + 3 da sobreposição, layout 1, `useAutoScan` 2, logger 1). Sobreviventes da 1ª rodada (`>=` no limite exato, ouvinte sem captura, `start()` repetido, foco preso em "com foco") viraram testes e foram derrubados.
+- Gate completo: lint, 5157+ testes (com Postgres local), build, `typecheck:ratchet` em 13 (o teto não subiu).
+
+### Limites (honestos)
+- **Não medi o efeito no consumo real do Neon**: o teste é de comportamento (o intervalo para), não de CU-h. A prova de que funciona é o medidor/console nos próximos dias; a expectativa (hipótese) é perder ~3,6 CU-h/dia por aba esquecida.
+- Duas abas abertas: cada uma tem seu próprio relógio de atividade; basta uma ativa para o banco ficar acordado.
+- Uma aba em segundo plano num navegador que congela timers pode atrasar a entrada em repouso; ao acordar a máquina, o 1º disparo já confere o tempo decorrido (testado).
+- Aba que o usuário está olhando mas sem mexer (ex.: acompanhando um gráfico por mais de 20 min) entra em repouso — é o desenho; a faixa avisa e qualquer toque retoma.
