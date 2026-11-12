@@ -39,6 +39,10 @@ paths:
   **Resumo por scan (item 289):** cada passada imprime `[scan] resumo: lock=… ativos_ok=… sinais_novos=… ops{…} funil{…} price_check=…`
   (`scripts/scanSummary.mjs`). **Só contagens e códigos** — o repo é PÚBLICO, o log é legível sem login. `lock=ocupado` = passada que saiu sem escanear
   (outra execução, p.ex. o navegador, segurava o lock).
+  **Retrato para o modo de observação (item 299, fase O1):** cada passada imprime `[scan] retrato: …` (só contagem e código) e, SE `OBSERVATION_DATABASE_URL`
+  (o segredo `FIREBASE_DATABASE_URL` com OUTRO nome, de propósito: com o nome antigo os marcadores de alerta mudariam do Firestore para o RTDB) estiver preenchida, grava em RTDB
+  `observation/snapshot` as operações vivas, os ativos e os filtros do Telegram (`scripts/observationPublish.mjs`). Sem a URL: desligado, **zero consultas a mais**. Nunca fatal. **Antes de gravar, lê as regras PUBLICADAS no Firebase (`getRulesJSON`) e só grava se o nó está fechado** (`regras_abertas`/`regras_nao_verificadas` = não grava).
+  O nó não tem regra no `database.rules.json` (só o Admin SDK acessa; travado por `scripts/databaseRulesTripwire.test.js`). Travado por `scripts/observationTripwire.test.js`.
 - `backfill.yml` — checagem retroativa ao adicionar/reativar um ativo
   (`npm run backfill-check`, `docs/known-risks.md` item 137). Workflow
   SEPARADO de `scan.yml` de propósito, com `concurrency: group:

@@ -67,6 +67,11 @@ jobs:
           # (src/api/rtdbEntities.js) continua fazendo sentido pós-cutover —
           # o novo backend Postgres (scripts/adminEntities.js,
           # src/api/entitiesPostgres.js) não escreve em RTDB. Ver addendum.
+          # Modo de observação sem banco, fase O1 (docs/known-risks.md item 299): URL do Realtime Database onde o scan guarda o RETRATO das operações
+          # vivas para o vigia da O2. É o MESMO segredo FIREBASE_DATABASE_URL que o health-audit já usa, mas entra com OUTRO NOME de propósito: com
+          # FIREBASE_DATABASE_URL no scan, os marcadores de alerta de cota passariam do Firestore para o RTDB (travado por
+          # scripts/observationTripwire.test.js). Segredo vazio ou ausente = o retrato fica DESLIGADO (nenhuma consulta a mais, nada gravado).
+          OBSERVATION_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}

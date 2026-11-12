@@ -11,6 +11,7 @@ import {
 } from './adminTelegram.js';
 import { withTimeout, forceExit } from './scanTimeout.mjs';
 import { classifyFailure, isFirestoreQuotaExhausted, isDatabaseQuotaExhausted } from './failureClassification.mjs';
+import { publishObservationSnapshot, describePublishResult } from './observationPublish.mjs';
 import { instrumentTradeOps, summarizeScanPass, formatScanSummary } from './scanSummary.mjs';
 import { pathToFileURL } from 'node:url';
 
@@ -197,6 +198,19 @@ async function main() {
   } catch (err) {
     console.warn('[scan] per-asset healthcheck failed (non-fatal):', err.message);
     await alertOnFailure(err?.message);
+  }
+
+  // Retrato do estado para o modo de observação (docs/known-risks.md item 299, fase O1): guarda em RTDB as operações vivas para o vigia da O2
+  // avisar stop/alvo se o Postgres cair. SEM OBSERVATION_DATABASE_URL não faz nada (nem uma consulta a mais). Nunca fatal, e o log é PÚBLICO:
+  // só contagem e código. Pulado quando o banco falhou nesta passada: o retrato precisa refletir o Postgres, não um estado pela metade.
+  try {
+    const bancoComFalha = failed.some((r) => isDatabaseQuotaExhausted(r.error)) || priceCheckErrors.some((e) => isDatabaseQuotaExhausted(e.error));
+    const retrato = bancoComFalha
+      ? { ok: false, skipped: 'banco_com_falha' }
+      : await publishObservationSnapshot({ backend, assets, nowMs: Date.now() });
+    console.log(describePublishResult(retrato));
+  } catch {
+    console.warn('[scan] retrato indisponível (não crítico)');
   }
 
   // Uma linha só, SÓ contagens e códigos (o repositório é público: este log é legível sem login — ver o cabeçalho de
