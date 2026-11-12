@@ -30,7 +30,7 @@ do driver: o log do Actions é público e a mensagem pode trazer endereço e sen
 `observationSnapshot.mjs` / `observationPublish.mjs` / `observationStore.mjs` (item 299, fase O1) são o **retrato do estado** para o modo de observação sem banco. O 1º é **puro** (sem import:
 lista FECHADA de campos primitivos, tetos, nunca a linha inteira); o 2º lê as operações vivas ao fim do scan e **nunca lança nem devolve `.message`** (só código; o log é público); o 3º grava UM nó fixo
 `observation/snapshot` no RTDB com **app nomeado** e prazo. **Sem `OBSERVATION_DATABASE_URL` não há efeito nenhum** (nem consulta ao Postgres). A URL tem esse nome (e não `FIREBASE_DATABASE_URL`) de propósito:
-o `adminTelegram.js` moveria os marcadores de alerta para o RTDB. Travado por `observationTripwire.test.js` (+ `databaseRulesTripwire.test.js` para as regras do RTDB). Não ligue nada disto ao Postgres como escrita.
+o `adminTelegram.js` moveria os marcadores de alerta para o RTDB. O armazenamento lê as regras PUBLICADAS do RTDB antes de gravar (`observationRules.mjs`, análise pura que também confere o arquivo `database.rules.json` em `databaseRulesTripwire.test.js`): regra aberta ou ilegível = não grava. Travado por `observationTripwire.test.js`. Não ligue nada disto ao Postgres como escrita.
 `health-audit.mjs` (diária às 04:40 UTC + manual, `health-audit.yml`) é a
 auditoria de saúde read-only dos itens 164/165 — teto de leitura explícito, o
 job falha se ela escrever, e ela avisa no Telegram só quando acha algo.

@@ -63,6 +63,9 @@ export function describePublishResult(r) {
   }
   if (r?.skipped === 'sem_url') return '[scan] retrato: desligado (sem URL do RTDB)';
   if (r?.skipped === 'banco_com_falha') return '[scan] retrato: não gravado (banco com falha nesta passada)';
+  // As regras PUBLICADAS no Firebase expõem o nó do retrato: é condição de SEGURANÇA, com linha própria (o log é público e não traz nada além do código).
+  if (r?.erro === 'regras_abertas') return '[scan] retrato: RECUSADO (regras_abertas): as regras publicadas do RTDB deixam o nó do retrato aberto; nada foi gravado';
+  if (r?.erro === 'regras_nao_verificadas') return '[scan] retrato: não gravado (regras_nao_verificadas): não deu para ler as regras publicadas do RTDB';
   if (r?.reason) return `[scan] retrato: não gravado (${safeCode(r.reason)})`;
   return `[scan] retrato: não gravado (${safeCode(r?.erro ?? r?.skipped)})`;
 }

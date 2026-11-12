@@ -3,15 +3,20 @@
 // e qualquer falha vira só um CÓDIGO (a mensagem de um erro do Firebase pode trazer URL do projeto; o log do Actions é público).
 import { describe, it, expect, vi } from 'vitest';
 import { createObservationStore, SNAPSHOT_PATH, OBSERVATION_APP_NAME, writeTimeoutError } from './observationStore.mjs';
+import { problemasDasRegrasDoRtdb } from './observationRules.mjs';
 
 const URL = 'https://projeto-default-rtdb.firebaseio.com';
 const CRED = JSON.stringify({ type: 'service_account', project_id: 'p', private_key: 'k', client_email: 'e@p.iam.gserviceaccount.com' });
 const SNAPSHOT = { version: 1, snapshot_at: '2026-11-11T12:00:00.000Z', operations: [], assets: [], counts: { operations: 0, assets: 0 } };
 
-function fakeFirebase({ apps = [], setImpl = async () => {} } = {}) {
+// Regras PUBLICADAS "seguras": o nó observation não tem regra (negado por padrão); os outros nós seguem `auth != null`, como no projeto.
+const REGRAS_SEGURAS = { rules: { assetStates: { '.read': 'auth != null', '.write': 'auth != null' }, systemAlerts: { '.read': 'auth != null', '.write': 'auth != null' } } };
+
+function fakeFirebase({ apps = [], setImpl = async () => {}, rules = REGRAS_SEGURAS, rulesImpl = null } = {}) {
   const set = vi.fn(setImpl);
   const ref = vi.fn(() => ({ set }));
-  const db = { ref };
+  const getRulesJSON = vi.fn(rulesImpl ?? (async () => rules));
+  const db = { ref, getRulesJSON };
   const app = { name: OBSERVATION_APP_NAME };
   const fb = {
     getApps: vi.fn(() => apps),
@@ -19,7 +24,7 @@ function fakeFirebase({ apps = [], setImpl = async () => {} } = {}) {
     cert: vi.fn((j) => ({ __cert: j })),
     getDatabaseWithUrl: vi.fn(() => db),
   };
-  return { fb, set, ref, db, app };
+  return { fb, set, ref, db, app, getRulesJSON };
 }
 const mk = (f, env = {}) => createObservationStore({ env: { OBSERVATION_DATABASE_URL: URL, FIREBASE_SERVICE_ACCOUNT_JSON: CRED, ...env }, firebase: f.fb, timeoutMs: 50 });
 
@@ -73,6 +78,82 @@ describe('createObservationStore — gravação', () => {
     await store.write(SNAPSHOT);
     expect(f.fb.initializeApp).toHaveBeenCalledTimes(1);
     expect(f.set).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('createObservationStore — só grava se as regras PUBLICADAS no Firebase fecham o nó do retrato', () => {
+  // O arquivo database.rules.json do repositório pode divergir do que está publicado no console (o deploy das regras é manual). As regras do projeto
+  // são abertas a qualquer visitante anônimo: gravar entrada, stop e alvos num nó alcançado por uma regra aberta os exporia a qualquer pessoa.
+  it('regras seguras: lê as regras ANTES de gravar e grava', async () => {
+    const f = fakeFirebase();
+    const r = await mk(f).write(SNAPSHOT);
+    expect(r).toEqual({ ok: true });
+    expect(f.getRulesJSON).toHaveBeenCalledTimes(1);
+    expect(f.getRulesJSON.mock.invocationCallOrder[0]).toBeLessThan(f.set.mock.invocationCallOrder[0]);
+  });
+
+  const ABERTAS = [
+    ['raiz aberta (.read auth != null)', { rules: { '.read': 'auth != null' } }],
+    ['raiz aberta (.write true)', { rules: { '.write': true } }],
+    ['modo de teste do Firebase (raiz .read e .write true)', { rules: { '.read': true, '.write': true } }],
+    ['curinga de 1º nível aberto', { rules: { $qualquer: { '.read': 'auth != null' } } }],
+    ['curinga com filho aberto', { rules: { $node: { snapshot: { '.read': 'auth != null' } } } }],
+    ['nó observation aberto', { rules: { observation: { '.read': 'auth != null' } } }],
+    ['neto de observation aberto', { rules: { observation: { snapshot: { operations: { '.write': true } } } } }],
+  ];
+
+  it.each(ABERTAS)('regras PUBLICADAS abertas (%s): NÃO grava e devolve "regras_abertas"', async (_nome, rules) => {
+    const f = fakeFirebase({ rules });
+    const r = await mk(f).write(SNAPSHOT);
+    expect(r).toEqual({ ok: false, erro: 'regras_abertas' });
+    expect(f.set).not.toHaveBeenCalled();
+  });
+
+  it('não consegue ler as regras (permissão, rede, prazo): NÃO grava, falha para o lado seguro, só o código', async () => {
+    for (const impl of [
+      async () => { throw Object.assign(new Error('Permission denied https://projeto.firebaseio.com/.settings/rules.json'), { code: 'PERMISSION_DENIED' }); },
+      () => new Promise(() => {}), // não responde: estoura o prazo
+      async () => 'não é um objeto de regras',
+      async () => ({}),
+    ]) {
+      const f = fakeFirebase({ rulesImpl: impl });
+      const r = await mk(f).write(SNAPSHOT);
+      expect(r.ok).toBe(false);
+      expect(['regras_nao_verificadas', 'regras_abertas']).toContain(r.erro);
+      expect(JSON.stringify(r)).not.toContain('firebaseio');
+      expect(f.set).not.toHaveBeenCalled();
+    }
+  });
+
+  it('o resultado "seguro" é lembrado no processo (1 leitura de regras para várias gravações)', async () => {
+    const f = fakeFirebase();
+    const store = mk(f);
+    await store.write(SNAPSHOT);
+    await store.write(SNAPSHOT);
+    await store.write(SNAPSHOT);
+    expect(f.getRulesJSON).toHaveBeenCalledTimes(1);
+    expect(f.set).toHaveBeenCalledTimes(3);
+  });
+
+  it('o resultado "aberto" NÃO é lembrado: corrigir as regras publicadas libera a gravação na tentativa seguinte', async () => {
+    let regras = { rules: { '.read': 'auth != null' } };
+    const f = fakeFirebase({ rulesImpl: async () => regras });
+    const store = mk(f);
+    expect((await store.write(SNAPSHOT)).erro).toBe('regras_abertas');
+    // 2ª tentativa com as regras AINDA abertas: tem que recusar de novo (lembrar o "aberto" deixaria o retrato passar)
+    expect((await store.write(SNAPSHOT)).erro).toBe('regras_abertas');
+    expect(f.set).not.toHaveBeenCalled();
+    regras = REGRAS_SEGURAS;
+    expect(await store.write(SNAPSHOT)).toEqual({ ok: true });
+    expect(f.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('as REGRAS REAIS do repositório (database.rules.json) passam na mesma análise que o armazenamento usa', async () => {
+    const { readFileSync } = await import('node:fs');
+    const real = JSON.parse(readFileSync(`${process.cwd()}/database.rules.json`, 'utf8'));
+    expect(problemasDasRegrasDoRtdb(real)).toEqual([]);
+    const f = fakeFirebase({ rules: real });
+    expect(await mk(f).write(SNAPSHOT)).toEqual({ ok: true });
   });
 });
 

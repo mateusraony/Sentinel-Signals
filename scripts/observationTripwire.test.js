@@ -35,7 +35,7 @@ export function problemasDoSnapshot(texto) {
 export function problemasDoArmazenamento(texto) {
   const c = semComentarioJs(texto);
   const p = [];
-  const OK = new Set(['firebase-admin/app', 'firebase-admin/database', './scanTimeout.mjs', './observationSnapshot.mjs']);
+  const OK = new Set(['firebase-admin/app', 'firebase-admin/database', './scanTimeout.mjs', './observationSnapshot.mjs', './observationRules.mjs']);
   for (const spec of importsDe(c)) if (!OK.has(spec)) p.push(`import fora da lista: ${spec}`);
   if (/FIREBASE_DATABASE_URL/.test(c)) p.push('lê FIREBASE_DATABASE_URL: a URL do retrato é OBSERVATION_DATABASE_URL (a outra move os marcadores de alerta)');
   if (/\bgetDatabase\s*\(/.test(c)) p.push('getDatabase() usa o app PADRÃO; o retrato usa getDatabaseWithUrl com app nomeado');
@@ -49,6 +49,14 @@ export function problemasDoArmazenamento(texto) {
   if (/\.(update|remove|push|transaction|get|once|on)\s*\(/.test(c)) p.push('operação de RTDB fora da gravação única');
   if (/\.message\b/.test(c)) p.push('lê .message de erro (pode trazer URL do projeto; o log é público)');
   if (/console\./.test(c)) p.push('console.* no armazenamento (quem loga é o run-scan, só com contagem)');
+  // Guarda das regras PUBLICADAS: lê e confere ANTES de gravar, e só lembra o resultado "seguro".
+  const iRegras = c.indexOf('getRulesJSON(');
+  const iGravar = c.indexOf('.set(snapshot)');
+  if (iRegras < 0) p.push('não lê as regras publicadas (getRulesJSON): gravaria o retrato sem saber se o nó está aberto');
+  else if (iGravar >= 0 && iRegras > iGravar) p.push('lê as regras publicadas DEPOIS de gravar');
+  if (!/problemasDasRegrasDoRtdb\(\s*publicadas\s*\)\.length\s*>\s*0\)\s*throw codeError\('regras_abertas'\)/.test(c)) p.push('não recusa a gravação quando as regras publicadas expõem o nó');
+  if (!/catch \{\s*throw codeError\('regras_nao_verificadas'\)/.test(c)) p.push('não falha para o lado seguro quando não consegue ler as regras publicadas');
+  if (!/regrasVerificadas = true;/.test(c) || /regrasVerificadas = false;[\s\S]*regrasVerificadas = true;[\s\S]*regrasVerificadas = false;/.test(c)) p.push('o resultado da conferência das regras precisa ser lembrado só quando seguro');
   return p;
 }
 
@@ -128,6 +136,10 @@ describe('tripwire O1: variantes plantadas são acusadas', () => {
     ['store com um 2º ref', () => problemasDoArmazenamento(planta(ARQ.store, '.ref(SNAPSHOT_PATH).set(snapshot)', ".ref('observation/outro').set(1); getDb().ref(SNAPSHOT_PATH).set(snapshot)"))],
     ['store apaga nó', () => problemasDoArmazenamento(`${ler(ARQ.store)}\nexport const apagar = (db) => db.ref(SNAPSHOT_PATH).remove();`)],
     ['store lê .message', () => problemasDoArmazenamento(planta(ARQ.store, 'erro: safeErrorCode(err)', 'erro: err.message'))],
+    ['store sem ler as regras publicadas', () => problemasDoArmazenamento(planta(ARQ.store, 'publicadas = await withTimeout(banco.getRulesJSON(), timeoutMs', 'publicadas = await withTimeout(Promise.resolve({ rules: {} }), timeoutMs'))],
+    ['store lê as regras DEPOIS de gravar', () => problemasDoArmazenamento(planta(ARQ.store, "      const banco = getDb();\n      if (!regrasVerificadas) {", "      const banco = getDb();\n      await withTimeout(banco.ref(SNAPSHOT_PATH).set(snapshot), timeoutMs, 'x');\n      if (!regrasVerificadas) {"))],
+    ['store não recusa quando as regras expõem o nó', () => problemasDoArmazenamento(planta(ARQ.store, "throw codeError('regras_abertas');", "/* segue */;"))],
+    ['store segue gravando quando não lê as regras', () => problemasDoArmazenamento(planta(ARQ.store, "throw codeError('regras_nao_verificadas');", "publicadas = { rules: {} };"))],
     ['store importa pg', () => problemasDoArmazenamento(`import pg from 'pg';\n${ler(ARQ.store)}`)],
     ['store com console.log', () => problemasDoArmazenamento(`${ler(ARQ.store)}\nconsole.log('x');`)],
     ['publicação importa o banco', () => problemasDaPublicacao(`import { backend } from './adminEntities.js';\n${ler(ARQ.publish)}`)],

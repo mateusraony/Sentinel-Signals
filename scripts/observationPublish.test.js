@@ -134,6 +134,16 @@ describe('describePublishResult — a linha do log público (só contagem e cód
     expect(describePublishResult({ ok: false, reason: 'muitas_operacoes' })).toContain('muitas_operacoes');
   });
 
+  it('regras publicadas do RTDB abertas: linha EXPLÍCITA (é condição de segurança, não um erro qualquer) e só o código', () => {
+    const linha = describePublishResult({ ok: false, erro: 'regras_abertas' });
+    expect(linha).toMatch(/RECUSADO/);
+    expect(linha).toContain('regras_abertas');
+    expect(linha).toMatch(/nada foi gravado/i);
+    const outra = describePublishResult({ ok: false, erro: 'regras_nao_verificadas' });
+    expect(outra).toMatch(/não gravado/);
+    expect(outra).toContain('regras_nao_verificadas');
+  });
+
   it('um código estranho (com texto livre) não passa para o log', () => {
     expect(describePublishResult({ ok: false, erro: 'postgres://u:SENHA@host/db' })).not.toContain('SENHA');
     expect(describePublishResult({ ok: false, erro: 'x'.repeat(300) }).length).toBeLessThan(120);

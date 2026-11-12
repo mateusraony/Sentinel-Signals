@@ -1,4 +1,5 @@
-// Item 299 (modo de observação sem banco), fase O0 — trava das regras do Realtime Database.
+// Item 299 (modo de observação sem banco), fase O0 — trava das regras do Realtime Database. A análise mora em scripts/observationRules.mjs (a mesma que o
+// armazenamento usa, em tempo de execução, nas regras PUBLICADAS); aqui se confere o arquivo do repositório e se provam as variantes.
 // O retrato do modo de observação guarda ENTRADA, STOP e ALVOS das operações. As regras atuais (`database.rules.json`) liberam leitura e escrita para
 // `auth != null`, e a autenticação do painel é ANÔNIMA por decisão do usuário (qualquer visitante "está logado"). Um nó com essa regra seria legível e
 // alterável por qualquer pessoa que abra o painel. No RTDB um nó SEM regra é NEGADO por padrão (só o Admin SDK, que ignora as regras, acessa) — é isso que
@@ -7,64 +8,9 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { NO_OBSERVACAO, problemasDasRegrasDoRtdb } from './observationRules.mjs';
 
 const ARQUIVO = join(process.cwd(), 'database.rules.json');
-/** Raiz do nó do retrato e do livro de avisos (item 299). Fica FORA de toda regra: negado por padrão. */
-export const NO_OBSERVACAO = 'observation';
-
-/** `.read`/`.write` só é "fechado" se for exatamente `false`; qualquer outra expressão (true, "auth != null", "true"…) abre. */
-const fechado = (v) => v === undefined || v === false;
-
-/**
- * Percorre `no` e TODOS os descendentes (inclusive curingas `$x` mais fundo) e acusa cada `.read`/`.write` que não seja exatamente `false`.
- * Achado do Codex (PR #567): olhar só o nó e os filhos imediatos deixava passar `observation/snapshot/operations` aberto.
- * @param {unknown} no regra do nó (objeto)
- * @param {string} caminho nome do nó para a mensagem
- * @param {string} rotulo prefixo legível do problema
- * @returns {string[]}
- */
-function regrasAbertasAbaixo(no, caminho, rotulo) {
-  const p = [];
-  if (!no || typeof no !== 'object') return p;
-  for (const campo of ['.read', '.write']) {
-    if (!fechado(no[campo])) p.push(`${rotulo}: "${caminho}" com "${campo}" aberto`);
-  }
-  for (const [k, filho] of Object.entries(no)) {
-    if (k.startsWith('.') || !filho || typeof filho !== 'object') continue;
-    p.push(...regrasAbertasAbaixo(filho, `${caminho}/${k}`, rotulo));
-  }
-  return p;
-}
-
-/**
- * Problemas nas regras do RTDB que expõem (ou poderiam expor) o nó do retrato.
- * @param {string} texto conteúdo de `database.rules.json`
- * @returns {string[]}
- */
-export function problemasDasRegrasDoRtdb(texto) {
-  let regras;
-  try {
-    regras = JSON.parse(texto)?.rules;
-  } catch {
-    return ['database.rules.json não é um JSON válido'];
-  }
-  if (!regras || typeof regras !== 'object') return ['database.rules.json sem o objeto "rules"'];
-  const p = [];
-  // 1) As regras CASCATEIAM: um `.read`/`.write` na raiz vale para todos os filhos, inclusive o retrato.
-  if (!fechado(regras['.read'])) p.push('raiz com ".read" aberto: vale para todos os nós, inclusive o do retrato');
-  if (!fechado(regras['.write'])) p.push('raiz com ".write" aberto: vale para todos os nós, inclusive o do retrato');
-  // 2) Curinga no 1º nível (`$qualquer`) casa com "observation": qualquer regra aberta em QUALQUER profundidade sob ele pode alcançar o retrato.
-  for (const [chave, no] of Object.entries(regras)) {
-    if (chave.startsWith('$')) p.push(...regrasAbertasAbaixo(no, chave, `curinga "${chave}" alcança "${NO_OBSERVACAO}"`));
-  }
-  // 3) O próprio nó: não precisa existir (negado por padrão); se existir, tudo abaixo dele (em qualquer profundidade) só pode ser explicitamente fechado.
-  const noObs = regras[NO_OBSERVACAO];
-  if (noObs !== undefined) {
-    if (!noObs || typeof noObs !== 'object') p.push(`o nó "${NO_OBSERVACAO}" tem regra que não é um objeto`);
-    else p.push(...regrasAbertasAbaixo(noObs, NO_OBSERVACAO, `"${NO_OBSERVACAO}"`));
-  }
-  return p;
-}
 
 const real = () => readFileSync(ARQUIVO, 'utf8');
 const comRegras = (mudar) => {
@@ -108,6 +54,18 @@ describe('tripwire: regras do RTDB não podem expor o retrato do modo de observa
 
   it.each(VARIANTES)('variante plantada é acusada: %s', (_nome, montar) => {
     expect(problemasDasRegrasDoRtdb(montar()).length).toBeGreaterThan(0);
+  });
+
+  it('a MESMA análise aceita o objeto já lido (é o que o armazenamento recebe das regras publicadas) e dá o mesmo resultado que o texto', () => {
+    expect(problemasDasRegrasDoRtdb(JSON.parse(real()))).toEqual([]);
+    for (const [, montar] of VARIANTES) {
+      const texto = montar();
+      let objeto;
+      try { objeto = JSON.parse(texto); } catch { continue; }
+      expect(problemasDasRegrasDoRtdb(objeto), texto.slice(0, 60)).toEqual(problemasDasRegrasDoRtdb(texto));
+    }
+    expect(problemasDasRegrasDoRtdb(undefined).length).toBeGreaterThan(0);
+    expect(problemasDasRegrasDoRtdb({}).length).toBeGreaterThan(0);
   });
 
   it('o nó observation explicitamente FECHADO (`false`) é aceito, e a ausência também', () => {

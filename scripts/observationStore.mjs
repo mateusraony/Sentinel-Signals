@@ -8,11 +8,15 @@
 //  - A URL vem de OBSERVATION_DATABASE_URL, NÃO de FIREBASE_DATABASE_URL: com esta última no scan, os marcadores de alerta passariam do Firestore
 //    para o RTDB (e um RTDB fora do ar sem cooldown faria o alerta de cota repetir a cada passada).
 //  - Prazo na gravação e falha só como CÓDIGO: o log do Actions é público e a mensagem de um erro do Firebase pode trazer a URL do projeto.
+//  - ANTES da 1ª gravação de cada processo lê as regras PUBLICADAS no Firebase (`getRulesJSON`) e SÓ grava se elas deixam o nó fechado (mesma análise de
+//    scripts/observationRules.mjs que confere o arquivo do repositório). O arquivo pode divergir do publicado (o deploy das regras é manual; um projeto
+//    novo do Firebase nasce em "modo de teste", com leitura aberta). Se as regras expõem o nó, ou não dá para lê-las, NÃO grava (falha para o lado seguro).
 //  - Sem a URL não há efeito nenhum: nada é inicializado, nada é gravado.
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getDatabaseWithUrl } from 'firebase-admin/database';
 import { withTimeout } from './scanTimeout.mjs';
 import { safeErrorCode, isTimeoutError } from './observationSnapshot.mjs';
+import { problemasDasRegrasDoRtdb } from './observationRules.mjs';
 
 export const OBSERVATION_APP_NAME = 'observation';
 export const SNAPSHOT_PATH = 'observation/snapshot';
@@ -32,6 +36,7 @@ const codeError = (code) => Object.assign(new Error(code), { code });
 export function createObservationStore({ env = process.env, firebase = defaultFirebase, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const url = typeof env?.OBSERVATION_DATABASE_URL === 'string' ? env.OBSERVATION_DATABASE_URL.trim() : '';
   let db = null;
+  let regrasVerificadas = false; // só o resultado "seguro" é lembrado: corrigir as regras publicadas libera a gravação na tentativa seguinte
 
   function getDb() {
     if (db) return db;
@@ -55,7 +60,18 @@ export function createObservationStore({ env = process.env, firebase = defaultFi
     if (!url) return { ok: false, skipped: 'sem_url' };
     try {
       if (!snapshot || typeof snapshot !== 'object') throw codeError('retrato_invalido');
-      await withTimeout(getDb().ref(SNAPSHOT_PATH).set(snapshot), timeoutMs, 'observationSnapshot');
+      const banco = getDb();
+      if (!regrasVerificadas) {
+        let publicadas;
+        try {
+          publicadas = await withTimeout(banco.getRulesJSON(), timeoutMs, 'observationRules');
+        } catch {
+          throw codeError('regras_nao_verificadas'); // sem repetir nada do erro (pode trazer a URL do projeto)
+        }
+        if (problemasDasRegrasDoRtdb(publicadas).length > 0) throw codeError('regras_abertas');
+        regrasVerificadas = true;
+      }
+      await withTimeout(banco.ref(SNAPSHOT_PATH).set(snapshot), timeoutMs, 'observationSnapshot');
       return { ok: true };
     } catch (err) {
       return { ok: false, erro: safeErrorCode(err) };
