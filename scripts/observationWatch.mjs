@@ -100,7 +100,10 @@ export function evaluateOperation({ op, candles, snapshotAtMs, nowMs } = {}) {
   for (const c of ordered) {
     if (terminal) break;
     if (c.openTime + CANDLE_MS > nowMs) continue; // ainda aberta: só vela FECHADA decide
-    if (c.openTime + CANDLE_MS <= snapshotAtMs) continue; // terminou antes do retrato: o motor já a tinha visto
+    // Só vela que ABRE no ou depois do retrato. A que terminou antes o motor já viu; a que ATRAVESSA o retrato tem movimento ANTERIOR a ele, e o retrato já traz o stop
+    // NOVO (p.ex. subiu para a entrada no TP1 dentro dessa mesma vela): comparar o movimento antigo com o stop novo daria um stop falso e esconderia os avisos
+    // seguintes atrás de um estado terminal (achado do Codex, PR #571). Custo: uma janela cega de até 15 min logo depois do retrato.
+    if (c.openTime < snapshotAtMs) continue;
     if (!isCandleUsableForExits(new Date(c.openTime).toISOString(), entryRef)) continue; // P0-g: abriu antes da entrada
 
     const stopTouched = isBuy ? c.low <= stop : c.high >= stop;

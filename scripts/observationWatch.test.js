@@ -206,16 +206,28 @@ describe('evaluateOperation — quais velas valem (guarda temporal e janela)', (
     const r = avaliar(buy({ entry_candle_time_15m: 'lixo', candle_close_time: 'lixo' }), [candle(0, { high: 101, low: 90 })]);
     expect(nomes(r)).toEqual(['stop']);
   });
-  it('vela que terminou ANTES do retrato não vale (o motor já a viu); a que atravessa o retrato vale', () => {
+  it('só vale vela que ABRE no ou depois do instante do retrato: a que terminou antes e a que ATRAVESSA o retrato ficam de fora', () => {
     const snap = T0 + 20 * MIN; // retrato tirado 5 min depois da abertura da vela 1
-    const antes = candle(0, { high: 101, low: 90 }); // fecha às T0+15 < snap: já vista
-    const atravessa = candle(1, { high: 101, low: 90 }); // abre T0+15, fecha T0+30 > snap: vale
-    expect(nomes(avaliar(buy(), [antes], { snap, agora: fimDaVela(1) }))).toEqual([]);
-    expect(nomes(avaliar(buy(), [atravessa], { snap, agora: fimDaVela(1) }))).toEqual(['stop']);
+    const antes = candle(0, { high: 101, low: 90 }); // fecha às T0+15 < snap: o motor já a viu
+    const atravessa = candle(1, { high: 101, low: 90 }); // abre T0+15 < snap, fecha T0+30 > snap: tem movimento ANTERIOR ao retrato (achado do Codex, PR #571)
+    const depois = candle(2, { high: 101, low: 90 }); // abre T0+30 > snap: inteira posterior
+    expect(nomes(avaliar(buy(), [antes], { snap, agora: fimDaVela(2) }))).toEqual([]);
+    expect(nomes(avaliar(buy(), [atravessa], { snap, agora: fimDaVela(2) }))).toEqual([]);
+    expect(nomes(avaliar(buy(), [depois], { snap, agora: fimDaVela(2) }))).toEqual(['stop']);
   });
-  it('vela que fecha EXATAMENTE no instante do retrato não vale (já tinha terminado)', () => {
-    const snap = T0 + 15 * MIN;
-    expect(nomes(avaliar(buy(), [candle(0, { high: 101, low: 90 })], { snap, agora: fimDaVela(1) }))).toEqual([]);
+  it('vela que abre EXATAMENTE no instante do retrato vale (nenhum movimento anterior)', () => {
+    expect(nomes(avaliar(buy(), [candle(1, { high: 101, low: 90 })], { snap: T0 + 15 * MIN, agora: fimDaVela(1) }))).toEqual(['stop']);
+  });
+  it('vela que abre 1 ms antes do retrato não vale', () => {
+    expect(nomes(avaliar(buy(), [candle(1, { high: 101, low: 90 })], { snap: T0 + 15 * MIN + 1, agora: fimDaVela(1) }))).toEqual([]);
+  });
+  it('cenário do Codex: o TP1 e a subida do stop para a entrada ACONTECERAM dentro da vela que atravessa o retrato; o stop novo não vale para o movimento antigo', () => {
+    // BUY entrada 100, stop inicial 95: negociou a 99 às 10:01, bateu o TP1 às 10:05, retrato às 10:06 já com stop=100 (runner).
+    const runner = buy({ status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 });
+    const atravessa = candle(0, { high: 112, low: 99 }); // 10:00-10:15, inclui os 99 de ANTES do stop em 100 existir
+    const seguinte = candle(1, { high: 121, low: 105 }); // 10:15-10:30: sobe até o TP2 sem voltar à entrada
+    const r = avaliar(runner, [atravessa, seguinte], { snap: T0 + 6 * MIN, agora: fimDaVela(1) });
+    expect(nomes(r)).toEqual(['tp2']); // sem o stop falso, o TP2 real não fica escondido atrás de um estado terminal
   });
   it('vela ainda ABERTA agora não vale (só velas fechadas decidem)', () => {
     const r = avaliar(buy(), [candle(0, { high: 101, low: 90 })], { agora: T0 + 14 * MIN });
