@@ -1,0 +1,40 @@
+name: Ensaio do vigia de stop/alvo (modo de observação)
+
+# docs/known-risks.md item 299, addendum 6. O vigia de stop/alvo só age numa queda real do banco (rara). Este ENSAIO roda o mesmo caminho sem esperar a queda
+# e SEM GRAVAR NADA: lê o retrato real no Realtime Database, confere as regras publicadas, busca as velas reais da Binance e manda 2 mensagens "ENSAIO" no
+# Telegram (um relatório e um exemplo do formato do aviso, com valores inventados). O job fica vermelho se algum ponto do caminho falhou.
+#
+# Disparo MANUAL (botão Run workflow, sem campos). `contents: read`, SEM escrita no repositório, SEM banco (não acorda o Neon), NENHUMA ordem.
+# Segredos: FIREBASE_DATABASE_URL (entra como OBSERVATION_DATABASE_URL), a credencial do Firebase e os dois do Telegram. O log é público: só contagens e códigos.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observation-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Ensaiar o vigia
+        env:
+          OBSERVATION_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node scripts/observation-rehearsal.mjs

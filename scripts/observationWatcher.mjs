@@ -31,7 +31,7 @@ const bump = (obj, code) => { const k = safeCode(code); obj[k] = (obj[k] ?? 0) +
  * O RTDB não guarda vetor vazio: um retrato sem operações vivas volta SEM a chave `operations` (e sem `assets`). Isso é um retrato válido, não "sem retrato".
  * Só preenche o que o RTDB poda; um retrato de versão desconhecida ou sem carimbo continua inutilizável.
  */
-function normalizeSnapshot(raw) {
+export function normalizeSnapshot(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const s = { ...raw };
   if (s.operations === undefined || s.operations === null) s.operations = [];
