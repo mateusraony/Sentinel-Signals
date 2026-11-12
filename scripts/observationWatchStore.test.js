@@ -127,6 +127,32 @@ describe('gravação do episódio — só depois de conferir as regras publicada
   });
 });
 
+describe('ensureWritable — conferir as regras publicadas ANTES de enviar qualquer aviso (achado do Codex, PR #572)', () => {
+  it('regras seguras: ok, e a conferência é lembrada (1 leitura por processo)', async () => {
+    const m = montar();
+    expect(await m.store.ensureWritable()).toEqual({ ok: true });
+    expect(await m.store.ensureWritable()).toEqual({ ok: true });
+    expect(m.rtdb.rulesCalls()).toBe(1);
+    expect(m.rtdb.writes()).toEqual([]);
+  });
+  it('regras abertas: recusa, e reconfere a cada tentativa', async () => {
+    const m = montar({ rules: REGRAS_ABERTAS });
+    expect(await m.store.ensureWritable()).toEqual({ ok: false, erro: 'regras_abertas' });
+    expect(await m.store.ensureWritable()).toEqual({ ok: false, erro: 'regras_abertas' });
+    expect(m.rtdb.rulesCalls()).toBe(2);
+  });
+  it('regras ilegíveis: recusa com o código, sem a mensagem', async () => {
+    const m = montar({ fail: { rules: () => new Error(`sem permissão em ${URL}`) } });
+    const r = await m.store.ensureWritable();
+    expect(r).toEqual({ ok: false, erro: 'regras_nao_verificadas' });
+  });
+  it('sem a URL: "sem_url" e nada inicializado', async () => {
+    const m = montar({ env: { OBSERVATION_DATABASE_URL: '' } });
+    expect(await m.store.ensureWritable()).toEqual({ ok: false, skipped: 'sem_url' });
+    expect(m.inits()).toBe(0);
+  });
+});
+
 describe('o que pode ser gravado (defesa em profundidade)', () => {
   it('setEpisode recusa o que não parece um episódio', async () => {
     const m = montar();

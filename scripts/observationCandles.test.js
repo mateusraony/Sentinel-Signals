@@ -22,6 +22,13 @@ describe('fetchClosedCandles15m — pedido', () => {
     expect(url.searchParams.get('limit')).toBe('1000');
     expect([...url.searchParams.keys()].sort()).toEqual(['interval', 'limit', 'startTime', 'symbol']);
   });
+  it('o contexto do retry (que o httpRetry imprime no log PÚBLICO) é fixo: nunca o símbolo da operação (achado do Codex, PR #572)', async () => {
+    const fetchFn = vi.fn(async () => resp([row(0)]));
+    await fetchClosedCandles15m({ symbol: 'BTCUSDT', startMs: T0, nowMs: agoraDepoisDa(0), fetchFn });
+    const contexto = String(fetchFn.mock.calls[0][1].context);
+    expect(contexto).not.toMatch(/BTC|USDT/);
+    expect(contexto).toBe('vigia (velas de 15 min)');
+  });
   it('usa poucas tentativas (o vigia roda com a queda em curso, sem 15 s de espera por símbolo)', async () => {
     const fetchFn = vi.fn(async () => resp([row(0)]));
     await fetchClosedCandles15m({ symbol: 'BTCUSDT', startMs: T0, nowMs: agoraDepoisDa(0), fetchFn });

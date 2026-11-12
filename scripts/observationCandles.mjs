@@ -15,6 +15,8 @@ const DEFAULT_MAX_PAGES = 5; // 5.000 velas de 15 min = ~52 dias; a queda real d
 const SYMBOL_RE = /^[A-Z0-9]{2,20}$/;
 
 // Poucas tentativas e prazo curto: o vigia roda com a queda em curso, dentro do tempo que sobra do scan.
+// O `httpRetry` imprime o `context` no log PÚBLICO quando a Binance responde 429/5xx: nunca pôr aqui o símbolo (revelaria qual operação está sendo vigiada). Achado do Codex, PR #572.
+const FIXED_CONTEXT = 'vigia (velas de 15 min)';
 const RETRY = { maxRetries: 2, baseDelayMs: 250, attemptTimeoutMs: 10_000 };
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -46,7 +48,7 @@ export async function fetchClosedCandles15m({ symbol, startMs, nowMs, maxPages =
     let rows;
     try {
       const url = `${BINANCE_BASE_URL}/klines?symbol=${symbol}&interval=15m&startTime=${cursor}&limit=${PAGE_LIMIT}`;
-      const res = await fetchFn(url, { context: `${symbol} 15m (vigia)`, ...RETRY });
+      const res = await fetchFn(url, { context: FIXED_CONTEXT, ...RETRY });
       if (!res?.ok) return { ok: false, reason: `http_${Number.isInteger(res?.status) ? res.status : 0}` };
       rows = await res.json();
     } catch {

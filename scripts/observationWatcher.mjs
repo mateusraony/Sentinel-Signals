@@ -68,6 +68,10 @@ export async function runObservationWatch({
     if (decisao.kind === 'invalid') return { ok: false, erro: safeCode(decisao.reason) };
 
     let episode = decisao.episode;
+    // Antes de QUALQUER envio: sem poder gravar o livro (regras publicadas abertas ou ilegíveis) o aviso se repetiria a cada scan. Vale também para um episódio
+    // que já existia (achado do Codex, PR #572).
+    const gravavel = await rtdb.ensureWritable();
+    if (!gravavel.ok) return { ok: false, erro: safeCode(gravavel.erro ?? gravavel.skipped) };
     if (decisao.kind === 'start') {
       // Sem o episódio gravado não há livro de avisos; enviar sem poder marcar repetiria o aviso a cada passada. Melhor parar aqui.
       const gravado = await rtdb.setEpisode(episode);
@@ -184,6 +188,10 @@ export async function closeObservationEpisode({ env = process.env, store, send, 
     const ep = lido.value;
     const aberto = ep && typeof ep === 'object' && !Array.isArray(ep) && typeof ep.started_at === 'string' && !ep.ended_at;
     if (!aberto) return { ok: true, closed: false };
+
+    // Mesma regra do vigia: não manda o aviso de volta sem poder marcar o fim (senão repetiria a cada scan).
+    const gravavel = await rtdb.ensureWritable();
+    if (!gravavel.ok) return { ok: false, erro: safeCode(gravavel.erro ?? gravavel.skipped) };
 
     let notified = false;
     if (ep.announced === true) {

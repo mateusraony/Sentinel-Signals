@@ -46,6 +46,14 @@ export function problemasDoOrquestrador(texto) {
   const iAlerta = c.indexOf('buildWatchAlert(');
   if (iGrava < 0) p.push('não grava o episódio');
   else if (iAlerta >= 0 && iGrava > iAlerta) p.push('envia aviso de stop/alvo ANTES de gravar o episódio');
+  // Confere as regras publicadas ANTES de qualquer envio, no vigia E no fechamento (achado do Codex, PR #572).
+  const nPre = [...c.matchAll(/await rtdb\.ensureWritable\(\)/g)].length;
+  if (nPre !== 2) p.push(`as duas funções (vigia e fechamento) precisam chamar rtdb.ensureWritable() antes de enviar; achei ${nPre}`);
+  const iPre = c.indexOf('await rtdb.ensureWritable()');
+  if (iPre < 0 || (c.indexOf('enviarComPausa(') >= 0 && iPre > c.indexOf('enviarComPausa('))) p.push('a conferência das regras publicadas precisa vir antes do primeiro envio do vigia');
+  const iFechaFn = c.indexOf('export async function closeObservationEpisode');
+  const iPreFecha = c.indexOf('await rtdb.ensureWritable()', iFechaFn);
+  if (iFechaFn >= 0 && (iPreFecha < 0 || iPreFecha > c.indexOf('await enviar(texto)', iFechaFn))) p.push('o fechamento precisa conferir as regras antes de mandar o aviso de volta');
   // Só vigia com retrato bom.
   if (!/episode\.status === 'watching' && ops\.length > 0/.test(c)) p.push('o vigia precisa rodar só com o episódio em "watching"');
   // Envia primeiro, marca depois (pelo menos uma vez, nunca zero).
@@ -94,6 +102,7 @@ export function problemasDoArmazenamentoDoVigia(texto) {
   const iAbertas = c.indexOf("throw codeError('regras_abertas')");
   if (iLembra < 0 || iAbertas < 0 || iLembra < iAbertas) p.push('o resultado da conferência só pode ser lembrado DEPOIS de recusar as regras abertas');
   // O `update` só aceita chaves conhecidas, e o episódio gravado precisa parecer um episódio.
+  if (!/async function ensureWritable\(\) \{[\s\S]*?await ensureRulesSafe\(getDb\(\)\);/.test(c)) p.push('ensureWritable precisa conferir as regras publicadas');
   if (!/keys\.every\(validPatchKey\)/.test(c)) p.push('o update do episódio precisa validar as chaves');
   if (!/typeof episode\.started_at !== 'string'/.test(c)) p.push('o episódio gravado precisa ser validado');
   if (/\.message\b/.test(c)) p.push('lê .message de erro (pode trazer URL do projeto; o log é público)');
@@ -116,6 +125,8 @@ export function problemasDasVelas(texto) {
   const iPede = c.indexOf('await fetchFn(');
   if (iValida < 0 || iPede < 0 || iValida > iPede) p.push('o símbolo (dado do banco) precisa ser validado ANTES de entrar na URL');
   if (!/SYMBOL_RE\s*=\s*\/\^\[A-Z0-9\]\{2,20\}\$\//.test(c)) p.push('a regra do símbolo precisa ser só maiúsculas e números (2 a 20)');
+  const ctx = /context:\s*([^,}]+)/.exec(c)?.[1]?.trim();
+  if (ctx !== 'FIXED_CONTEXT' || !/FIXED_CONTEXT\s*=\s*'[^'$]*'/.test(c)) p.push('o contexto do retry vai para o log PÚBLICO: precisa ser um texto fixo, nunca o símbolo');
   if (!/c\.openTime \+ CANDLE_MS <= nowMs/.test(c)) p.push('só vela FECHADA decide');
   return p;
 }
@@ -204,6 +215,11 @@ describe('tripwire O2b: variantes plantadas são acusadas', () => {
     ['vigia vigia com retrato velho', () => problemasDoOrquestrador(planta(ARQ.orquestrador, "episode.status === 'watching' && ops.length > 0", "ops.length > 0"))],
     ['vigia marca antes de enviar', () => problemasDoOrquestrador(planta(ARQ.orquestrador, "            const r = await enviarComPausa(texto);\n            if (!r.ok) { bump(resumo.send_errors, r.reason); continue; }", "            await marcar({ alerts_sent: 1 }, {});\n            const r = await enviarComPausa(texto);\n            if (!r.ok) { bump(resumo.send_errors, r.reason); continue; }"))],
     ['fechamento marca o fim antes de avisar', () => problemasDoOrquestrador(planta(ARQ.orquestrador, "    let notified = false;\n    if (ep.announced === true) {", "    await rtdb.patchEpisode({ ended_at: 'x' });\n    let notified = false;\n    if (ep.announced === true) {"))],
+    ['vigia sem conferir as regras antes de enviar', () => problemasDoOrquestrador(planta(ARQ.orquestrador, "    const gravavel = await rtdb.ensureWritable();\n    if (!gravavel.ok) return { ok: false, erro: safeCode(gravavel.erro ?? gravavel.skipped) };\n    if (decisao.kind", "    if (decisao.kind"))],
+    ['fechamento sem conferir as regras antes do aviso de volta', () => problemasDoOrquestrador(planta(ARQ.orquestrador, "    // Mesma regra do vigia: não manda o aviso de volta sem poder marcar o fim (senão repetiria a cada scan).\n    const gravavel = await rtdb.ensureWritable();\n    if (!gravavel.ok) return { ok: false, erro: safeCode(gravavel.erro ?? gravavel.skipped) };\n", ""))],
+    ['store: ensureWritable sem conferir as regras', () => problemasDoArmazenamentoDoVigia(planta(ARQ.armazenamento, "      await ensureRulesSafe(getDb());\n      return { ok: true };", "      getDb();\n      return { ok: true };"))],
+    ['velas com o símbolo no contexto do retry', () => problemasDasVelas(planta(ARQ.velas, "context: FIXED_CONTEXT", "context: `${symbol} 15m`"))],
+    ['velas com contexto fixo que interpola', () => problemasDasVelas(planta(ARQ.velas, "const FIXED_CONTEXT = 'vigia (velas de 15 min)';", "const FIXED_CONTEXT = `vigia ${'x'}`;"))],
     // armazenamento do vigia
     ['store importa o banco', () => problemasDoArmazenamentoDoVigia(`import pg from 'pg';\n${ler(ARQ.armazenamento)}`)],
     ['store lê FIREBASE_DATABASE_URL', () => problemasDoArmazenamentoDoVigia(planta(ARQ.armazenamento, 'env?.OBSERVATION_DATABASE_URL', 'env?.FIREBASE_DATABASE_URL'))],

@@ -70,6 +70,21 @@ describe('runObservationWatch — desligado e falhas de infraestrutura', () => {
     expect(m.send).not.toHaveBeenCalled();
     expect(m.rtdb.writes()).toEqual([]);
   });
+  it('episódio JÁ existente e as regras publicadas viraram abertas: não envia aviso nenhum (senão repetiria a cada scan) — achado do Codex, PR #572', async () => {
+    const ep = { started_at: iso(T0), snapshot_at: iso(T0), status: 'watching', alerts_sent: 0, start_notice_sent: true, announced: true };
+    const m = montar({ snap: snapshot({ ops: [op('a')] }), episode: ep, rules: REGRAS_ABERTAS, velas: { BTCUSDT: [candle(0, 101, 94)] } });
+    const r = await m.run(T0 + 15 * MIN);
+    expect(r).toMatchObject({ ok: false, erro: 'regras_abertas' });
+    expect(m.send).not.toHaveBeenCalled();
+    expect(m.getCandles).not.toHaveBeenCalled();
+  });
+  it('episódio JÁ existente e as regras ficaram ilegíveis: não envia aviso nenhum', async () => {
+    const ep = { started_at: iso(T0), snapshot_at: iso(T0), status: 'watching', alerts_sent: 0, start_notice_sent: true, announced: true };
+    const m = montar({ snap: snapshot({ ops: [op('a')] }), episode: ep, rtdbFail: { rules: () => new Error('x') }, velas: { BTCUSDT: [candle(0, 101, 94)] } });
+    const r = await m.run(T0 + 15 * MIN);
+    expect(r).toMatchObject({ ok: false, erro: 'regras_nao_verificadas' });
+    expect(m.send).not.toHaveBeenCalled();
+  });
   it('não consegue GRAVAR o episódio (regras abertas): não envia aviso que não saberia marcar como enviado', async () => {
     const m = montar({ snap: snapshot({ ops: [op('a')] }), rules: REGRAS_ABERTAS, velas: { BTCUSDT: [candle(0, 101, 90), ...calm(1).slice(1)] } });
     const r = await m.run(T0 + 20 * MIN);
@@ -336,6 +351,16 @@ describe('closeObservationEpisode — o banco voltou', () => {
   const aberto = (extra = {}) => ({ started_at: iso(T0), snapshot_at: iso(T0 - 15 * MIN), status: 'watching', alerts_sent: 2, start_notice_sent: true, announced: true, ...extra });
   const fechar = (m, nowMs = T0 + 26 * 60 * MIN) => closeObservationEpisode({ env: ENV, store: m.store, send: m.send, nowMs });
 
+  it('aviso de volta com as regras publicadas abertas: não envia (senão repetiria a cada scan) — achado do Codex, PR #572', async () => {
+    const m = montar({ episode: aberto(), rules: REGRAS_ABERTAS });
+    expect(await fechar(m)).toEqual({ ok: false, erro: 'regras_abertas' });
+    expect(m.send).not.toHaveBeenCalled();
+  });
+  it('fechar em silêncio (nada anunciado) não depende de enviar, mas só marca com as regras seguras', async () => {
+    const m = montar({ episode: aberto({ announced: false, alerts_sent: 0 }), rules: REGRAS_ABERTAS });
+    expect(await fechar(m)).toMatchObject({ ok: false, erro: 'regras_abertas' });
+    expect(m.rtdb.writes()).toEqual([]);
+  });
   it('sem episódio: 1 leitura, nenhuma gravação, nenhuma mensagem', async () => {
     const m = montar({});
     expect(await fechar(m)).toEqual({ ok: true, closed: false });

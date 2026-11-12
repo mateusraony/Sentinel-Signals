@@ -76,6 +76,20 @@ export function createObservationWatchStore({ env = process.env, firebase = defa
     }
   }
 
+  /**
+   * Confere as regras PUBLICADAS sem gravar nada. O orquestrador chama ANTES de enviar qualquer aviso: sem poder gravar o livro, o aviso se repetiria a cada
+   * scan (achado do Codex, PR #572: num episódio já existente nenhuma conferência vinha antes do envio).
+   */
+  async function ensureWritable() {
+    if (!url) return { ok: false, skipped: 'sem_url' };
+    try {
+      await ensureRulesSafe(getDb());
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, erro: safeErrorCode(err) };
+    }
+  }
+
   async function setEpisode(episode) {
     if (!url) return { ok: false, skipped: 'sem_url' };
     try {
@@ -107,6 +121,7 @@ export function createObservationWatchStore({ env = process.env, firebase = defa
     enabled: Boolean(url),
     readSnapshot: () => read(SNAPSHOT_PATH),
     readEpisode: () => read(EPISODE_PATH),
+    ensureWritable,
     setEpisode,
     patchEpisode,
   };
