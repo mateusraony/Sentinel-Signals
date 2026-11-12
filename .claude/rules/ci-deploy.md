@@ -43,6 +43,7 @@ paths:
   (o segredo `FIREBASE_DATABASE_URL` com OUTRO nome, de propósito: com o nome antigo os marcadores de alerta mudariam do Firestore para o RTDB) estiver preenchida, grava em RTDB
   `observation/snapshot` as operações vivas, os ativos e os filtros do Telegram (`scripts/observationPublish.mjs`). Sem a URL: desligado, **zero consultas a mais**. Nunca fatal. **Antes de gravar, lê as regras PUBLICADAS no Firebase (`getRulesJSON`) e só grava se o nó está fechado** (`regras_abertas`/`regras_nao_verificadas` = não grava).
   O nó não tem regra no `database.rules.json` (só o Admin SDK acessa; travado por `scripts/databaseRulesTripwire.test.js`). Travado por `scripts/observationTripwire.test.js`.
+  **Vigia de stop/alvo (item 299, fase O2b):** quando o Postgres está sem cota (`db_quota`), a passada do scan roda o vigia (`[scan] vigia: …`, só contagem e código): compara o retrato com as velas de 15 min da Binance e avisa stop/TP1/TP2 no Telegram, uma vez cada, e no fim de uma passada limpa fecha o episódio (aviso de volta). **Nunca escreve no Postgres.** Roda dentro do scan, então **pausar o cron-job.org durante a queda desliga o vigia**. Travado por `scripts/observationWatcherTripwire.test.js`.
 - `backfill.yml` — checagem retroativa ao adicionar/reativar um ativo
   (`npm run backfill-check`, `docs/known-risks.md` item 137). Workflow
   SEPARADO de `scan.yml` de propósito, com `concurrency: group:
