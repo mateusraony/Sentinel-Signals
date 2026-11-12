@@ -27,6 +27,10 @@ Telegram. **SEM BANCO, de propósito** (um medidor que acordasse o Neon gastaria
 `logs-retention.mjs` (item 298, `logs-retention.yml`) é a **retenção do `system_logs`**: a ÚNICA rotina automática que apaga dado do banco. A lógica mora em `db/logsRetention.mjs`
 (puro, sem import, só a tabela `system_logs`, nunca lê o conteúdo dos logs). **Simular é o padrão**; só o agendado aplica. Em falha o log mostra só um CÓDIGO (nunca a mensagem crua
 do driver: o log do Actions é público e a mensagem pode trazer endereço e senha do banco). Travado por `logsRetentionTripwire.test.js`; o SQL é provado em `db/logsRetention.pg.test.js`.
+`observationSnapshot.mjs` / `observationPublish.mjs` / `observationStore.mjs` (item 299, fase O1) são o **retrato do estado** para o modo de observação sem banco. O 1º é **puro** (sem import:
+lista FECHADA de campos primitivos, tetos, nunca a linha inteira); o 2º lê as operações vivas ao fim do scan e **nunca lança nem devolve `.message`** (só código; o log é público); o 3º grava UM nó fixo
+`observation/snapshot` no RTDB com **app nomeado** e prazo. **Sem `OBSERVATION_DATABASE_URL` não há efeito nenhum** (nem consulta ao Postgres). A URL tem esse nome (e não `FIREBASE_DATABASE_URL`) de propósito:
+o `adminTelegram.js` moveria os marcadores de alerta para o RTDB. Travado por `observationTripwire.test.js` (+ `databaseRulesTripwire.test.js` para as regras do RTDB). Não ligue nada disto ao Postgres como escrita.
 `health-audit.mjs` (diária às 04:40 UTC + manual, `health-audit.yml`) é a
 auditoria de saúde read-only dos itens 164/165 — teto de leitura explícito, o
 job falha se ela escrever, e ela avisa no Telegram só quando acha algo.
