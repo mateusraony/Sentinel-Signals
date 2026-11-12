@@ -750,8 +750,10 @@ describe('marcador de dedup (RTDB) — reinicializa o Firebase Admin quando nece
     // Mock com estado: simula getApps() real passando a devolver 1 app depois
     // do 1º initializeApp() — sem isto, readAlertMarker + writeAlertMarker (2
     // chamadas de markerRef nesta função) chamariam initializeApp() 2x, o que
-    // o guard `if (getApps().length) return;` existe pra evitar.
-    initializeAppMock.mockImplementation(() => getAppsMock.mockReturnValue([{}]));
+    // o guard de "já existe o app PADRÃO" existe pra evitar. O app devolvido
+    // tem que ter o nome do padrão, como no SDK real: o guard olha o NOME,
+    // não a quantidade (ver o describe "app nomeado" abaixo).
+    initializeAppMock.mockImplementation(() => getAppsMock.mockReturnValue([{ name: '[DEFAULT]' }]));
     const { notifyStepTimeout } = await import('./adminTelegram.js');
     const delivered = await notifyStepTimeout('checkOneAsset:LDOUSDT', 300000);
 
@@ -765,13 +767,38 @@ describe('marcador de dedup (RTDB) — reinicializa o Firebase Admin quando nece
   });
 
   it('não tenta inicializar de novo se um app já existe (idempotente)', async () => {
-    getAppsMock.mockReturnValue([{}]); // já inicializado por outro caminho
+    getAppsMock.mockReturnValue([{ name: '[DEFAULT]' }]); // o app padrão já foi inicializado por outro caminho
     const { notifyStepTimeout } = await import('./adminTelegram.js');
     const delivered = await notifyStepTimeout('checkOneAsset:LDOUSDT', 300000);
 
     expect(delivered).toBe(true);
     expect(initializeAppMock).not.toHaveBeenCalled();
     expect(rtdbSetMock).toHaveBeenCalled();
+  });
+
+  // Regressão do item 299 (fase O1): o scan registra um app NOMEADO ('observation') para gravar o retrato no RTDB.
+  // O guard antigo (`getApps().length`) via esse app e concluía "já existe um app", então NUNCA criava o PADRÃO, e o
+  // `getFirestore()`/`getDatabase()` do marcador de alerta lançava "The default Firebase app does not exist" — quebrando
+  // o cooldown do alerta de cota e o aviso "o banco voltou". Visto no log real do scan de 12/11 14:15 UTC.
+  it('um app NOMEADO já registrado (observation) não impede de criar o app padrão', async () => {
+    getAppsMock.mockReturnValue([{ name: 'observation' }]);
+    initializeAppMock.mockImplementation(() => getAppsMock.mockReturnValue([{ name: 'observation' }, { name: '[DEFAULT]' }]));
+    const { notifyStepTimeout } = await import('./adminTelegram.js');
+    const delivered = await notifyStepTimeout('checkOneAsset:LDOUSDT', 300000);
+
+    expect(delivered).toBe(true);
+    expect(initializeAppMock).toHaveBeenCalledTimes(1);
+    // O app padrão é criado SEM nome (o nome vai no 2º argumento; o padrão não leva).
+    expect(initializeAppMock.mock.calls[0]).toHaveLength(1);
+    expect(rtdbSetMock).toHaveBeenCalled();
+  });
+
+  it('o app nomeado e o padrão juntos: não inicializa de novo (idempotente)', async () => {
+    getAppsMock.mockReturnValue([{ name: 'observation' }, { name: '[DEFAULT]' }]);
+    const { notifyStepTimeout } = await import('./adminTelegram.js');
+    await notifyStepTimeout('checkOneAsset:LDOUSDT', 300000);
+
+    expect(initializeAppMock).not.toHaveBeenCalled();
   });
 
   it('sem FIREBASE_SERVICE_ACCOUNT_JSON, não tenta inicializar (evita cert(undefined) explodir)', async () => {
