@@ -185,7 +185,8 @@ function validEpisode(ep) {
     && !ep.ended_at
     && EPISODE_STATUSES.includes(ep.status)
     && typeof ep.started_at === 'string' && Number.isFinite(Date.parse(ep.started_at))
-    && (ep.snapshot_at === null || (typeof ep.snapshot_at === 'string' && Number.isFinite(Date.parse(ep.snapshot_at)))),
+    // O Realtime Database NÃO guarda `null`: um episódio gravado com `snapshot_at: null` ("sem retrato") volta da leitura SEM o campo.
+    && (ep.snapshot_at == null || (typeof ep.snapshot_at === 'string' && Number.isFinite(Date.parse(ep.snapshot_at)))),
   );
 }
 
@@ -204,8 +205,8 @@ export function decideEpisode({ episode, snapshot, nowMs } = {}) {
   const usable = isUsableSnapshot(snapshot);
   const snapshotAt = usable ? snapshot.snapshot_at : null;
 
-  if (validEpisode(episode) && episode.snapshot_at === snapshotAt) {
-    return { kind: 'continue', episode: { ...episode } };
+  if (validEpisode(episode) && (episode.snapshot_at ?? null) === snapshotAt) {
+    return { kind: 'continue', episode: { ...episode, snapshot_at: snapshotAt } };
   }
 
   let status = 'no_snapshot';

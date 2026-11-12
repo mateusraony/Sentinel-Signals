@@ -392,6 +392,18 @@ describe('decideEpisode — a regra das 2 h vale para a idade do retrato NO INÍ
     expect(de2.kind).toBe('continue');
     expect(de2.episode.status).toBe('no_snapshot');
   });
+  it('o RTDB não guarda null: o episódio "sem retrato" volta da leitura SEM o campo snapshot_at e continua o mesmo', () => {
+    const gravado = decideEpisode({ episode: null, snapshot: null, nowMs: agora }).episode;
+    const lido = { ...gravado };
+    delete lido.snapshot_at; // o que o RTDB devolve para `snapshot_at: null`
+    const d = decideEpisode({ episode: lido, snapshot: null, nowMs: agora + 15 * MIN });
+    expect(d.kind).toBe('continue'); // senão o aviso "NÃO está vigiando" se repetiria a cada passada
+    expect(d.episode.status).toBe('no_snapshot');
+  });
+  it('episódio "sem retrato" lido sem snapshot_at NÃO é reaproveitado quando agora existe retrato', () => {
+    const lido = { started_at: iso(agora), status: 'no_snapshot', alerts_sent: 0, start_notice_sent: true };
+    expect(decideEpisode({ episode: lido, snapshot: snap(), nowMs: agora + 15 * MIN }).kind).toBe('start');
+  });
   it('retrato de versão desconhecida conta como sem retrato', () => {
     expect(decideEpisode({ episode: null, snapshot: snap({ version: 9 }), nowMs: agora }).episode.status).toBe('no_snapshot');
   });
