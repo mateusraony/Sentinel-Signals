@@ -4,15 +4,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as intervals from './pollingIntervals';
 import {
-  SCAN_CADENCE_MS, POLL_OPERATIONAL_MS, POLL_DIAGNOSTIC_MS,
+  SCAN_CADENCE_MS, POLL_OPERATIONAL_MS, POLL_DIAGNOSTIC_MS, VISIBLE_REFRESH_MS, STALE_TIME_MS,
 } from './pollingIntervals';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('pollingIntervals', () => {
-  it('mantém os níveis ordenados e abaixo da cadência real do scan', () => {
-    expect(POLL_OPERATIONAL_MS).toBeLessThan(POLL_DIAGNOSTIC_MS);
-    expect(POLL_DIAGNOSTIC_MS).toBeLessThanOrEqual(SCAN_CADENCE_MS);
+  it('nenhuma tela amostra o banco mais rápido do que o dado muda (a cadência do scan) — e hoje são 30 min, decisão do usuário (item 301)', () => {
+    expect(POLL_OPERATIONAL_MS).toBeLessThanOrEqual(POLL_DIAGNOSTIC_MS);
+    expect(POLL_OPERATIONAL_MS).toBeGreaterThanOrEqual(SCAN_CADENCE_MS);
+    expect(VISIBLE_REFRESH_MS).toBe(30 * 60_000);
+    expect(POLL_OPERATIONAL_MS).toBe(VISIBLE_REFRESH_MS);
+    expect(POLL_DIAGNOSTIC_MS).toBe(VISIBLE_REFRESH_MS);
+  });
+  it('o tempo de validade do dado (quem volta à aba/navega vê dado fresco) é curto e MENOR que a cadência do scan; não serve de intervalo de polling', () => {
+    expect(STALE_TIME_MS).toBe(60_000);
+    expect(STALE_TIME_MS).toBeLessThan(SCAN_CADENCE_MS);
   });
 });
 
@@ -27,7 +34,7 @@ describe('pollingIntervals', () => {
 // outra coisa (literal, aritmética, identificador desconhecido) falha.
 const ALLOWED_INTERVAL_IDENTIFIERS = new Set(
   Object.entries(intervals)
-    .filter(([, value]) => typeof value === 'number' && value >= POLL_OPERATIONAL_MS)
+    .filter(([, value]) => typeof value === 'number' && value >= SCAN_CADENCE_MS)
     .map(([name]) => name),
 );
 
@@ -78,6 +85,8 @@ describe('tripwire — nenhum poller de banco volta a usar intervalo solto', () 
   it('aceita as constantes do módulo, e só elas', () => {
     expect(findPollingOffenders({ 'd.jsx': dbQuery('POLL_OPERATIONAL_MS') })).toEqual([]);
     expect(findPollingOffenders({ 'e.jsx': dbQuery('POLL_DIAGNOSTIC_MS') })).toEqual([]);
+    expect(findPollingOffenders({ 'g.jsx': dbQuery('VISIBLE_REFRESH_MS') })).toEqual([]);
+    expect(findPollingOffenders({ 'h.jsx': dbQuery('STALE_TIME_MS') })).toHaveLength(1); // o tempo de validade NÃO é um intervalo permitido
     expect(ALLOWED_INTERVAL_IDENTIFIERS.has('SCAN_CADENCE_MS')).toBe(true);
   });
 
@@ -92,8 +101,9 @@ describe('tripwire — nenhum poller de banco volta a usar intervalo solto', () 
 
   it('uma constante nova abaixo do piso não entraria na allowlist', () => {
     const abaixoDoPiso = Object.entries(intervals)
-      .filter(([, v]) => typeof v === 'number' && v < POLL_OPERATIONAL_MS)
+      .filter(([, v]) => typeof v === 'number' && v < SCAN_CADENCE_MS)
       .map(([name]) => name);
+    expect(abaixoDoPiso).toContain('STALE_TIME_MS'); // não-vacuidade: o staleTime (60 s) é exatamente o que NÃO pode virar refetchInterval
     for (const name of abaixoDoPiso) expect(ALLOWED_INTERVAL_IDENTIFIERS.has(name)).toBe(false);
   });
 

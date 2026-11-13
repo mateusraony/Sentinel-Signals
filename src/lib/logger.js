@@ -11,6 +11,8 @@
  */
 
 import { backend } from '@/api/entities';
+import { isTabHidden } from '@/lib/tabVisibility';
+import { VISIBLE_REFRESH_MS } from '@/lib/pollingIntervals';
 
 const QUEUE = [];
 let flushing = false;
@@ -125,8 +127,10 @@ export function initLogger() {
     });
   });
 
-  // Periodic anomaly detection — every 5 minutes
+  // Periodic anomaly detection — a cada 30 min com a aba visível (item 301; era 5 min, o que mantinha o Neon grátis acordado), nada com a aba escondida
   setInterval(async () => {
+    // Aba escondida (docs/known-risks.md item 301): este monitor não consulta o banco (o Neon grátis só dorme depois de 5 min parado).
+    if (isTabHidden()) return;
     try {
       const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
       const now = Date.now();
@@ -175,7 +179,7 @@ export function initLogger() {
     } catch {
       // Silently fail — monitoring should never break the app
     }
-  }, 5 * 60 * 1000);
+  }, VISIBLE_REFRESH_MS);
 
   addToQueue('info', 'system', 'Logger iniciado — captura automática de anomalias ativa');
 }

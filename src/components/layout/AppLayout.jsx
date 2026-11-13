@@ -6,6 +6,7 @@ import TickerBar from './TickerBar';
 import AuroraBg from './AuroraBg';
 import DebugLogButton from './DebugLogButton';
 import DbQuotaBanner from './DbQuotaBanner';
+import LastUpdateChip from './LastUpdateChip';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAutoScan } from '@/hooks/useAutoScan';
 import { useQueryClient } from '@tanstack/react-query';
@@ -40,6 +41,7 @@ export default function AppLayout() {
         </div>
       </div>
       <DebugLogButton />
+      <LastUpdateChip />
     </div>
   );
 }
