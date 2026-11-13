@@ -260,9 +260,9 @@ describe('TradeCard — decision_snapshot (Fase 3, gestão HOLDING/PROTECTED)', 
 // é puramente decorativa e o aria-label do <div role="img"> pai já
 // descreve a mesma informação por completo (docs/known-risks.md item 206).
 describe('TradeCard — elementos usam Tooltip em vez de title= nativo (achado A-6)', () => {
-  it('REGRESSÃO: badge "aberta ..." (camada 1, sempre visível) não tem title=, vira gatilho focável', () => {
+  it('REGRESSÃO: linha "Aberta em ..." (camada 1, sempre visível) não tem title=, vira gatilho focável', () => {
     renderCard(baseOp());
-    const badge = screen.getByText(/^aberta /);
+    const badge = screen.getByText(/^Aberta em /);
     expect(badge.getAttribute('title')).toBeNull();
     expect(badge.getAttribute('tabindex')).toBe('0');
   });
@@ -328,8 +328,9 @@ describe('TradeCard — elementos usam Tooltip em vez de title= nativo (achado A
     fetchCurrentPriceMock.mockResolvedValue(60500);
     renderCard(baseOp({ current_stop: 59000 }));
     const tp1Cell = await waitFor(() => {
-      const cell = screen.getByText('TP1 ✓').closest('[tabindex="0"]');
-      expect(cell).not.toBeNull();
+      // Item 303: o nome do nível aparece duas vezes (em cima da trilha, decorativo, e na célula da grade) — o gatilho é a célula.
+      const cell = screen.getAllByText('TP1 ✓').map((el) => el.closest('[tabindex="0"]')).find(Boolean);
+      expect(cell).toBeTruthy();
       return cell;
     });
     expect(tp1Cell.getAttribute('title')).toBeNull();
@@ -383,5 +384,259 @@ describe('TradeCard — marca de simulação manual e de encerramento à mão (i
   it('operação do motor não ganha marca', () => {
     renderCard(baseOp());
     expect(screen.queryByText(/🧪 Simulação manual|✏️ Encerrada à mão/)).toBeNull();
+  });
+});
+
+// Item 303 — pedido do usuário (13/11/2026) depois de olhar uma operação real (QNT/USDT, venda, stop já além da entrada):
+// "não consigo bater o olho e entender o que está acontecendo", "fica confuso saber em que horário foi aberta", "o que já tem
+// garantido se fechar nesse novo stop", "os motivos estão muito simples".
+describe('TradeCard — cartão legível de bater o olho (item 303)', () => {
+  const qnt = (overrides = {}) => ({
+    id: 'qnt', symbol: 'QNTUSDT', side: 'SELL', status: 'SIGNAL_CONFIRMED', timeframe: '15m', signal_timeframe: '4h',
+    entry_price: 180.56, initial_stop: 199.4, current_stop: 171.6, tp1: 152.3, tp2: 124.04,
+    partial_percent: 50, runner_percent: 50, score: 85,
+    created_date: '2026-11-10T19:57:00.000Z',
+    candle_open_time: '2026-11-10T12:00:00.000Z', candle_close_time: '2026-11-10T15:59:59.999Z', candle_status: 'CLOSED',
+    mfe_r: 1.08, mae_r: -0.05, bars_to_mfe: 9,
+    signal_reasons: ['Follow-through confirmado (+25)', 'MACD hist negativo (+20)', 'Indicador que o glossário não conhece (+7)'],
+    pre_tp1_stop_advanced_at: '2026-11-12T20:10:00.000Z',
+    decision_snapshot: {
+      decision: 'PROTECTED', reason_code: 'pre_tp1_trailing_advanced',
+      facts: { favorable_move: 20.33, required_move: 5.6857, stop_before: 172, stop_after: 171.6 },
+      evaluated_at: '2026-11-12T20:10:00.000Z',
+    },
+    ...overrides,
+  });
+
+  function renderCollapsed(op, props = {}) {
+    return render(
+      <QueryClientProvider client={makeTestQueryClient()}>
+        <TooltipProvider>
+          <TradeCard operation={op} {...props} />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+  }
+  const zones = (container) => [...container.querySelectorAll('[data-rail-zone]')].map((el) => el.getAttribute('data-rail-zone'));
+  const legend = (container) => [...container.querySelectorAll('[data-rail-legend]')].map((el) => el.textContent);
+  const guarantee = (container) => container.querySelector('[data-guarantee]');
+
+  describe('quando abriu', () => {
+    it('hora de abertura por extenso, em Brasília, uma vez só, e há quanto tempo está aberta', () => {
+      renderCollapsed(qnt());
+      expect(screen.getAllByText('Aberta em 10/11 às 16:57')).toHaveLength(1);
+      expect(screen.getByText(/^· há \d+d \d+h$/)).toBeTruthy();
+    });
+
+    it('operação encerrada não ganha "há …" (seria o tempo desde a abertura, não a duração)', () => {
+      renderCollapsed(baseOp());
+      expect(screen.getByText(/^Aberta em /)).toBeTruthy();
+      expect(screen.queryByText(/^· há /)).toBeNull();
+    });
+
+    it('sem data de criação, a linha some (nunca "Invalid date")', () => {
+      const { container } = renderCollapsed(qnt({ created_date: null }));
+      expect(screen.queryByText(/^Aberta em /)).toBeNull();
+      expect(container.textContent).not.toMatch(/Invalid/i);
+    });
+
+    it('o selo de timeframe diz aviso → entrada ("4H → 15M"), não só o da entrada', () => {
+      renderCollapsed(qnt());
+      expect(screen.getByText('4H → 15M')).toBeTruthy();
+    });
+
+    it('REGRESSÃO: a vela do aviso é chamada pelo nome e não há mais "Fechado" solto numa operação ativa', () => {
+      const { container } = renderCard(qnt());
+      expect(screen.getByText(/Vela do aviso \(4H\): 10\/11 09:00 → 10\/11 12:59 \(Brasília\)\s*· vela já fechada/)).toBeTruthy();
+      expect(container.textContent).not.toMatch(/✅ Fechado/);
+      expect(container.textContent).not.toMatch(/\bBRT\b/);
+    });
+
+    it('vela ainda aberta e operação sem vela gravada', () => {
+      const { unmount } = renderCard(qnt({ candle_status: 'OPEN' }));
+      expect(screen.getByText(/vela ainda aberta/)).toBeTruthy();
+      unmount();
+      const { container } = renderCard(qnt({ candle_open_time: null, candle_close_time: null }));
+      expect(container.textContent).not.toMatch(/Vela do aviso/);
+    });
+  });
+
+  describe('a trilha', () => {
+    it('REGRESSÃO: stop além da entrada vira "lucro protegido" — nenhuma faixa de risco por cima do verde', () => {
+      const { container } = renderCollapsed(qnt());
+      expect(zones(container)).toEqual(['riskRemoved', 'locked', 'reward']);
+      expect(legend(container)).toEqual(['risco já eliminado', 'lucro protegido', 'falta buscar']);
+    });
+
+    it('stop ainda no inicial: risco em jogo + o que falta buscar', () => {
+      const { container } = renderCollapsed(qnt({ current_stop: 199.4, decision_snapshot: null }));
+      expect(zones(container)).toEqual(['risk', 'reward']);
+      expect(legend(container)).toEqual(['risco em jogo', 'falta buscar']);
+    });
+
+    it('os nomes ficam escritos em cima da trilha, com o stop inicial como marcador próprio', () => {
+      const { container } = renderCollapsed(qnt());
+      const labels = [...container.querySelectorAll('[data-rail-label]')].map((el) => el.textContent);
+      expect(labels).toEqual(['Stop inicial', 'Entrada', 'Stop 🔒', 'TP1', 'TP2']);
+      expect(container.querySelector('[data-rail-marker="initialStop"]')).not.toBeNull();
+      expect(container.querySelector('[role="img"]').getAttribute('aria-label')).toMatch(/Stop inicial \$199\.40\./);
+    });
+
+    it('sem stop inicial diferente do atual, não há marcador de stop inicial', () => {
+      const { container } = renderCollapsed(qnt({ current_stop: 199.4, decision_snapshot: null }));
+      expect(container.querySelector('[data-rail-marker="initialStop"]')).toBeNull();
+      expect(container.querySelector('[role="img"]').getAttribute('aria-label')).not.toMatch(/Stop inicial/);
+    });
+
+    it('venda: lucro à direita, com o aviso escrito, e a grade de preços na mesma ordem da trilha', () => {
+      const { container } = renderCollapsed(qnt());
+      expect(screen.getByText(/venda: o lucro cresce para a direita \(preço caindo\)/)).toBeTruthy();
+      const cells = [...container.querySelectorAll('.grid.grid-cols-4 > div')].map((el) => el.textContent);
+      expect(cells.map((t) => t.match(/^(Entrada|Stop 🔒|TP1|TP2)/)?.[1])).toEqual(['Entrada', 'Stop 🔒', 'TP1', 'TP2']);
+      const pos = (key) => parseFloat(container.querySelector(`[data-rail-marker="${key}"]`).style.left);
+      expect(pos('initialStop')).toBeLessThan(pos('entry'));
+      expect(pos('entry')).toBeLessThan(pos('stop'));
+      expect(pos('stop')).toBeLessThan(pos('tp1'));
+      expect(pos('tp1')).toBeLessThan(pos('tp2'));
+    });
+
+    it('compra não ganha o aviso de venda', () => {
+      const { container } = renderCollapsed({
+        ...qnt(), side: 'BUY', entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 107.5, tp2: 115, decision_snapshot: null,
+      });
+      expect(container.textContent).not.toMatch(/venda: o lucro cresce/);
+    });
+
+    it('operação encerrada: a trilha continua, mas sem a legenda do que "está em jogo"', () => {
+      const { container } = renderCollapsed(qnt({ status: 'STOP_HIT', exit_price: 171.6 }));
+      expect(zones(container).length).toBeGreaterThan(0);
+      expect(legend(container)).toEqual([]);
+    });
+
+    it('a agulha do preço aparece quando há cotação', async () => {
+      fetchCurrentPriceMock.mockResolvedValue(161.79);
+      const { container } = renderCollapsed(qnt());
+      await waitFor(() => expect(container.querySelector('[data-rail-needle]')).not.toBeNull());
+      const needle = parseFloat(container.querySelector('[data-rail-needle]').style.left);
+      const pos = (key) => parseFloat(container.querySelector(`[data-rail-marker="${key}"]`).style.left);
+      expect(needle).toBeGreaterThan(pos('stop'));
+      expect(needle).toBeLessThan(pos('tp1'));
+      expect(screen.getByText('▲ preço agora')).toBeTruthy();
+    });
+  });
+
+  describe('com quanto fecha se bater no stop', () => {
+    it('stop no lucro: diz o % e o R, com o preço do stop', () => {
+      const { container } = renderCollapsed(qnt());
+      const line = guarantee(container);
+      expect(line.getAttribute('data-guarantee')).toBe('profit');
+      expect(line.textContent).toMatch(/^🛡️ Lucro protegido: se o preço voltar e bater no stop \(\$171\.60\), a operação fecha com \+4\.96% \(\+0\.48R\)\./);
+    });
+
+    it('stop no inicial: diz a perda, sem a palavra "protegido"', () => {
+      const { container } = renderCollapsed(qnt({ current_stop: 199.4, decision_snapshot: null }));
+      const line = guarantee(container);
+      expect(line.getAttribute('data-guarantee')).toBe('loss');
+      expect(line.textContent).toMatch(/^🛑 Risco em jogo: se o preço bater no stop \(\$199\.40\), a operação fecha com -10\.43% \(-1\.00R\)\./);
+      expect(line.textContent).not.toMatch(/protegido/);
+    });
+
+    it('stop na entrada: zero a zero, sem número inventado', () => {
+      const { container } = renderCollapsed(qnt({ current_stop: 180.56, decision_snapshot: null }));
+      const line = guarantee(container);
+      expect(line.getAttribute('data-guarantee')).toBe('zero');
+      expect(line.textContent).toMatch(/^🟡 Breakeven: se o preço voltar e bater no stop \(\$180\.56\), a operação fecha no zero a zero\./);
+      expect(line.textContent).not.toMatch(/%/);
+    });
+
+    it('runner: a conta já soma a parcela realizada no TP1 e diz isso', () => {
+      const { container } = renderCollapsed(qnt({ status: 'RUNNER_ACTIVE', tp1_hit: true, tp1_hit_price: 152.3, current_stop: 180.56, decision_snapshot: null }));
+      const line = guarantee(container);
+      expect(line.getAttribute('data-guarantee')).toBe('profit');
+      expect(line.textContent).toMatch(/a operação fecha com \+7\.83% \(\+0\.75R\), já contando os 50% realizados no TP1\./);
+    });
+
+    it('sem stop inicial (legado): mostra o % e omite o R em vez de inventar', () => {
+      const { container } = renderCollapsed(qnt({ initial_stop: null, decision_snapshot: null }));
+      expect(guarantee(container).textContent).toMatch(/a operação fecha com \+4\.96%\./);
+      expect(guarantee(container).textContent).not.toMatch(/R\)/);
+    });
+
+    it('operação encerrada não mostra a frase (o resultado real está no banner/Histórico)', () => {
+      const { container } = renderCollapsed(qnt({ status: 'STOP_HIT', exit_price: 171.6 }));
+      expect(guarantee(container)).toBeNull();
+    });
+
+    it('avisa que é bruto e no preço do stop, em gatilho focável (sem title= nativo)', () => {
+      renderCollapsed(qnt());
+      const tag = screen.getByText('bruto · no preço do stop');
+      expect(tag.getAttribute('tabindex')).toBe('0');
+      expect(tag.getAttribute('title')).toBeNull();
+    });
+  });
+
+  describe('a história até agora', () => {
+    it('aparece SEM clicar em "Detalhes técnicos", em ordem, com o "de A para B" do stop', () => {
+      renderCollapsed(qnt());
+      const story = screen.getByRole('group', { name: 'A história até agora' });
+      const steps = [...story.querySelectorAll('li')].map((li) => li.textContent);
+      expect(steps).toHaveLength(4);
+      expect(steps[0]).toBe('📍 Abriu uma operação de venda a $180.56 em 10/11 às 16:57 (aviso do gráfico de 4H, confirmado no de 15M).');
+      expect(steps[1]).toMatch(/^O stop inicial ficou em \$199\.40: o risco assumido era de -10\.43%/);
+      expect(steps[2]).toMatch(/^Desde a entrada: no melhor ponto chegou a \+11\.27% \(\+1\.08R\)/);
+      expect(steps[3]).toBe('🛡️ Stop protegido: a última mudança foi em 12/11 às 17:10, de $172.00 para $171.60 (o inicial era $199.40).');
+    });
+
+    it('operação encerrada não ganha este bloco (a história completa fica no Histórico)', () => {
+      renderCollapsed(qnt({ status: 'STOP_HIT', exit_price: 171.6 }));
+      expect(screen.queryByRole('group', { name: 'A história até agora' })).toBeNull();
+    });
+  });
+
+  describe('por que entrou', () => {
+    it('cada motivo conhecido vem com título, "O que é", "Por que conta" e os pontos', () => {
+      renderCard(qnt());
+      const block = screen.getByRole('group', { name: 'Por que entrou' });
+      const items = [...block.querySelectorAll('li')];
+      expect(items).toHaveLength(3);
+      expect(items[0].textContent).toMatch(/^O movimento continuou depois da virada\+25 pontosO que é: .+Por que conta: .+/);
+      expect(items[1].textContent).toMatch(/^Força do movimento a favor \(MACD negativo\)\+20 pontosO que é: .+queda.+Por que conta: /);
+      expect(block.textContent).toMatch(/Por que entrou — regras a favor na hora do aviso: 3/);
+      expect(block.textContent).toMatch(/🧩 85\/100/);
+    });
+
+    it('motivo que o glossário não conhece aparece como veio, sem explicação inventada', () => {
+      renderCard(qnt());
+      const items = [...screen.getByRole('group', { name: 'Por que entrou' }).querySelectorAll('li')];
+      expect(items[2].textContent).toBe('Indicador que o glossário não conhece+7 pontos');
+    });
+
+    it('fica atrás de "Detalhes técnicos" (não polui a primeira leitura)', () => {
+      renderCollapsed(qnt());
+      expect(screen.queryByRole('group', { name: 'Por que entrou' })).toBeNull();
+    });
+
+    it('sem motivos e sem score: o bloco não existe; só com score: só a barra', () => {
+      const { unmount } = renderCard(qnt({ signal_reasons: [], score: null }));
+      expect(screen.queryByRole('group', { name: 'Por que entrou' })).toBeNull();
+      unmount();
+      renderCard(qnt({ signal_reasons: null }));
+      const block = screen.getByRole('group', { name: 'Por que entrou' });
+      expect(block.querySelectorAll('li')).toHaveLength(0);
+      expect(block.textContent).toMatch(/🧩 85\/100/);
+    });
+
+    it('REGRESSÃO: os números da trilha saem em linguagem simples, não em "movimento favorável 20.3300, gatilho da trilha em 5.6857"', () => {
+      const { container } = renderCard(qnt());
+      expect(screen.getByText(/A trilha do stop só começa a agir depois que o preço anda \$5\.6857 \(3\.15% da entrada\) a favor\. No melhor ponto ele já andou \$20\.3300 \(11\.26%\): a proteção está ativa\. \(medido em 12\/11 às 17:10, Brasília\)/)).toBeTruthy();
+      expect(container.textContent).not.toMatch(/gatilho da trilha em/);
+    });
+  });
+
+  it('railProfitToRight desligado (comparação visual): eixo de preço fixo e o aviso muda de lado', () => {
+    const { container } = renderCollapsed(qnt(), { railProfitToRight: false });
+    expect(screen.getByText(/venda: o lucro cresce para a esquerda \(preço caindo\)/)).toBeTruthy();
+    const pos = (key) => parseFloat(container.querySelector(`[data-rail-marker="${key}"]`).style.left);
+    expect(pos('tp2')).toBeLessThan(pos('entry'));
   });
 });

@@ -7,12 +7,16 @@ import { Clock, TrendingUp, TrendingDown, ChevronDown, ChevronUp, History } from
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { formatBackfillLag } from '@/lib/backfillDetection';
 import {
-  formatPrice, formatSignedPct, describeProximity, rrGeometry, nextMilestone,
-  stopPosture, orderLevelsByRail,
+  formatPrice, formatSignedPct, describeProximity, nextMilestone, stopPosture,
 } from '@/lib/priceProximity';
 import { classifyOutcome } from '@/lib/tradeMetrics';
 import { closedReasonLabel } from '@/lib/eventTimeline';
 import { explainOperationDecision } from '@/lib/decisionExplanation';
+import { buildTradeRail, layoutRailLabels } from '@/lib/tradeRail';
+import { stopOutcomeIfHit, formatSignedR } from '@/lib/stopGuarantee';
+import { buildOpenTradeStory, describeProtectionProgress } from '@/lib/openTradeStory';
+import { explainSignalReasons, formatReasonPoints } from '@/lib/signalReasonGlossary';
+import { opSignalTimeframe, timeframeChipLabel } from '@/lib/tradeStory';
 import { useLivePrice } from '@/hooks/useLivePrice';
 
 /**
@@ -112,62 +116,153 @@ function fmtBRT(iso) {
   return moment(iso).utcOffset(-3).format('DD/MM HH:mm');
 }
 
+// Mesmo horário (Brasília), por extenso — usado onde a data é lida em frase.
+function fmtBRTLong(iso) {
+  return moment(iso).utcOffset(-3).format('DD/MM [às] HH:mm');
+}
+
 /* ─────────────────────────── Camada 1 — o olhar ─────────────────────────── */
 
+// Item 303: cada faixa da trilha tem UM sentido, e não depende só da cor — o
+// risco eliminado é listrado, o lucro protegido é cheio, o que falta buscar é
+// claro, e a legenda logo abaixo escreve o nome de cada uma.
+const RAIL_ZONE = {
+  riskRemoved: {
+    label: 'risco já eliminado',
+    style: { background: 'repeating-linear-gradient(135deg, rgba(255,255,255,0.22) 0 3px, rgba(255,255,255,0.05) 3px 6px)' },
+  },
+  risk: { label: 'risco em jogo', style: { background: 'rgba(255,20,120,0.6)' } },
+  locked: { label: 'lucro protegido', style: { background: 'rgba(0,255,128,0.85)' } },
+  reward: { label: 'falta buscar', style: { background: 'rgba(0,255,128,0.18)' } },
+};
+const RAIL_LABEL_ROW_PX = 13;
+const INITIAL_STOP_COLOR = 'rgba(255,255,255,0.5)';
+
+const railLabelText = (key, op) => (key === 'initialStop' ? 'Stop inicial' : levelLabel(key, op));
+const railLabelColor = (key, op) => (key === 'initialStop' ? INITIAL_STOP_COLOR : levelColor(key, op));
+const railAnchorStyle = (label) => (
+  label.anchor === 'start' ? { left: 0 }
+    : label.anchor === 'end' ? { right: 0 }
+      : { left: `${label.pos}%`, transform: 'translateX(-50%)' }
+);
+
 /**
- * Trilha stop → entrada → TP2, com o preço marcado por uma agulha.
+ * Trilha da operação: stop inicial → entrada → TP1 → TP2, com os nomes
+ * escritos em cima, o preço marcado por uma agulha e uma faixa para cada
+ * coisa (risco eliminado, risco em jogo, lucro protegido, o que falta buscar).
  *
- * Substitui a antiga grade de 4 preços E a barra risco/retorno separada —
- * eram duas representações dos MESMOS quatro números no mesmo card. Aqui a
- * posição conta a história e os números ficam logo abaixo, uma vez só.
+ * Geometria em `src/lib/tradeRail.js` (pura, testada). Os números (preço e
+ * distância de cada nível) ficam na grade logo abaixo, na MESMA ordem da
+ * trilha.
  */
-function LevelRail({ op, price, isStale }) {
-  const geo = rrGeometry(op, price);
+function LevelRail({ op, price, isStale, isOpen, profitToRight = true }) {
+  const rail = buildTradeRail(op, price, { profitToRight });
   const { levels } = describeProximity(op, price);
   if (levels.length === 0) return null;
 
   const needleColor = isStale ? '#ff9f43' : '#00e5ff';
-  const span = (a, b) => ({ left: `${Math.min(a, b)}%`, width: `${Math.abs(b - a)}%` });
+  const { rows, labels } = rail
+    ? layoutRailLabels(rail.markers.map((m) => ({ key: m.key, pos: m.pos, text: railLabelText(m.key, op) })))
+    : { rows: 0, labels: [] };
+  const nowLabel = rail && rail.pricePos !== null
+    ? layoutRailLabels([{ key: 'now', pos: rail.pricePos, text: '▲ preço agora' }]).labels[0]
+    : null;
+  // A grade segue a ordem da trilha (numa venda com o lucro à direita, o stop fica à esquerda).
+  const railPos = (key) => rail?.markers.find((m) => m.key === key)?.pos ?? 0;
+  const orderedLevels = rail ? [...levels].sort((a, b) => railPos(a.key) - railPos(b.key)) : levels;
+  const initialStop = rail?.markers.find((m) => m.key === 'initialStop');
 
   return (
     <div className="space-y-1.5">
-      {geo && (
-        <div
-          className="relative h-1.5 w-full rounded-full"
-          role="img"
-          aria-label={`Trilha da operação. Stop $${formatPrice(op.current_stop)}, entrada $${formatPrice(op.entry_price)}, TP1 $${formatPrice(op.tp1)}, TP2 $${formatPrice(op.tp2)}.${price !== null ? ` Preço atual $${formatPrice(price)}.` : ''}`}
-          style={{ background: 'rgba(255,255,255,0.07)' }}>
-          {/* zona de risco (stop ↔ entrada) e zona de lucro (entrada ↔ TP2) */}
-          <div className="absolute h-full rounded-full"
-            style={{ ...span(geo.positions.stop, geo.positions.entry), background: 'rgba(255,20,120,0.35)' }} />
-          <div className="absolute h-full rounded-full"
-            style={{ ...span(geo.positions.entry, geo.positions.tp2), background: 'rgba(0,255,128,0.32)' }} />
-          {/* marca do TP1 dentro da zona de lucro */}
-          <div className="absolute top-0 bottom-0 w-px"
-            style={{ left: `${geo.positions.tp1}%`, background: 'rgba(255,209,102,0.9)', transform: 'translateX(-50%)' }} />
-          {/* entrada — referência de origem do resultado */}
-          <div className="absolute -top-0.5 -bottom-0.5 w-px"
-            style={{ left: `${geo.positions.entry}%`, background: 'rgba(255,255,255,0.8)', transform: 'translateX(-50%)' }} />
-          {/* agulha do preço — sem title=/Tooltip de propósito (achado A-6,
-              Grupo 5): é um marcador de 3px sem foco nem texto, e o
-              aria-label do <div role="img"> pai (acima) já descreve
-              stop/entrada/TP1/TP2/preço atual por completo. */}
-          {geo.currentPct !== null && (
-            <div className="absolute -top-1.5 -bottom-1.5 rounded-full"
-              style={{
-                left: `${geo.currentPct}%`,
-                width: 3,
-                background: needleColor,
-                boxShadow: `0 0 6px ${needleColor}`,
-                transform: 'translateX(-50%)',
-                opacity: geo.currentOutOfRange || isStale ? 0.55 : 1,
-              }} />
-          )}
+      {rail && (
+        <div>
+          {/* nomes dos marcadores — decorativos para leitor de tela: o aria-label da trilha já diz tudo */}
+          <div className="relative w-full" aria-hidden="true" style={{ height: rows * RAIL_LABEL_ROW_PX + 3 }}>
+            {labels.map((label) => (
+              <React.Fragment key={label.key}>
+                {label.row > 0 && (
+                  <div className="absolute w-px" style={{
+                    left: `${label.pos}%`, bottom: 0, height: label.row * RAIL_LABEL_ROW_PX + 3,
+                    background: railLabelColor(label.key, op), opacity: 0.35, transform: 'translateX(-50%)',
+                  }} />
+                )}
+                <span className="absolute text-8px font-mono font-semibold uppercase tracking-wide whitespace-nowrap leading-none"
+                  data-rail-label={label.key}
+                  style={{ ...railAnchorStyle(label), bottom: label.row * RAIL_LABEL_ROW_PX + 4, color: railLabelColor(label.key, op) }}>
+                  {label.text}
+                </span>
+              </React.Fragment>
+            ))}
+          </div>
+
+          <div
+            className="relative h-2.5 w-full"
+            role="img"
+            aria-label={`Trilha da operação. Stop $${formatPrice(op.current_stop)}, entrada $${formatPrice(op.entry_price)}, TP1 $${formatPrice(op.tp1)}, TP2 $${formatPrice(op.tp2)}.${initialStop ? ` Stop inicial $${formatPrice(initialStop.price)}.` : ''}${price !== null ? ` Preço atual $${formatPrice(price)}.` : ''}`}>
+            <div className="absolute inset-0 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)' }}>
+              {rail.zones.map((zone) => (
+                <div key={zone.key} className="absolute h-full" data-rail-zone={zone.key}
+                  style={{ left: `${zone.from}%`, width: `${zone.to - zone.from}%`, ...RAIL_ZONE[zone.key].style }} />
+              ))}
+            </div>
+            {rail.markers.map((m) => {
+              const color = railLabelColor(m.key, op);
+              return (
+                <div key={m.key} className="absolute -top-1 -bottom-1" data-rail-marker={m.key}
+                  style={{
+                    left: `${m.pos}%`, width: 2, transform: 'translateX(-50%)',
+                    // o stop inicial é passado: tracejado, para não disputar com o stop que vale hoje
+                    background: m.key === 'initialStop'
+                      ? `repeating-linear-gradient(to bottom, ${color} 0 2px, transparent 2px 4px)`
+                      : color,
+                  }} />
+              );
+            })}
+            {/* agulha do preço — sem title=/Tooltip de propósito (achado A-6,
+                Grupo 5): é um marcador sem foco, e o aria-label do
+                <div role="img"> pai (acima) já descreve stop/entrada/TP1/TP2/
+                preço atual por completo. */}
+            {rail.pricePos !== null && (
+              <div className="absolute -top-2 -bottom-2 rounded-full" data-rail-needle=""
+                style={{
+                  left: `${rail.pricePos}%`,
+                  width: 4,
+                  background: needleColor,
+                  boxShadow: `0 0 6px ${needleColor}`,
+                  transform: 'translateX(-50%)',
+                  opacity: rail.priceOutOfRange || isStale ? 0.55 : 1,
+                }} />
+            )}
+          </div>
+
+          <div className="relative w-full h-5" aria-hidden="true">
+            {nowLabel && (
+              <span className="absolute text-8px font-mono font-semibold uppercase tracking-wide whitespace-nowrap leading-none"
+                style={{ ...railAnchorStyle(nowLabel), top: 11, color: needleColor }}>
+                {nowLabel.text}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-x-2.5 gap-y-0.5 flex-wrap text-8px font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>
+            {/* A legenda fala do que está EM JOGO ("falta buscar", "risco em jogo") — numa operação encerrada seria mentira. */}
+            {isOpen && rail.zones.map((zone) => (
+              <span key={zone.key} className="flex items-center gap-1" data-rail-legend={zone.key}>
+                <span className="w-2 h-2 rounded-sm shrink-0" aria-hidden="true" style={RAIL_ZONE[zone.key].style} />
+                {RAIL_ZONE[zone.key].label}
+              </span>
+            ))}
+            {!rail.isBuy && (
+              <span style={{ color: 'rgba(255,255,255,0.3)' }}>
+                {isOpen ? '· ' : ''}venda: o lucro cresce para a {rail.flipped ? 'direita' : 'esquerda'} (preço caindo)
+              </span>
+            )}
+          </div>
         </div>
       )}
 
       <div className="grid grid-cols-4 gap-1">
-        {orderLevelsByRail(levels).map((level) => {
+        {orderedLevels.map((level) => {
           const color = levelColor(level.key, op);
           const cellBody = (
             <>
@@ -244,6 +339,72 @@ function MilestoneLine({ op, price, isStale }) {
           </TooltipContent>
         </Tooltip>
       )}
+    </div>
+  );
+}
+
+// Item 303 — pedido do usuário: "o que já tem garantido se fechar nesse novo
+// stop?". A conta vem de `stopOutcomeIfHit` (a mesma do Histórico, bruta).
+// A palavra na tela é "protegido", não "garantido": o stop do Sentinel é
+// virtual e o preço pode pular o nível — a dica diz isso.
+const GUARANTEE_TONE = {
+  profit: { lead: '🛡️ Lucro protegido', color: '#00ff80' },
+  zero: { lead: '🟡 Breakeven', color: LEVEL_COLOR.stopBe },
+  loss: { lead: '🛑 Risco em jogo', color: LEVEL_COLOR.stop },
+};
+
+function GuaranteeLine({ op }) {
+  const outcome = stopOutcomeIfHit(op);
+  if (!outcome) return null;
+  const tone = GUARANTEE_TONE[outcome.kind];
+  const stopText = `$${formatPrice(outcome.stop)}`;
+  const r = formatSignedR(outcome.r);
+  const tp1Note = outcome.includesTp1 ? `, já contando os ${outcome.tp1SharePct}% realizados no TP1` : '';
+
+  return (
+    <div className="text-11px font-mono rounded-lg px-2.5 py-1.5 leading-relaxed" data-guarantee={outcome.kind}
+      style={{ background: `${tone.color}0f`, border: `1px solid ${tone.color}26`, color: 'rgba(255,255,255,0.7)' }}>
+      <span className="font-bold" style={{ color: tone.color }}>{tone.lead}</span>
+      {outcome.kind === 'zero' ? (
+        <>: se o preço voltar e bater no stop ({stopText}), a operação fecha no zero a zero{tp1Note}.</>
+      ) : (
+        <>
+          : se o preço {outcome.kind === 'profit' ? 'voltar e bater' : 'bater'} no stop ({stopText}), a operação fecha com{' '}
+          <span className="font-bold" style={{ color: tone.color }}>{formatSignedPct(outcome.pct)}</span>
+          {r ? ` (${r})` : ''}{tp1Note}.
+        </>
+      )}{' '}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-8px uppercase tracking-widest cursor-help whitespace-nowrap" tabIndex={0} style={{ color: 'rgba(255,255,255,0.35)' }}>
+            bruto · no preço do stop
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+          Conta feita no preço do stop, sem descontar taxas nem funding. O stop do Sentinel é virtual (nenhuma ordem fica na corretora): se o preço pular o nível, o resultado real pode ser pior. R = quantas vezes o risco inicial (a distância da entrada até o stop inicial).
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
+// Item 303 — "o que aconteceu até agora", no mesmo formato da história do
+// trade da aba Histórico (TradeHistory.jsx). Só para operação aberta: a
+// fechada tem a história completa lá.
+function OpenStory({ op }) {
+  const story = buildOpenTradeStory(op, { fmt: fmtBRTLong });
+  if (story.length === 0) return null;
+  return (
+    <div className="rounded-lg px-3 py-2.5" role="group" aria-label="A história até agora"
+      style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <div className="text-9px font-mono text-muted-foreground mb-1.5">📖 A história até agora</div>
+      <ol className="space-y-1">
+        {story.map((step) => (
+          <li key={step.key} className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
+            {step.text}
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -427,11 +588,67 @@ function OperationDecisionNote({ op }) {
   const snapshot = op.decision_snapshot;
   if (!snapshot) return null;
   if (!OPEN_STATUSES.has(op.status) && snapshot.decision !== 'EXIT') return null;
-  const { evidence } = explainOperationDecision(op);
+  // Item 303: os números da proteção pré-TP1 vinham em unidades de preço sem
+  // tradução ("movimento favorável 20.3300, gatilho da trilha em 5.6857").
+  // Para esses motivos a frase em linguagem simples substitui a técnica; os
+  // demais continuam com a evidência de sempre.
+  // (só existe em snapshot de proteção pré-TP1; um snapshot de EXIT nunca tem esses motivos)
+  const progress = describeProtectionProgress(op);
+  const measuredAt = snapshot.evaluated_at && moment(snapshot.evaluated_at).isValid() ? fmtBRTLong(snapshot.evaluated_at) : null;
+  const friendly = progress && measuredAt ? `${progress} (medido em ${measuredAt}, Brasília)` : progress;
+  const evidence = friendly ?? explainOperationDecision(op).evidence;
   if (!evidence) return null;
   return (
     <div className="text-9px font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.12)', color: 'rgba(255,255,255,0.5)' }}>
       📐 {evidence}
+    </div>
+  );
+}
+
+// Item 303 — "por que entrou", com cada motivo explicado. O motor grava só
+// a frase curta com os pontos; o glossário (signalReasonGlossary.js) diz o
+// que a regra mede e por que entra na soma. Motivo que o glossário não
+// conhece aparece como veio, sem explicação inventada.
+function EntryReasons({ op }) {
+  const reasons = explainSignalReasons(op.signal_reasons, op.side);
+  const hasScore = Number.isFinite(op.score);
+  if (reasons.length === 0 && !hasScore) return null;
+  return (
+    <div className="space-y-2" role="group" aria-label="Por que entrou">
+      {reasons.length > 0 && (
+        <div className="text-9px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.45)' }}>
+          🧩 Por que entrou — regras a favor na hora do aviso: {reasons.length}
+        </div>
+      )}
+      <ScoreBar score={op.score} />
+      {reasons.length > 0 && (
+        <ul className="space-y-2">
+          {reasons.map((reason, i) => {
+            const points = formatReasonPoints(reason.points);
+            return (
+              <li key={`${reason.raw}-${i}`} className="text-10px font-mono leading-relaxed pl-2"
+                style={{ borderLeft: '2px solid rgba(0,255,128,0.35)' }}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-semibold" style={{ color: 'rgba(255,255,255,0.85)' }}>{reason.title}</span>
+                  {points && (
+                    <span className="text-9px shrink-0 whitespace-nowrap" style={{ color: '#00ff80' }}>+{points}</span>
+                  )}
+                </div>
+                {reason.what && (
+                  <p style={{ color: 'rgba(255,255,255,0.55)' }}>
+                    <span style={{ color: 'rgba(255,255,255,0.4)' }}>O que é: </span>{reason.what}
+                  </p>
+                )}
+                {reason.why && (
+                  <p style={{ color: 'rgba(255,255,255,0.55)' }}>
+                    <span style={{ color: 'rgba(255,255,255,0.4)' }}>Por que conta: </span>{reason.why}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
@@ -455,14 +672,15 @@ function OperationWhySummary({ op }) {
 function Details({ op }) {
   const marketSourceLabel = MARKET_SOURCE_LABEL[op.market_source];
   const exitModeLabel = { RANGE_FILTER: '🔵 RF', ATR_TRAILING: '🟠 ATR Trail', HYBRID_RF_ATR: '🟣 RF+ATR' }[op.exit_mode] || op.exit_mode;
-  const reasons = op.signal_reasons || [];
+  const signalTf = opSignalTimeframe(op);
+  const hasSignalCandle = Boolean(op.candle_open_time || op.candle_close_time);
 
   return (
     <div className="space-y-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
       <StatusBanner op={op} />
       <OperationDecisionNote op={op} />
 
-      <ScoreBar score={op.score} />
+      <EntryReasons op={op} />
       <TFTrendRow op={op} />
 
       {op.tier && (
@@ -478,15 +696,19 @@ function Details({ op }) {
         </Tooltip>
       )}
 
-      <div className="flex items-center justify-between text-9px font-mono flex-wrap gap-2">
-        <div className="flex items-center gap-1.5 text-muted-foreground">
-          <Clock className="w-3 h-3" />
-          <span>{fmtBRT(op.candle_open_time)} → {fmtBRT(op.candle_close_time)} BRT</span>
+      {/* Item 303: aqui aparecia "09:00 → 12:59 BRT ✅ Fechado" — outro
+          horário (o da vela do AVISO, não o da abertura) e um "Fechado" que
+          falava da vela, numa operação "Ativa". Agora diz o que é. */}
+      {hasSignalCandle && (
+        <div className="text-9px font-mono text-muted-foreground leading-relaxed">
+          🕯️ Vela do aviso{signalTf ? ` (${signalTf.toUpperCase()})` : ''}: {fmtBRT(op.candle_open_time)} → {fmtBRT(op.candle_close_time)} (Brasília)
+          {op.candle_status ? ` · ${op.candle_status === 'CLOSED' ? 'vela já fechada' : 'vela ainda aberta'}` : ''}
         </div>
-        <div className="flex items-center gap-2">
-          <span style={{ color: op.candle_status === 'CLOSED' ? '#00ff80' : '#ff9f43' }}>
-            {op.candle_status === 'CLOSED' ? '✅ Fechado' : '🕯️ Aberto'}
-          </span>
+      )}
+
+      <div className="flex items-center justify-between text-9px font-mono text-muted-foreground gap-2 flex-wrap">
+        <span>📊 {op.partial_percent}% TP1 · {op.runner_percent}% runner</span>
+        <span className="flex items-center gap-2">
           {/* Item 277: o badge "🔴 LIVE" lia op.data_status, gravado sempre
               como 'LIVE' pelo motor — nunca mudava. Frescor real fica no
               cartão do ativo (📡). */}
@@ -494,7 +716,7 @@ function Details({ op }) {
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.35)' }}>
-                  · {marketSourceLabel}
+                  {marketSourceLabel}
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
@@ -502,12 +724,8 @@ function Details({ op }) {
               </TooltipContent>
             </Tooltip>
           )}
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between text-9px font-mono text-muted-foreground gap-2 flex-wrap">
-        <span>📊 {op.partial_percent}% TP1 · {op.runner_percent}% runner</span>
-        <span style={{ color: 'rgba(0,229,255,0.7)' }}>{exitModeLabel}</span>
+          <span style={{ color: 'rgba(0,229,255,0.7)' }}>{exitModeLabel}</span>
+        </span>
       </div>
 
       {/* MFE/MAE — maior favorável/adverso já visto, em múltiplos de R.
@@ -530,31 +748,22 @@ function Details({ op }) {
           </TooltipContent>
         </Tooltip>
       )}
-
-      {reasons.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-9px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.35)' }}>
-            🔍 Motivos técnicos ({reasons.length})
-          </div>
-          {reasons.map((r, i) => (
-            <div key={i} className="text-10px font-mono text-muted-foreground flex items-start gap-1.5">
-              <span style={{ color: '#00ff80', marginTop: 1 }}>·</span> {r}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
 /* ──────────────────────────────── Card ──────────────────────────────────── */
 
-export default function TradeCard({ operation: op, actions = null, expandAll = false }) {
+export default function TradeCard({ operation: op, actions = null, expandAll = false, railProfitToRight = true }) {
   const [open, setOpen] = useState(expandAll);
   useEffect(() => { setOpen(expandAll); }, [expandAll]);
 
   const { price, isLoading, isStale, ageLabel } = useLivePrice(op.symbol);
   const isOpenOp = OPEN_STATUSES.has(op.status);
+  const tfChip = timeframeChipLabel(op);
+  // "há 2d 20h" só em operação viva — numa fechada seria o tempo desde a abertura, não a duração.
+  const openedMs = op.created_date ? new Date(op.created_date).getTime() : NaN;
+  const openFor = isOpenOp && Number.isFinite(openedMs) ? formatBackfillLag(Date.now() - openedMs) : null;
   const { unrealizedPct } = describeProximity(op, price);
   const openPnlPct = isOpenOp ? unrealizedPct : null;
 
@@ -583,21 +792,13 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
               {isBuy ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               {op.side}
             </span>
-            <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
-              {op.timeframe?.toUpperCase()}
-            </span>
-            {/* Horário absoluto de abertura já na camada 1: é o âncora de
-                qualquer comparação posterior (item 161). */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="text-9px font-mono cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.25)' }}>
-                  aberta {fmtBRT(op.created_date)}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                Quando esta operação foi aberta (horário de Brasília)
-              </TooltipContent>
-            </Tooltip>
+            {/* Item 303: "15M" sozinho era o gráfico da ENTRADA; o aviso veio do
+                de 4H. O selo diz os dois ("4H → 15M"), como no Histórico. */}
+            {tfChip && (
+              <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                {tfChip}
+              </span>
+            )}
           </div>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -611,6 +812,24 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
             </TooltipContent>
           </Tooltip>
         </div>
+
+        {/* 1.5 · Quando abriu — uma vez só, legível (item 303; antes era um
+            texto de 9px a 25% de opacidade no cabeçalho). É o âncora de
+            qualquer comparação posterior (item 161). */}
+        {op.created_date && (
+          <div className="flex items-center gap-1.5 text-11px font-mono flex-wrap" style={{ color: 'rgba(255,255,255,0.75)' }}>
+            <Clock className="w-3 h-3 shrink-0" aria-hidden="true" style={{ color: 'rgba(255,255,255,0.45)' }} />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-help" tabIndex={0}>Aberta em {fmtBRTLong(op.created_date)}</span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                Quando o Sentinel abriu esta operação (horário de Brasília).
+              </TooltipContent>
+            </Tooltip>
+            {openFor && <span style={{ color: 'rgba(255,255,255,0.4)' }}>· há {openFor}</span>}
+          </div>
+        )}
 
         <BackfillBanner op={op} />
         <ProvenanceBanner op={op} />
@@ -654,13 +873,19 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
         </div>
 
         {/* 3 · Trilha: onde o preço está entre stop, entrada e alvos */}
-        <LevelRail op={op} price={price} isStale={isStale} />
+        <LevelRail op={op} price={price} isStale={isStale} isOpen={isOpenOp} profitToRight={railProfitToRight} />
 
         {/* 4 · O que acontece a seguir */}
         {isOpenOp && <MilestoneLine op={op} price={price} isStale={isStale} />}
 
+        {/* 4.2 · Com quanto fecha se bater no stop agora (item 303) */}
+        <GuaranteeLine op={op} />
+
         {/* 4.5 · Por quê — resumo sempre visível, achado de clareza acima */}
         <OperationWhySummary op={op} />
+
+        {/* 4.7 · O que aconteceu até agora (item 303) */}
+        {isOpenOp && <OpenStory op={op} />}
 
         {/* 5 · O porquê completo (evidência numérica), a um clique */}
         <button onClick={() => setOpen(!open)}

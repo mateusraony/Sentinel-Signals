@@ -48,7 +48,7 @@ const signedR = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}R`;
  * inexistentes (30/02) viram timestamp finito mas o formatador da página (moment) devolve "Invalid date" — então a régua é a saída do
  * formatador (Codex, PR #543). Nunca lança.
  */
-function formatWhen(fmt, iso) {
+export function formatWhen(fmt, iso) {
   if (typeof iso !== 'string' || !iso) return null;
   if (!Number.isFinite(new Date(iso).getTime())) return null;
   let out;

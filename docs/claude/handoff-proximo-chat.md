@@ -59,6 +59,13 @@ curto do que entendeu e **espere o meu "pode seguir"** antes de codar.
 
 ### A. Aba **Trades**: tornar o cartão da operação entendível "de bater o olho" (pedido meu de 13/11) — **começar por aqui**
 
+> **Estado em 13/11/2026 (item 303 de `docs/known-risks.md`):** o **cartão já foi implementado** (hora de abertura, trilha com
+> nomes e faixas, "se bater no stop fecha com +X% (+Y R)", "a história até agora", motivos explicados; só tela, motor intocado)
+> e está num PR **aguardando o meu "aprovado" do visual** e a minha escolha da orientação da trilha na venda (lucro à direita ×
+> eixo de preço). Respostas que já dei: lucro em **% e R** (USDT depois); **só o cartão agora**, e a lista/filtros/resumo do topo
+> num **segundo PR**. Não refaça o que está abaixo: leia o item 303 e o roadmap (linha 7) e continue de onde parou. Ordem
+> combinada: **C → A → B → D**.
+
 Minha mensagem original (resumida fielmente): *"hoje tem essa operação (QNT/USDT, SELL, ativa), porém tem coisas que ficam
 confusas. Na aba Trades dá para entender de alguma forma que já está no 0 a 0 se a operação voltar e fechar, mas fica confuso
 saber em que horário foi aberta. O gráfico (a barra) também me deixa confuso: não consigo bater o olho e entender o que está
