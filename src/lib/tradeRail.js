@@ -16,8 +16,9 @@ const sameLevel = (a, b) => Math.abs(a - b) <= Math.max(Math.abs(a), Math.abs(b)
 /**
  * @param {object} op
  * @param {number|null|undefined} currentPrice
- * @param {{ profitToRight?: boolean }} [opts] `true` (padrão): o lado do lucro fica SEMPRE à direita — numa venda o eixo de preço
- *   é espelhado (preço maior à esquerda). `false`: eixo de preço fixo (menor à esquerda), como a trilha antiga.
+ *
+ * O lado do lucro fica SEMPRE à direita (escolha do usuário, 13/11/2026, entre isto e o eixo de preço fixo): numa venda o eixo
+ * de preço é espelhado (`flipped`, preço maior à esquerda), para compra e venda serem lidas do mesmo jeito.
  * @returns {null | {
  *   isBuy: boolean, flipped: boolean, posture: 'risk'|'breakeven'|'locked'|null,
  *   markers: Array<{ key: string, price: number, pos: number }>,  // key: 'initialStop'|'stop'|'entry'|'tp1'|'tp2'
@@ -25,7 +26,7 @@ const sameLevel = (a, b) => Math.abs(a - b) <= Math.max(Math.abs(a), Math.abs(b)
  *   pricePos: number|null, priceOutOfRange: boolean,
  * }}
  */
-export function buildTradeRail(op, currentPrice, { profitToRight = true } = {}) {
+export function buildTradeRail(op, currentPrice) {
   const stop = isPrice(op?.current_stop) ? op.current_stop : null;
   const entry = isPrice(op?.entry_price) ? op.entry_price : null;
   const tp1 = isPrice(op?.tp1) ? op.tp1 : null;
@@ -47,7 +48,7 @@ export function buildTradeRail(op, currentPrice, { profitToRight = true } = {}) 
   const range = high - low;
   if (!(range > 0)) return null;
 
-  const flipped = profitToRight && !isBuy;
+  const flipped = !isBuy;
   const pos = (v) => {
     const pct = clamp(((v - low) / range) * 100);
     return flipped ? 100 - pct : pct;

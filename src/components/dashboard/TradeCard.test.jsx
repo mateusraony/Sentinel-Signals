@@ -632,11 +632,4 @@ describe('TradeCard — cartão legível de bater o olho (item 303)', () => {
       expect(container.textContent).not.toMatch(/gatilho da trilha em/);
     });
   });
-
-  it('railProfitToRight desligado (comparação visual): eixo de preço fixo e o aviso muda de lado', () => {
-    const { container } = renderCollapsed(qnt(), { railProfitToRight: false });
-    expect(screen.getByText(/venda: o lucro cresce para a esquerda \(preço caindo\)/)).toBeTruthy();
-    const pos = (key) => parseFloat(container.querySelector(`[data-rail-marker="${key}"]`).style.left);
-    expect(pos('tp2')).toBeLessThan(pos('entry'));
-  });
 });

@@ -155,8 +155,8 @@ const railAnchorStyle = (label) => (
  * distância de cada nível) ficam na grade logo abaixo, na MESMA ordem da
  * trilha.
  */
-function LevelRail({ op, price, isStale, isOpen, profitToRight = true }) {
-  const rail = buildTradeRail(op, price, { profitToRight });
+function LevelRail({ op, price, isStale, isOpen }) {
+  const rail = buildTradeRail(op, price);
   const { levels } = describeProximity(op, price);
   if (levels.length === 0) return null;
 
@@ -254,7 +254,7 @@ function LevelRail({ op, price, isStale, isOpen, profitToRight = true }) {
             ))}
             {!rail.isBuy && (
               <span style={{ color: 'rgba(255,255,255,0.3)' }}>
-                {isOpen ? '· ' : ''}venda: o lucro cresce para a {rail.flipped ? 'direita' : 'esquerda'} (preço caindo)
+                {isOpen ? '· ' : ''}venda: o lucro cresce para a direita (preço caindo)
               </span>
             )}
           </div>
@@ -754,7 +754,7 @@ function Details({ op }) {
 
 /* ──────────────────────────────── Card ──────────────────────────────────── */
 
-export default function TradeCard({ operation: op, actions = null, expandAll = false, railProfitToRight = true }) {
+export default function TradeCard({ operation: op, actions = null, expandAll = false }) {
   const [open, setOpen] = useState(expandAll);
   useEffect(() => { setOpen(expandAll); }, [expandAll]);
 
@@ -873,7 +873,7 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
         </div>
 
         {/* 3 · Trilha: onde o preço está entre stop, entrada e alvos */}
-        <LevelRail op={op} price={price} isStale={isStale} isOpen={isOpenOp} profitToRight={railProfitToRight} />
+        <LevelRail op={op} price={price} isStale={isStale} isOpen={isOpenOp} />
 
         {/* 4 · O que acontece a seguir */}
         {isOpenOp && <MilestoneLine op={op} price={price} isStale={isStale} />}

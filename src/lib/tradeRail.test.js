@@ -23,7 +23,7 @@ describe('buildTradeRail — posições', () => {
     expect(rail.priceOutOfRange).toBe(false);
   });
 
-  it('venda com profitToRight (padrão): eixo espelhado, o TP2 fica à direita e o stop inicial à esquerda', () => {
+  it('venda: eixo espelhado (lucro sempre à direita), o TP2 fica à direita e o stop inicial à esquerda', () => {
     const rail = buildTradeRail(sell(), 160);
     expect(rail.flipped).toBe(true);
     expect(marker(rail, 'initialStop').pos).toBe(0);
@@ -34,16 +34,7 @@ describe('buildTradeRail — posições', () => {
     expect(rail.pricePos).toBeCloseTo(50, 10);
   });
 
-  it('venda com profitToRight desligado: eixo de preço fixo (menor preço à esquerda), como a trilha antiga', () => {
-    const rail = buildTradeRail(sell(), 160, { profitToRight: false });
-    expect(rail.flipped).toBe(false);
-    expect(marker(rail, 'tp2').pos).toBe(0);
-    expect(marker(rail, 'initialStop').pos).toBe(100);
-    expect(marker(rail, 'entry').pos).toBeCloseTo(75, 10);
-    expect(rail.pricePos).toBeCloseTo(50, 10);
-  });
-
-  it('em qualquer orientação, a ordem na direção do lucro é sempre stop inicial → entrada → TP1 → TP2', () => {
+  it('compra e venda: da esquerda para a direita é sempre stop inicial → entrada → TP1 → TP2', () => {
     for (const op of [buy({ current_stop: 95 }), sell()]) {
       const rail = buildTradeRail(op, null);
       const order = ['initialStop', 'entry', 'tp1', 'tp2'].map((k) => marker(rail, k).pos);
@@ -137,7 +128,7 @@ describe('buildTradeRail — cada faixa tem um sentido só', () => {
   it('as faixas nunca se sobrepõem e cobrem a trilha de ponta a ponta', () => {
     const cases = [
       buildTradeRail(buy(), 105), buildTradeRail(buy({ current_stop: 96 }), 105), buildTradeRail(buy({ current_stop: 100 }), 105),
-      buildTradeRail(buy({ current_stop: 112 }), 120), buildTradeRail(sell(), 160), buildTradeRail(sell(), 160, { profitToRight: false }),
+      buildTradeRail(buy({ current_stop: 112 }), 120), buildTradeRail(sell(), 160),
       buildTradeRail(sell({ current_stop: 200 }), 190), buildTradeRail(sell({ current_stop: 190 }), 185),
     ];
     for (const rail of cases) {
