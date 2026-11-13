@@ -87,19 +87,24 @@ neste resumo**): o cartão é `src/components/dashboard/TradeCard.jsx` (usado po
    ATR/preço) — só o motor entende. **Motivos técnicos** (`op.signal_reasons`) são frases soltas com pontos ("Follow-through
    confirmado (+25)", "MACD hist negativo (+20)") sem explicar o que cada coisa significa nem por que pesa.
 5. **O que o motor já grava sobre o stop (verificado no código) e o que falta:** existem `current_stop` (valor final),
-   `initial_stop`, `mfe_r`/`mae_r`/`bars_to_*`, `pre_tp1_stop_advanced_at` e `pre_tp1_stop_advanced_candle_time` (hora e vela da
-   **última** subida — no modo trailing são **sobrescritos a cada avanço**, `scanner.js:4266-4274`) e o `decision_snapshot` da
-   **última** avaliação (`buildPreTp1TrailingSnapshot`, `decisionSnapshot.js:185`; é dele que vem o "Medido… Stop foi de 172.00
-   para 171.60", `decisionExplanation.js:344-355`). **Não existe o histórico** das subidas anteriores nem o primeiro stop
-   protetor. Uma "linha do tempo do stop" completa exigiria **gravar algo novo = mudança no motor** (outra skill:
-   `sentinel-trading-engine-review` + `sentinel-state-machine-test`), com plano e a minha aprovação. Dá para entregar **já**, sem
-   mexer no motor: entrada (hora real), stop inicial, **última** subida (de A para B, com hora) e o que está garantido agora.
+   `initial_stop`, `mfe_r`/`mae_r`/`bars_to_*`, e `pre_tp1_stop_advanced_at` + `pre_tp1_stop_advanced_candle_time` (hora e vela
+   da **última** subida; no modo trailing são **sobrescritos a cada avanço**, `scanner.js:4266-4274`). O `decision_snapshot`
+   (`buildPreTp1TrailingSnapshot`, `decisionSnapshot.js:185`) traz `stop_before`/`stop_after` da **última avaliação persistida**, e
+   é dele que vem o "Medido… Stop foi de 172.00 para 171.60" (`decisionExplanation.js:344-355`) — **mas ele é regravado a cada
+   avaliação que persiste** (ex.: uma vela nova que só muda MFE/MAE, `scanner.js:4241-4247` e `4450-4453`), e então vira
+   `pre_tp1_trailing_dormant` com `stop_before == stop_after`: **o valor anterior da subida se perde**. Portanto: o "de A para B,
+   com hora" **só dá para mostrar enquanto o snapshot ainda é `pre_tp1_trailing_advanced`** (caso do print); nos outros casos
+   mostre apenas o que sobra (hora/vela da última subida, stop inicial e stop atual, sem inventar o valor intermediário).
+   **Não existe o histórico** das subidas nem o primeiro stop protetor: uma "linha do tempo do stop" completa exigiria **gravar
+   algo novo = mudança no motor** (outra skill: `sentinel-trading-engine-review` + `sentinel-state-machine-test`), com plano e a
+   minha aprovação. Dá para entregar **já**, sem mexer no motor: entrada (hora real), stop inicial, stop atual, hora da última
+   subida e **o que está garantido agora**; o "de A para B" entra como bônus quando o snapshot ainda o registra.
 
 O que eu quero como resultado (direção, não especificação fechada — **proponha com imagens antes de codar**): um cartão em
 que, em 5 segundos, eu entenda (a) **quando abriu** (data/hora de Brasília, legível e uma vez só, sem "Fechado" enganoso),
 (b) **onde o preço está e para onde vai** (uma trilha legível, com os nomes escritos, o stop antigo e o novo, e a zona
 "garantida"), (c) **o que já está garantido se bater no stop** (em % e em R, com a frase "se fechar no stop você sai com
-+X% bruto"), (d) **o que aconteceu** (linha do tempo curta: entrou → preço andou → última subida do stop de A para B; o histórico completo só se eu aprovar a mudança no motor), (e) **por que
++X% bruto"), (d) **o que aconteceu** (linha do tempo curta: entrou → preço andou → stop subiu; o "de A para B" só quando o snapshot ainda o registra, o histórico completo só se eu aprovar a mudança no motor), (e) **por que
 entrou**, em português simples, com cada motivo explicado ("o que é", "por que importa") e sem inventar probabilidade. Reuse
 os módulos existentes (`rrGeometry`, `describeProximity`, `nextMilestone`, `stopPosture`, `explainOperationDecision`,
 `eventTimeline`, `emojiRegistry`) e **o Histórico (H1–H3, PRs #543–#545) já tem a "história do trade"** — reaproveite o estilo
