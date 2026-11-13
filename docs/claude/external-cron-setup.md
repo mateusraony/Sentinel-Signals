@@ -217,11 +217,53 @@ item 285, addendum 9) grava as datas de CPI, Payroll, PPI, PCE e FOMC na branch 
 
 1. **Primeiro, 1 vez à mão:** GitHub → *Actions → Coletor de contexto — datas dos eventos →* **Run workflow**.
    Verde + a branch `context-data` aparecendo com `events.json` e `status.json` = funcionou.
-2. **cron-job.org:** criar **3 jobs** iguais ao do scan (mesmo token, mesmos 4 headers, mesmo corpo
-   `{"ref":"main"}`), trocando só:
-   - **URL**: `https://api.github.com/repos/mateusraony/Sentinel-Signals/actions/workflows/context-collect.yml/dispatches`
-   - **Horário** (fuso UTC no cron-job.org): `0 10 * * *`, `0 15 * * *` e `0 0 * * *` — 07h, 12h e 21h de Brasília.
+2. **cron-job.org:** criar **3 jobs**, um para cada horário. Roteiro campo a campo logo abaixo (reescrito em 13/11/2026: a
+   versão anterior dizia só "iguais ao do scan" e o usuário não conseguiu preencher — faltava o título e o que pôr em cada campo).
 3. O token do scan já serve (permissão `Actions: Read and write` no repositório; o coletor não precisa de mais nada).
+
+### Roteiro campo a campo (os 3 jobs do coletor)
+
+> **Sobre os nomes dos campos:** o painel do cron-job.org é em inglês. Os nomes abaixo são os que o painel usava quando o job do
+> scan foi criado; **não foi possível conferi-los nesta revisão** (a documentação do cron-job.org não abre a partir das sessões
+> do Claude). Se algum nome estiver diferente na sua tela, use o job do scan como gabarito: ele tem exatamente os mesmos campos
+> preenchidos. Na dúvida, mande um print da tela de edição do job do scan (com o token coberto).
+
+**Atalho, se existir na sua tela:** na lista de jobs, o job do scan pode ter uma ação de **clonar/duplicar** (no menu ao lado do
+botão de editar). Clonando, já vêm o token, os 4 cabeçalhos, o método e o corpo — aí só se troca **título, endereço e horário**.
+
+**Sem o atalho:** abra o job do scan em **uma aba** (para copiar dele) e, em **outra aba**, clique no botão de criar job
+(**"Create cronjob"**). Preencha assim, 3 vezes:
+
+| Campo (aba **Common**) | O que pôr |
+|---|---|
+| **Title** | `Sentinel - Coletor 07h` (nos outros dois: `Sentinel - Coletor 12h` e `Sentinel - Coletor 21h`). É só o nome que aparece na lista; qualquer texto serve |
+| **URL** | `https://api.github.com/repos/mateusraony/Sentinel-Signals/actions/workflows/context-collect.yml/dispatches` (igual nos 3) |
+| **Enable job** | ligado |
+| **Save responses in job history** | pode ligar (ajuda a ver o erro se um dia falhar) |
+| **Execution schedule** | a opção de **todo dia em um horário** ("Every day at …"), com a hora da tabela de horários abaixo |
+| **Notify me when…** | opcional: marcar a opção de quando a execução **falha** |
+
+| Campo (aba **Advanced**) | O que pôr |
+|---|---|
+| **Time zone** | veja qual está selecionado: é ele que decide a hora a digitar (tabela abaixo) |
+| **Headers** (4 linhas, cada uma com um nome e um valor) | `Accept` → `application/vnd.github+json` · `Authorization` → **copie o valor inteiro do mesmo campo do job do scan** (começa com `Bearer ` e depois o token; sem `<` `>`) · `X-GitHub-Api-Version` → `2022-11-28` · `Content-Type` → `application/json` |
+| **Request method** | `POST` |
+| **Request body** | `{"ref":"main"}` (exatamente assim, com as chaves e as aspas) |
+| **Timeout** e o resto | deixar como está |
+
+**Horários** (o Brasil não tem horário de verão, então os dois jeitos dão no mesmo):
+
+| Job | Se o **Time zone** do job for `America/Sao_Paulo` | Se for `UTC` |
+|---|---|---|
+| Coletor 07h | 07:00 | 10:00 |
+| Coletor 12h | 12:00 | 15:00 |
+| Coletor 21h | 21:00 | 00:00 |
+
+**Conferir que deu certo:** salve e use o botão de **teste** do job ("Test run") em **um** deles: a resposta esperada é
+**`204 No Content`** (o GitHub aceitou o disparo). `401` = o valor do `Authorization` foi copiado errado; `404` = endereço
+errado; `422` = o corpo não está como acima. Depois do teste, em *Actions → Coletor de contexto — datas dos eventos* aparece uma
+execução nova em menos de 1 minuto. Não precisa testar os 3 (cada teste roda o coletor de verdade; não gasta banco, mas é
+execução à toa).
 
 O workflow também tem uma reserva própria 1x/dia (11:41 UTC), só para o caso do cron-job.org falhar.
 

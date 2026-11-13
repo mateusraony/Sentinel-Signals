@@ -46,6 +46,17 @@ global do usuário (ver `docs/claude/global-CLAUDE.md.example`).
   tarefa concluída depois de confirmar que ele rodou — mesma disciplina já
   usada pro secret `DATABASE_URL_READONLY` na mesma rodada, que por isso
   não teve o mesmo problema.
+- **Roadmap atualizado sozinho, no mesmo PR (pedido explícito do usuário,
+  2026-11-13: "precisa ser automático e eu não preciso ficar falando toda
+  hora").** Toda entrega (código, documentação, levantamento, passo manual
+  confirmado) atualiza `docs/roadmap.md` — a linha da tabela "Prioridades de
+  hoje" que ela afeta (estado, o que falta, o que depende do usuário) e a
+  data da revisão — **no mesmo PR**, sem perguntar e sem esperar pedido. Se a
+  entrega muda o que o próximo chat precisa saber, atualize também
+  `docs/claude/handoff-proximo-chat.md`. Vale igualmente para o que ficou
+  PENDENTE: tarefa parada à espera de aprovação ou de passo do usuário
+  aparece no roadmap como tal, com o que falta. Tarefa sem o roadmap
+  atualizado não está concluída.
 - **Fato × hipótese × recomendação.** Sempre separe o que você observou no
   código do que é plausível e do que é opinião. Sem "parece bom" — traga
   evidência (`arquivo:linha`).
