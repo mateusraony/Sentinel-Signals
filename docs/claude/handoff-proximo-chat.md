@@ -126,9 +126,9 @@ ver o cartão de uma operação **fechada** e de uma **de compra** para o mesmo 
 ### B. **Contexto de Mercado — Fases 4b, 4c, 5 e 6** (itens 284/285; só informativas, **nunca tocam motor/score, sem Neon**)
 
 Estado: Fases 1–3 e 4a feitas. Pendências, na ordem do plano:
-1. **Jobs do coletor no cron-job.org** (ver seção C — **passo meu**). Sem eles o coletor só roda no `schedule` do GitHub, que
-   atrasa horas; o critério "**2 semanas só coletando**" (≥ 95% das 42 coletas, 0 push perdido, 0 acesso ao Neon) não começa
-   de forma confiável. Depois disso, medir o critério (ler `status.json` da branch `context-data`) e só então liberar a 4b.
+1. **Regularidade do coletor** (ver seção C: resolvido no código em 14/11, sem passo meu). O critério "**2 semanas só
+   coletando**" (≥ 95% das 42 coletas, 0 push perdido, 0 acesso ao Neon) conta a partir de 14/11. Medir o critério (ler
+   `status.json` da branch `context-data` e as execuções no Actions) e só então liberar a 4b.
 2. **4b — avisos automáticos de evento** no Telegram (a regra aprovada: os 3 resumos 07h/12h/21h BRT **e** avisos de evento,
    com chave liga/desliga por categoria; risco registrado de excesso de mensagens — comece com o mínimo e me mostre). Reaproveite
    `context-notify.yml` (4a) e o vocabulário de `docs/notification-vocabulary.md`. **Sem `DATABASE_URL`** no workflow
@@ -142,15 +142,13 @@ Estado: Fases 1–3 e 4a feitas. Pendências, na ordem do plano:
 6. Também aberto no item 285: o "valor estimado/previsão" **só** se achar fonte gratuita **com licença**; senão a faixa fica
    "Anterior × Atual".
 
-### C. Os **3 jobs no cron-job.org** do coletor de contexto (**passo manual meu — peça-me explicitamente e confirme antes de fechar**)
+### C. Coletor de contexto 3x por dia — **RESOLVIDO no código em 14/11/2026, sem job novo no cron-job.org**
 
-Roteiro exato em `docs/claude/external-cron-setup.md` (seção "Coletor de contexto (Fase 2)"). Resumo: criar 3 jobs iguais ao do
-scan (mesmo token, mesmos 4 cabeçalhos, corpo `{"ref":"main"}`), trocando só a URL
-(`https://api.github.com/repos/mateusraony/Sentinel-Signals/actions/workflows/context-collect.yml/dispatches`) e o horário
-(UTC): `0 10 * * *`, `0 15 * * *`, `0 0 * * *` (= 07h, 12h, 21h de Brasília). Antes, rodar o coletor 1 vez à mão
-(Actions → **Coletor de contexto — datas dos eventos** → Run workflow). **Não** criar o 4º job "janela" (opcional; o próprio
-coletor já dispara a janela no fim de cada "Scheduled scan" — os dois ligados dobram os disparos). Quando eu disser que criei,
-confira nos logs do Actions que os disparos chegaram nos horários certos (use `mcp__github__actions_list`).
+Eu tentei criar os 3 jobs no cron-job.org duas vezes e não consegui (a parte avançada do formulário). O coletor passou a usar o
+**fim do "Scheduled scan" da hora cheia** como relógio (item 285, addendum 25; `context-collect.yml`): 07h, 12h e 21h de
+Brasília, sem nada para eu configurar. **Não me peça para criar job nenhum.** O que resta: conferir no Actions
+(`mcp__github__actions_list`, workflow `context-collect.yml`) que há uma execução verde (não "skipped") logo depois de 10:00,
+15:00 e 00:00 UTC, e contar as "2 semanas só coletando" a partir de 14/11. Com o scan pausado só a reserva diária coleta.
 
 ### D. Neon e custo (acompanhar, não "otimizar por otimizar")
 

@@ -175,9 +175,22 @@ describe('tripwire: a faixa de eventos do painel só lê a branch pública (item
 // branch pública `context-data`. Sem push forçado, sem outra branch, sem segredo além do FRED, do BLS (addendum 14: o "Anterior") e do contato.
 const COLETOR = '.github/workflows/context-collect.yml';
 const SEGREDOS_DO_COLETOR = new Set(['FRED_API_KEY', 'BLS_API_KEY', 'CONTEXT_CONTACT_EMAIL']);
-/** A linha que liga o modo janela: a entrada `mode` OU o gatilho `workflow_run` (o fim do "Scheduled scan" serve de relógio; addendum 17). */
-const MODO_JANELA = /^\s*COLLECT_MODE:\s*\$\{\{\s*github\.event\.inputs\.mode \|\| \(github\.event_name == 'workflow_run' && 'janela'\) \|\| ''\s*\}\}\s*$/;
-/** O filtro do job no gatilho `workflow_run`: o scan é deste repositório, veio do cron-job.org ou da reserva e terminou de 12h a 14h59 UTC. */
+/**
+ * Os 3 horários da coleta normal (addendum 25): o scan que termina nos minutos 00 a 09 das 10h, 15h e 00h UTC (07h, 12h e 21h de Brasília).
+ * `T10:0` casa só com a HORA 10 e a dezena de minuto 0 (o "T" só existe antes da hora no carimbo ISO).
+ */
+const HORARIOS_DA_COLETA = ['T10:0', 'T15:0', 'T00:0'];
+const NOS_HORARIOS_DA_COLETA = HORARIOS_DA_COLETA.map((h) => `contains(github.event.workflow_run.updated_at, '${h}')`).join(' || ');
+/**
+ * A linha que escolhe o modo: a entrada `mode`, OU "janela" quando o disparo vem do fim do "Scheduled scan" FORA dos 3 horários da coleta normal
+ * (addenda 17 e 25). Nos 3 horários o valor fica vazio = coleta normal. O texto é conferido por inteiro: qualquer outra forma reprova.
+ */
+const MODO_ESPERADO = `COLLECT_MODE: \${{ github.event.inputs.mode || (github.event_name == 'workflow_run' && !(${NOS_HORARIOS_DA_COLETA}) && 'janela') || '' }}`;
+const MODO_JANELA = { test: (linha) => linha.trim() === MODO_ESPERADO };
+/**
+ * O filtro do job no gatilho `workflow_run`: o scan é deste repositório, veio do cron-job.org ou da reserva e terminou de 12h a 14h59 UTC (janela)
+ * ou nos minutos 00 a 09 de um dos 3 horários da coleta normal.
+ */
 const FILTRO_DO_GATILHO = [
   "github.event_name != 'workflow_run'",
   'github.event.workflow_run.head_repository.full_name == github.repository',
@@ -187,6 +200,20 @@ const FILTRO_DO_GATILHO = [
   "contains(github.event.workflow_run.updated_at, 'T13:')",
   "contains(github.event.workflow_run.updated_at, 'T14:')",
 ];
+/** O `if:` do job, por inteiro (a ordem e os parênteses importam: um `||` fora do lugar abriria o job para qualquer hora). */
+const IF_ESPERADO = [
+  "github.event_name != 'workflow_run' || (",
+  'github.event.workflow_run.head_repository.full_name == github.repository',
+  "&& (github.event.workflow_run.event == 'workflow_dispatch' || github.event.workflow_run.event == 'schedule')",
+  "&& (contains(github.event.workflow_run.updated_at, 'T12:') || contains(github.event.workflow_run.updated_at, 'T13:') || contains(github.event.workflow_run.updated_at, 'T14:')",
+  `|| ${NOS_HORARIOS_DA_COLETA}))`,
+].join(' ');
+
+/** O texto do `if:` do job `collect`, numa linha só (o YAML usa bloco dobrado `>-`). `null` se não achar. */
+function ifDoJob(codigo) {
+  const m = codigo.match(/^ {4}if: >-\n((?: {6}.*\n)+)/m);
+  return m ? m[1].split('\n').map((l) => l.trim()).filter(Boolean).join(' ') : null;
+}
 
 /** true quando o workflow NÃO tem `permissions:` no nível do arquivo (comentários ignorados). */
 function semPermissoes(yml) {
@@ -237,6 +264,9 @@ function problemasDoColetor(yml) {
     p.push('workflow_run fora do molde (só o "Scheduled scan", types: [completed], branches: [main])');
   }
   for (const trecho of FILTRO_DO_GATILHO) if (!codigo.includes(trecho)) p.push(`filtro do gatilho workflow_run sem: ${trecho}`);
+  // O `if:` inteiro, com os 3 horários da coleta normal (addendum 25). Conferido por igualdade: um horário a mais, um minuto mais largo
+  // (`T10:` = a hora inteira, 4 coletas em vez de 1) ou um parêntese fora do lugar mudam quando o coletor roda e quanto ele gasta.
+  if (ifDoJob(codigo) !== IF_ESPERADO) p.push('o `if:` do job não é o esperado (origem do scan + janela 12h-14h UTC + os 3 horários da coleta normal, minutos 00 a 09)');
   if (/^\s*(pull_request|pull_request_target|push|issue_comment|repository_dispatch):/m.test(codigo)) p.push('gatilho que qualquer pessoa pode acionar (PR, push, comentário, dispatch externo)');
   return p;
 }
@@ -397,7 +427,7 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
     for (const l of linhasComSegredo) expect(passo, l).toContain(l);
   });
 
-  const MODO = `COLLECT_MODE: \${{ github.event.inputs.mode || (github.event_name == 'workflow_run' && 'janela') || '' }}`;
+  const MODO = MODO_ESPERADO;
 
   it('o modo "janela" (addenda 15/17) chega ao coletor SÓ por variável de ambiente do passo que o roda — nunca dentro de um `run:`', () => {
     const real = readFileSync(join(ROOT, COLETOR), 'utf8');
@@ -447,6 +477,17 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
       real.replace('on:\n  workflow_dispatch:', 'on:\n  push:\n  workflow_dispatch:'),
       // cada peça do filtro do job, tirada uma a uma (o job passaria a rodar fora da hora, de outro repositório ou de qualquer origem):
       ...FILTRO_DO_GATILHO.map((trecho) => real.replace(trecho, 'true')),
+      // addendum 25 — os 3 horários da coleta normal. No `if:`: a hora inteira (4 coletas por horário), um horário a mais, um a menos:
+      real.replace("|| contains(github.event.workflow_run.updated_at, 'T10:0')", "|| contains(github.event.workflow_run.updated_at, 'T10:')"),
+      real.replace("|| contains(github.event.workflow_run.updated_at, 'T10:0')", "|| contains(github.event.workflow_run.updated_at, 'T06:0') || contains(github.event.workflow_run.updated_at, 'T10:0')"),
+      real.replace(" || contains(github.event.workflow_run.updated_at, 'T00:0')))", '))'),
+      // …o parêntese fechado cedo demais (os 3 horários deixariam de exigir a origem do scan):
+      real.replace("contains(github.event.workflow_run.updated_at, 'T14:')\n      || contains", "contains(github.event.workflow_run.updated_at, 'T14:'))\n      || (contains"),
+      // No modo: a coleta dos 3 horários virando "janela" (não coletaria nada), e um horário esquecido no modo (viraria "janela" só nele):
+      real.replace(`&& !(${NOS_HORARIOS_DA_COLETA}) && 'janela'`, "&& 'janela'"),
+      real.replace(` || contains(github.event.workflow_run.updated_at, 'T00:0')) && 'janela'`, ") && 'janela'"),
+      // …e a negação invertida (janela nos 3 horários, coleta normal a cada 15 min das 12h às 14h59):
+      real.replace(`&& !(${NOS_HORARIOS_DA_COLETA})`, `&& (${NOS_HORARIOS_DA_COLETA})`),
     ];
     plantados.forEach((yml, i) => {
       expect(yml, `variante plantada nº ${i} não mudou o arquivo`).not.toBe(real);
