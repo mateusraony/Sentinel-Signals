@@ -10,22 +10,49 @@ import {
 
 const bySource = (est, id) => est.sources.find((s) => s.id === id);
 
-describe('pior caso do coletor (3 do cron-job.org + 1 da reserva do `schedule` = 4/dia)', () => {
+describe('pior caso do coletor (3 do fim do scan + 1 da reserva do `schedule` + 1 da reserva do scan = 5/dia)', () => {
   it('também cabe em todos os tetos (auditoria de 31/10: o orçamento só contava 3/dia)', () => {
-    expect(COLLECTOR_WORST_CASE_RUNS_PER_DAY).toBe(4);
+    expect(COLLECTOR_WORST_CASE_RUNS_PER_DAY).toBe(5);
     const est = estimateBudget({ ...DEFAULT_CONFIG, runsPerDay: COLLECTOR_WORST_CASE_RUNS_PER_DAY });
     expect(est.ok).toBe(true);
-    expect(est.actions.minutesPerMonth).toBe(360); // 4 x 30 x 3 min, abaixo do teto de 600
-    expect(bySource(est, 'fred-release-dates').callsPerMonth).toBe(480); // 4 tipos x 4 x 30
+    expect(est.actions.minutesPerMonth).toBe(450); // 5 x 30 x 3 min, abaixo do teto de 600
+    expect(bySource(est, 'fred-release-dates').callsPerMonth).toBe(600); // 4 tipos x 5 x 30
   });
 
-  it('a reserva existe de verdade no workflow (senão o número 4 estaria errado)', async () => {
+  it('a reserva existe de verdade no workflow (senão o número 5 estaria errado)', async () => {
     const { readFileSync } = await import('node:fs');
     const yml = readFileSync('.github/workflows/context-collect.yml', 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
     const crons = [...yml.matchAll(/^\s+- cron: "([^"]+)"/gm)].map((m) => m[1]);
     expect(crons.length).toBe(1); // só a reserva diária; a janela de divulgação vem do fim do scan (workflow_run, orçada à parte: RELEASE_WINDOW)
     expect(crons[0]).toMatch(/^\d+ \d+ \* \* \*$/); // a reserva é DIÁRIA
-    expect(yml).toMatch(/workflow_dispatch/); // + as 3 do cron-job.org
+    expect(yml).toMatch(/workflow_dispatch/); // + o botão manual
+  });
+
+  // Addendum 25 (14/11/2026): as 3 coletas do dia saem do fim do "Scheduled scan" na hora cheia, sem job novo no cron-job.org.
+  it('o `if:` do job deixa passar exatamente 1 scan em cada um dos 3 horários do desenho (10h, 15h e 00h UTC = 07h, 12h e 21h de Brasília)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const linhas = readFileSync('.github/workflows/context-collect.yml', 'utf8').split('\n').filter((l) => !/^\s*#/.test(l));
+    const inicio = linhas.findIndex((l) => /^ {4}if: >-$/.test(l));
+    expect(inicio).toBeGreaterThan(-1);
+    const fim = linhas.findIndex((l, i) => i > inicio && !/^ {6}/.test(l));
+    const filtro = linhas.slice(inicio + 1, fim).join('\n');
+    // Cada horário é "hora + dezena de minuto": T10:0 = das 10:00 às 10:09 UTC.
+    const horarios = [...filtro.matchAll(/contains\(github\.event\.workflow_run\.updated_at, 'T(\d{2}):(\d)'\)/g)].map((m) => `${m[1]}:${m[2]}x`);
+    expect(horarios).toEqual(['10:0x', '15:0x', '00:0x']);
+    expect(horarios.length).toBe(DEFAULT_CONFIG.runsPerDay);
+    // Numa faixa de 10 minutos cabe no máximo 1 scan do cron-job.org (a cadência é de 15 min): 1 coleta por horário, não 4.
+    expect(SCAN_CADENCE_MIN).toBeGreaterThanOrEqual(10);
+    // Nenhum dos 3 horários cai dentro da janela de divulgação (12h a 14h59 UTC), senão a mesma execução seria coleta e janela.
+    for (const h of horarios) expect(['12', '13', '14']).not.toContain(h.slice(0, 2));
+  });
+
+  it('o roteiro do usuário diz que os 3 jobs do cron-job.org NÃO são mais necessários (criá-los dobraria as coletas)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const guia = readFileSync('docs/claude/external-cron-setup.md', 'utf8');
+    expect(guia).toMatch(/não precisa criar nenhum job/i);
+    const dobro = estimateBudget({ ...DEFAULT_CONFIG, runsPerDay: COLLECTOR_WORST_CASE_RUNS_PER_DAY + 3 });
+    expect(dobro.actions.minutesPerMonth).toBe(720); // 8 x 30 x 3: acima do teto interno de 600
+    expect(dobro.actions.ok).toBe(false);
   });
 });
 

@@ -355,8 +355,7 @@ paths:
     tipo é fixa em `KIND_TIMES` (08:30 de Nova York; FOMC 14:00) e a lista é reprovada se uma linha fugir dela.
 
 - `context-collect.yml` — **coletor das datas dos eventos** (Fase 2 do Contexto de Mercado, `docs/known-risks.md`
-  item 285, addendum 9). Disparo principal pelo cron-job.org (3x/dia: 10:00, 15:00 e 00:00 UTC, via
-  `workflow_dispatch`); `schedule` com 1 entrada, a reserva diária (11:41 UTC — chega ATRASADA, já medido ~7 h). A janela de divulgação é disparada pelo **fim do "Scheduled scan"** (`workflow_run`, addendum 17).
+  item 285, addendum 9). **As 3 coletas do dia (10h, 15h e 00h UTC) saem do fim do "Scheduled scan" da hora cheia** (`workflow_run`, minutos 00 a 09; addendum 25, 14/11/2026 — **não há job próprio no cron-job.org**, e criar um dobraria as coletas); `workflow_dispatch` é só o botão manual; `schedule` com 1 entrada, a reserva diária (11:41 UTC — chega ATRASADA, já medido ~7 h). A janela de divulgação também é disparada pelo **fim do "Scheduled scan"** (addendum 17). **Scan pausado = só a reserva coleta.**
   - **O que faz:** `scripts/context-collect.mjs` lê as datas de CPI/Payroll/PPI/PCE no FRED, junta com a lista fixa
     (FOMC só nela) e grava `events.json` e `status.json` na branch pública **`context-data`** (cria na 1ª vez).
     Desde o addendum 14 grava também, em cada evento CPI/PPI/Payroll futuro, o `values.previous` (o "Anterior" oficial do BLS, calculado do histórico mensal; congelado depois do evento).
