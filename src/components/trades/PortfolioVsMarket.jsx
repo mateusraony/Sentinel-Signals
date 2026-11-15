@@ -267,6 +267,8 @@ export default function PortfolioVsMarket({ trades }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      {/* Item 304: uma <table> com sr-only NÃO encolhe para 1px (tabela cresce até caber o conteúdo) e, por ser absoluta, alargava a página no celular (rolagem lateral). O invólucro sr-only corta o que passa. */}
+      <div className="sr-only">
       <table id={tableId} className="sr-only">
         <caption>Carteira vs {benchmarkOption.label}, ponto por ponto</caption>
         <thead>
@@ -285,6 +287,7 @@ export default function PortfolioVsMarket({ trades }) {
           ))}
         </tbody>
       </table>
+      </div>
 
       {/* Summary bar */}
       <div className="flex items-center justify-between mt-3 pt-3 text-10px font-mono"

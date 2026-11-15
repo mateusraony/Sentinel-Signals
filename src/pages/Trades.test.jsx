@@ -94,7 +94,7 @@ describe('Trades — "Avisos em análise" nunca contradiz "Operações Ativas"',
     // ...e o sinal que a originou NUNCA deve aparecer como "Avisos em
     // análise" dizendo que nenhuma operação foi aberta — antes da correção,
     // a chave `${symbol}_${timeframe}` não batia e este texto aparecia.
-    expect(screen.queryByText('Avisos em análise')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Avisos em análise' })).toBeNull();
     expect(screen.queryByText(/nenhuma operação foi aberta/i)).toBeNull();
   });
 
@@ -598,7 +598,7 @@ describe('Trades — fila de avisos separa as cascatas (item 276)', () => {
     });
     const { default: Trades } = await import('./Trades.jsx');
     renderPage(<Trades />);
-    await screen.findByText('Avisos em análise');
+    await screen.findByRole('heading', { name: 'Avisos em análise' });
     await screen.findByText(/1 observações de mercado/);
   });
 
@@ -610,7 +610,7 @@ describe('Trades — fila de avisos separa as cascatas (item 276)', () => {
     const { default: Trades } = await import('./Trades.jsx');
     renderPage(<Trades />);
     await screen.findByText(/1 observações de mercado/);
-    expect(screen.queryByText('Avisos em análise')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Avisos em análise' })).toBeNull();
   });
 
   // Achado do Codex (review do PR #502): o card "Só informação" caía no texto
@@ -643,5 +643,225 @@ describe('Trades — fila de avisos separa as cascatas (item 276)', () => {
     renderPage(<Trades />);
     await screen.findByText('Operações Ativas');
     await screen.findByText(/1 observações de mercado/);
+  });
+});
+
+// Item 304 (14/11/2026) — 2º PR da aba Trades: resumo do topo, filtros e a lista do histórico. Pedido do usuário depois do
+// cartão (item 303): "melhorar a aba toda". Os achados que estes testes travam foram medidos no código antes de mexer.
+describe('Trades — resumo do topo, filtros e histórico (item 304)', () => {
+  const diasAtras = (d) => new Date(Date.now() - d * 86400000).toISOString();
+  const ATIVA_CASCATA = {
+    id: 'op_cascata', asset_id: 'a1', symbol: 'QNTUSDT', side: 'SELL', status: 'SIGNAL_CONFIRMED',
+    timeframe: '15m', signal_timeframe: '4h', cascade: '4h_15m', entry_price: 180, initial_stop: 200, current_stop: 170,
+    tp1: 150, tp2: 120, partial_percent: 50, created_date: diasAtras(2),
+  };
+  const ATIVA_RISCO = {
+    id: 'op_risco', asset_id: 'a2', symbol: 'SOLUSDT', side: 'BUY', status: 'SIGNAL_CONFIRMED',
+    timeframe: '15m', signal_timeframe: '4h', cascade: '4h_15m', entry_price: 100, initial_stop: 95, current_stop: 95,
+    tp1: 107.5, tp2: 115, partial_percent: 50, created_date: diasAtras(1),
+  };
+  const FECHADA_STOP_LUCRO = {
+    id: 'op_fechada', asset_id: 'a3', symbol: 'LINKUSDT', side: 'SELL', status: 'STOP_HIT',
+    timeframe: '15m', signal_timeframe: '4h', cascade: '4h_15m', entry_price: 20, initial_stop: 22, current_stop: 18,
+    exit_price: 18, tp1: 17, tp2: 14, partial_percent: 50,
+    created_date: '2026-09-10T12:00:00.000Z', stop_hit_at: '2026-09-12T15:30:00.000Z', closed_at: '2026-09-12T15:30:00.000Z',
+  };
+  const FECHADA_PERDA = {
+    ...FECHADA_STOP_LUCRO, id: 'op_perda', symbol: 'AVAXUSDT', side: 'BUY', entry_price: 40, initial_stop: 38,
+    current_stop: 38, exit_price: 38, tp1: 43, tp2: 46,
+  };
+
+  async function abrir(operations, signals = []) {
+    mockBackend({ operations, signals });
+    const { default: Trades } = await import('./Trades.jsx');
+    const view = renderPage(<Trades />);
+    await screen.findByText('Operações Ativas');
+    return view;
+  }
+  const resumo = () => screen.getByRole('group', { name: 'Resumo de agora' });
+  const botaoDoGrupo = (grupo, nome) => within(screen.getByRole('group', { name: grupo })).getByRole('button', { name: nome });
+
+  describe('resumo de agora', () => {
+    it('diz quantas estão ativas, como está o stop de cada uma e a soma em R se todas baterem no stop', async () => {
+      await abrir([ATIVA_CASCATA, ATIVA_RISCO, FECHADA_STOP_LUCRO, FECHADA_PERDA]);
+      await screen.findByText('QNT/USDT');
+      const r = within(resumo());
+      r.getByText('Operações ativas');
+      expect(r.getAllByText('2')).toHaveLength(2); // 2 ativas e 2 fechadas
+      r.getByText('1 com lucro protegido · 1 com risco em jogo');
+      // +0,50R (QNT: stop 170 numa venda a 180 com risco de 20) e -1,00R (SOL no stop inicial)
+      r.getByText('-0.50R');
+      r.getByText('1 ganhos · 0 empates · 1 perdas');
+    });
+
+    it('sem operação ativa nem fechada: zeros e textos de vazio, nunca "NaN" nem soma inventada', async () => {
+      await abrir([]);
+      const r = within(resumo());
+      r.getByText('nenhuma aberta agora');
+      r.getByText('sem operação aberta');
+      r.getByText('—');
+      r.getByText('nenhuma no período');
+      expect(resumo().textContent).not.toMatch(/NaN|undefined|null/);
+    });
+
+    it('REGRESSÃO: o contador "Atualizado há Ns" (que redesenhava a página a cada segundo) saiu', async () => {
+      const { container } = await abrir([ATIVA_CASCATA]);
+      expect(container.textContent).not.toMatch(/Atualizado há/);
+    });
+  });
+
+  describe('ordem da página', () => {
+    it('o que está em jogo vem primeiro: Operações Ativas antes de Avisos em análise, do Histórico e do Relatório de Performance', async () => {
+      const aviso = { ...SIGNAL_4H, id: 'sig_novo', symbol: 'XRPUSDT', asset_id: 'ax', created_date: new Date().toISOString(), expired_logged: false };
+      await abrir([ATIVA_CASCATA, FECHADA_STOP_LUCRO], [aviso]);
+      await screen.findByRole('heading', { name: 'Avisos em análise' });
+      const titulos = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent.trim());
+      const pos = (texto) => titulos.findIndex((t) => t.startsWith(texto));
+      expect(pos('Operações Ativas')).toBeGreaterThan(-1);
+      expect(pos('Operações Ativas')).toBeLessThan(pos('Avisos em análise'));
+      expect(pos('Avisos em análise')).toBeLessThan(pos('Histórico Completo'));
+      expect(pos('Histórico Completo')).toBeLessThan(pos('Relatório de Performance'));
+    });
+  });
+
+  describe('filtros', () => {
+    it('REGRESSÃO: escolher "4H" mantém a operação da cascata 4h→15m na tela (antes escondia TODAS e dizia "Nenhuma operação ativa.")', async () => {
+      await abrir([ATIVA_CASCATA]);
+      await screen.findByText('QNT/USDT');
+      fireEvent.click(botaoDoGrupo('Gráfico do aviso', '4H'));
+      screen.getByText('QNT/USDT');
+      expect(screen.queryByText('Nenhuma operação ativa.')).toBeNull();
+    });
+
+    it('REGRESSÃO: quando o filtro esconde tudo, a tela diz que HÁ operação ativa escondida e oferece limpar — não "Nenhuma operação ativa."', async () => {
+      await abrir([ATIVA_CASCATA]);
+      await screen.findByText('QNT/USDT');
+      fireEvent.click(botaoDoGrupo('Gráfico do aviso', '1H'));
+      expect(screen.queryByText('QNT/USDT')).toBeNull();
+      expect(screen.queryByText('Nenhuma operação ativa.')).toBeNull();
+      screen.getByText('Há 1 operação ativa, mas os filtros ligados a escondem.');
+      fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros e mostrar' }));
+      screen.getByText('QNT/USDT');
+    });
+
+    it('plural da mensagem de filtro escondendo', async () => {
+      await abrir([ATIVA_CASCATA, ATIVA_RISCO]);
+      await screen.findByText('QNT/USDT');
+      fireEvent.click(botaoDoGrupo('Gráfico do aviso', '1D'));
+      screen.getByText('Há 2 operações ativas, mas os filtros ligados as escondem.');
+    });
+
+    it('sem operação ativa de verdade continua "Nenhuma operação ativa.", mesmo com filtro ligado', async () => {
+      await abrir([FECHADA_STOP_LUCRO]);
+      fireEvent.click(botaoDoGrupo('Gráfico do aviso', '1H'));
+      screen.getByText('Nenhuma operação ativa.');
+    });
+
+    it('"Limpar filtros (N)" e a linha "Filtros ligados" só aparecem com filtro, contam os filtros e dizem quanto está escondido', async () => {
+      await abrir([ATIVA_CASCATA, ATIVA_RISCO, FECHADA_STOP_LUCRO]);
+      await screen.findByText('QNT/USDT');
+      expect(screen.queryByRole('button', { name: /Limpar filtros/ })).toBeNull();
+      expect(screen.queryByRole('status')).toBeNull();
+
+      fireEvent.click(botaoDoGrupo('Lado', 'SELL'));
+      screen.getByRole('button', { name: 'Limpar filtros (1)' });
+      expect(screen.getByRole('status').textContent).toBe('Filtros ligados — mostrando 1 de 2 ativas · 0 de 0 avisos · 1 de 1 fechadas.');
+      expect(screen.queryByText('SOL/USDT')).toBeNull();
+
+      fireEvent.change(screen.getByPlaceholderText('Buscar operação...'), { target: { value: 'qnt' } });
+      screen.getByRole('button', { name: 'Limpar filtros (2)' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros (2)' }));
+      screen.getByText('SOL/USDT');
+      expect(screen.getByPlaceholderText('Buscar operação...').value).toBe('');
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('o resumo do topo acompanha os filtros e avisa que está filtrado', async () => {
+      await abrir([ATIVA_CASCATA, ATIVA_RISCO, FECHADA_STOP_LUCRO, FECHADA_PERDA]);
+      await screen.findByText('QNT/USDT');
+      within(resumo()).getByText('1 ganhos · 0 empates · 1 perdas');
+      fireEvent.click(botaoDoGrupo('Lado', 'BUY'));
+      const r = within(resumo());
+      r.getByText('Operações ativas (com os filtros)');
+      r.getByText('1 com risco em jogo');
+      r.getByText('-1.00R');
+      // as fechadas do resumo também são as do filtro (só a compra, que foi a perda)
+      r.getByText('0 ganhos · 0 empates · 1 perdas');
+    });
+
+    it('período: o seletor recorta pela data de criação', async () => {
+      await abrir([ATIVA_CASCATA, FECHADA_STOP_LUCRO]);
+      await screen.findByText('QNT/USDT');
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'week' } });
+      expect(screen.getByRole('status').textContent).toMatch(/· 0 de 1 fechadas\./);
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'all' } });
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('o evento global de "limpar filtros" do app continua funcionando', async () => {
+      await abrir([ATIVA_CASCATA, ATIVA_RISCO]);
+      await screen.findByText('QNT/USDT');
+      fireEvent.click(botaoDoGrupo('Lado', 'SELL'));
+      expect(screen.queryByText('SOL/USDT')).toBeNull();
+      fireEvent(window, new Event('app-reset-filters'));
+      await screen.findByText('SOL/USDT');
+    });
+  });
+
+  describe('lista do histórico', () => {
+    it('cada linha diz o selo aviso → entrada, o resultado em % e em R, quando abriu e fechou (com a duração) e por onde entrou e saiu', async () => {
+      const { container } = await abrir([FECHADA_STOP_LUCRO]);
+      fireEvent.click(await screen.findByText('Histórico Completo'));
+      const linha = container.querySelector('[data-history-row="op_fechada"]');
+      expect(linha).not.toBeNull();
+      const texto = linha.textContent;
+      expect(texto).toMatch(/LINK\/USDT/);
+      expect(texto).toMatch(/4H → 15M/);
+      expect(texto).toMatch(/Aberta 10\/09 09:00 → fechada 12\/09 12:30 \(2d 3h\)/);
+      expect(texto).toMatch(/Entrada \$20\.0000 → saída \$18\.0000/);
+      expect(texto).toMatch(/\+\d+\.\d{2}%/);
+      expect(texto).toMatch(/\+0\.\d{2}R/);
+    });
+
+    it('REGRESSÃO: data e preços não ficam mais escondidos no celular (sem classe "hidden")', async () => {
+      const { container } = await abrir([FECHADA_STOP_LUCRO]);
+      fireEvent.click(await screen.findByText('Histórico Completo'));
+      const linha = container.querySelector('[data-history-row="op_fechada"]');
+      expect(linha.querySelector('.hidden')).toBeNull();
+    });
+
+    it('stop que fechou no lucro é "💰 Stop com lucro", não "🛑 Stop" ao lado de um resultado positivo; stop com perda segue "🛑 Stop"', async () => {
+      const { container } = await abrir([FECHADA_STOP_LUCRO, FECHADA_PERDA]);
+      fireEvent.click(await screen.findByText('Histórico Completo'));
+      const lucro = container.querySelector('[data-history-row="op_fechada"]').textContent;
+      const perda = container.querySelector('[data-history-row="op_perda"]').textContent;
+      expect(lucro).toMatch(/💰 Stop com lucro/);
+      expect(lucro).not.toMatch(/🛑/);
+      expect(perda).toMatch(/🛑 Stop/);
+      expect(perda).not.toMatch(/💰/);
+    });
+
+    it('o resumo da lista está em português e tem o caminho para a aba Histórico', async () => {
+      await abrir([FECHADA_STOP_LUCRO, FECHADA_PERDA]);
+      fireEvent.click(await screen.findByText('Histórico Completo'));
+      screen.getByText('✓ Ganhos: 1');
+      screen.getByText('✗ Perdas: 1');
+      screen.getByText('↔ Empates: 0');
+      const link = screen.getByRole('link', { name: /Ver a história de cada operação na aba Histórico/ });
+      expect(link.getAttribute('href')).toBe('/history');
+    });
+
+    it('avisa quando a página bateu no teto de 100 operações carregadas — e só nesse caso', async () => {
+      const muitas = Array.from({ length: 100 }, (_, i) => ({ ...FECHADA_PERDA, id: `op_${i}` }));
+      await abrir(muitas);
+      fireEvent.click(await screen.findByText('Histórico Completo'));
+      screen.getByText(/carrega só as 100 operações mais recentes/);
+      cleanup();
+      vi.resetModules();
+      await abrir(muitas.slice(0, 99));
+      fireEvent.click(await screen.findByText('Histórico Completo'));
+      expect(screen.queryByText(/carrega só as 100 operações mais recentes/)).toBeNull();
+    });
   });
 });
