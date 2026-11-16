@@ -35140,7 +35140,7 @@ Execução do item 302, com as respostas do usuário: lucro protegido em **% e R
 - **Depois da escolha da opção A (mesmo dia):** saíram a opção B e os 2 testes dela (`tradeRail` 23, `TradeCard` 58 no arquivo); gate repetido: lint, 5.233 testes, build, `typecheck:ratchet` em 13. Os números acima (74 mutações, 5.235 testes) são os da primeira rodada, com a opção B ainda no código.
 - Revisão de impacto: `TradeCard` só é renderizado por `src/pages/Trades.jsx`; `tradeStory.js` só ganhou um `export` (`formatWhen`); nenhuma rota, workflow ou script lê os módulos novos; Telegram, Histórico, Dashboard e backtest não mudam.
 
-## 304. Aba Trades, 2º pacote: resumo "de agora" no topo, barra de filtros e lista do histórico (implementado, 2026-11-15, revisado em 2026-11-16; **aguarda o "aprovado" da primeira tela revisada para mesclar**)
+## 304. Aba Trades, 2º pacote: resumo "de agora" no topo, barra de filtros e lista do histórico (implementado, 2026-11-15, revisado e **aprovado pelo usuário em 2026-11-16**, PR #579)
 Combinado com o usuário no item 303: o cartão primeiro, depois "lista, filtros e resumo do topo". Com a ordem de trabalho dele ("pode seguir com o plano e as imagens do segundo PR"). **Só tela**: nenhum arquivo do motor mudou, nada novo é gravado, nenhuma consulta nova ao banco (a mesma `TradeOperation.list(…, 100)` e `SignalEvent.list(…, 50)`).
 
 ### O que estava errado (medido no código e na tela, antes de mexer)
@@ -35172,7 +35172,7 @@ O usuário aprovou "o restante" (filtros, histórico, celular), mas **não as im
 Boas práticas de filtro (Baymard, vários guias de UX): **mostrar os filtros aplicados e quanto escondem, ter "limpar tudo" e contagem de resultado** — virou a linha "Filtros ligados" + o botão com o número. É guia de e-commerce (a busca não trouxe um padrão de estado vazio com filtro escondendo tudo; o desenho do aviso "há N ativas, mas os filtros as escondem" é próprio). <https://baymard.com/blog/how-to-design-applied-filters> · <https://baymard.com/learn/ecommerce-filter-ui>
 
 ### Pendências
-- **Do usuário: "aprovado" só das imagens que mudaram depois da revisão** (primeira tela e página inteira, computador e celular; o restante já foi aprovado em 16/11).
+- ~~Do usuário: "aprovado" do visual.~~ **Resolvido em 16/11/2026:** aprovado (incluída a primeira tela revisada) e mesclado. **Falta só conferir com dado REAL**: as imagens usaram dados de exemplo; o cartão e os números da tela ainda não foram comparados, pelo usuário, com uma operação real aberta na Binance/TradingView.
 - Fora do escopo (decisão do usuário): lucro em USDT (precisa da banca) e a linha do tempo completa do stop (precisa de mudança no motor).
 - `PnLChart.jsx` (só na aba Histórico) tem a mesma tabela `sr-only` sem invólucro; não alarga a página hoje (conferido só em `/trades`), fica anotado.
 
