@@ -35187,3 +35187,26 @@ Boas práticas de filtro (Baymard, vários guias de UX): **mostrar os filtros ap
 - **Mutações plantadas: 51, todas derrubadas** depois de reforçar 2 testes (data nula/ilegível e o resumo acompanhando o filtro) e remover 1 checagem redundante.
 - Gate: lint, 5.276 testes (com Postgres local; 18 pulados sem relação), build, `typecheck:ratchet` em 13 (subiu a 16 com anotações de tipo rígidas demais nos arquivos novos; corrigido antes do commit).
 - Revisão de impacto: `Trades.jsx` só é usado pela rota `/trades`; o `TradeCard` e os módulos do item 303 não mudaram; `tradeStory.js`/`tradeMetrics.js` só são lidos; nenhum workflow, rota de servidor ou script depende do que mudou; Histórico, Dashboard e Telegram não mudam.
+
+## 305. Horário de TP1/stop no cartão e na história dizia "em HH:mm" como se fosse o toque; passar o mouse (hover) tinha rosa-choque com branco e dica verde-neon (2026-11-16)
+
+**Pedido do usuário (16/11):** comparou a operação ETHFIUSDT (venda, aberta) do painel com o TradingView, achou que "não bate as datas" e pediu verificação; também pediu rever as cores de passar o mouse em todo o projeto ("verde muito forte e branco, não dá pra ler").
+
+### Fato — o que foi verificado (e o que NÃO deu para verificar)
+- **Não deu para conferir com o mercado real:** a sessão não alcança a Binance (proxy 403) nem o banco de produção. Nenhum candle da ETHFI foi comparado; **a investigação do caso ETHFI ficou por inferência dos dois prints do usuário**, não por dado.
+- Dos prints: o preço atual bate; a **abertura** (13/11, 13:01 de Brasília) bate com o início da ferramenta de posição do usuário (13/11, 13:00); a **entrada e o stop da ferramenta do TradingView (0,481 / 0,511) não são os do painel** (0,5811, stop inicial 0,65371) — o mais provável é que a ferramenta seja um desenho manual em outro nível, mas isso depende de o usuário confirmar.
+- **Defeito de rotulagem (corrigido):** a frase "Bateu o TP1 (…) em 14/11 às 20:59" (cartão, item 303; e a história do Histórico, item 291) usava o `tp1_hit_real_time`, que é o **fechamento da vela de 4h** (17:00–20:59 de Brasília) — um limite superior, não o instante do toque (regra do item 107 / `trading-engine.md`). O toque pode ter ocorrido horas antes dentro da mesma vela, o que dá exatamente a sensação de "as datas não batem" com o gráfico. Idem para stop e TP2.
+
+### O que mudou
+- `src/lib/tradeStory.js`: novo `eventWhenText(fmt, realIso, detectedIso)` — com horário de vela: **" na vela que fechou em X"**; só com o carimbo de detecção: **" (percebido pelo painel em X)"**; sem nenhum, sem horário. Usado em TP1, TP2 e stop (a história do Histórico e a do cartão, `openTradeStory.js`). Encerramentos exatos (Time Stop/invalidação) seguem com "em X".
+- **Cores de passar o mouse:** o token `--accent` do tema (rosa-choque 325 100% 55% com texto branco, contraste ~3,7:1) pintava hover/foco/selecionado de **todos** os componentes shadcn (menus, listas de seleção, botões outline/ghost, toggles, calendário); agora é um cinza-azulado (222 28% 20%, texto ~12:1). O `TooltipContent` era verde-neon (`bg-primary`) — qualquer texto cinza ou claro dentro ficava ilegível; agora é superfície escura com borda. Nenhum componente usa `accent` fora de `src/components/ui/` (conferido por busca).
+- Não é verde+branco no hover do menu (é rosa+branco); o verde-neon com texto claro era a **dica (tooltip)**. Se houver outro lugar com verde, o usuário precisa dizer qual tela.
+
+### Limites (honestos)
+- Continua valendo: stop/alvo são avaliados pela vela de 4h (limite superior), o painel (Futures) e o cron (Spot) divergem (item 4), e a entrada é o preço da confirmação, não uma execução.
+- Não deu para explicar o "QNT não estava aberto" sem os dados do banco; provável operação já encerrada (aparece no Histórico) — a confirmar com o usuário.
+
+### Prova
+- Testes novos/ajustados: `tradeStory` (+4), `openTradeStory` (+1), expectativas antigas atualizadas. Mutação plantada ("na vela que fechou em" → "em") derruba 4 testes.
+- Gate: lint, 5.283 testes (Postgres local), build, `typecheck:ratchet` em 13.
+- Imagens antes/depois (computador e celular, dados de EXEMPLO, harness local): aguardam "aprovado" do usuário antes do merge (mudança visual).

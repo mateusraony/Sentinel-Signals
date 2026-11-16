@@ -21,8 +21,11 @@
     --secondary-foreground: 210 20% 75%;
     --muted: 222 30% 10%;
     --muted-foreground: 215 15% 45%;
-    --accent: 325 100% 55%;
-    --accent-foreground: 0 0% 100%;
+    /* `accent` só pinta passar o mouse / foco / selecionado dos componentes shadcn (menus, selects, botões outline/ghost, toggles,
+       calendário). Era o rosa-choque (325 100% 55%) com texto branco — contraste ~3,7:1, cansativo e difícil de ler (item 305).
+       Agora é um cinza-azulado de superfície (contraste com o texto ~12:1) que ainda se destaca do fundo do menu. */
+    --accent: 222 28% 20%;
+    --accent-foreground: 210 40% 98%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
     --border: 222 25% 12%;
