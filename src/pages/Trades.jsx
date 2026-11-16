@@ -3,9 +3,10 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MANUAL_EDIT_REASON, MANUAL_CLOSE_REASON, MANUAL_INVALIDATE_REASON } from '@/lib/operationProvenance';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
+import { Link } from 'react-router-dom';
 import {
   Loader2, Target, History, XCircle, Eye, AlertTriangle,
-  BarChart2, Edit3, X, Search, Calendar, ChevronDown, ChevronUp
+  BarChart2, Edit3, X, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -17,14 +18,21 @@ import TradeCard, { ScoreBar } from '@/components/dashboard/TradeCard';
 import TradeEntryMarkers from '@/components/trades/TradeEntryMarkers';
 import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
 import PerformanceReport from '@/components/trades/PerformanceReport';
-import { describeProximity, formatPrice, formatSignedPct } from '@/lib/priceProximity';
+import TradesNowSummary from '@/components/trades/TradesNowSummary';
+import TradesFilterBar from '@/components/trades/TradesFilterBar';
+import { EMPTY_FILTERS, applyTradeFilters, countActiveFilters, summarizeActiveOps } from '@/lib/tradesOverview';
+import { timeframeChipLabel } from '@/lib/tradeStory';
+import { formatSignedR } from '@/lib/stopGuarantee';
+import { formatBackfillLag } from '@/lib/backfillDetection';
+import { outcomeColor } from '@/lib/outcomeColor';
+import { describeProximity, formatPrice, formatSignedPct, formatQuoteAge } from '@/lib/priceProximity';
 import { classifySignal, phaseCopy, rejectionCopy, formatTimeLeft, REASON_KIND, SIGNAL_PHASE } from '@/lib/signalStatus';
 import { signalTimeline, opTimeline, closedReasonLabel } from '@/lib/eventTimeline';
 import { EventTimeline, fmtBRT } from '@/components/dashboard/EventTimeline';
 import { QueryErrorState } from '@/components/QueryErrorState';
 import { useLivePrice } from '@/hooks/useLivePrice';
 import moment from 'moment';
-import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
+import { isClosedOp, getExitPrice, calcRealizedPnlPct, calcRealizedR, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
 import { logError } from '@/lib/logger';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 import { buildManualCloseSnapshot } from '@/lib/decisionSnapshot';
@@ -32,6 +40,8 @@ import { explainDecision, explainOperationDecision, legacyClosedOperationText } 
 import { useAllMonitoredAssets } from '@/hooks/useAllMonitoredAssets';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
+/** Quantas operações (ativas + fechadas) a página pede ao banco. A lista do histórico avisa quando bate nesse teto. */
+const OPERATIONS_PAGE_SIZE = 100;
 
 /** Modal for editing an active operation */
 function EditModal({ op, onClose, onSave }) {
@@ -376,24 +386,38 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
   );
 }
 
-/** History row */
+/**
+ * Linha do histórico — refeita em 14/11/2026 (docs/known-risks.md item 304). Antes a data e os preços sumiam no celular
+ * (`hidden sm:block`), o selo dizia só o gráfico da entrada ("15M") e o resultado vinha sem o R. Agora, em qualquer tela:
+ * o que foi, quanto deu (% e R), quando abriu e fechou (e quanto durou), por onde entrou e saiu, e o porquê.
+ */
 function HistoryRow({ op }) {
   const isBuy = op.side === 'BUY';
   const exitPrice = getExitPrice(op);
   const pnlPct = calcRealizedPnlPct(op);
+  const realizedR = calcRealizedR(op);
   const outcome = classifyOutcome(op);
-  const isBE = outcome === 'BE';
+  // O selo do stop segue o RESULTADO, não só o fato de ter batido no stop: stop elevado que fechou no lucro aparecia como
+  // "🛑 Stop" vermelho ao lado de um +2,86% verde (mesma regra de cor do resto do app, `outcomeColor`).
+  const stopLabel = outcome === 'WIN' ? '💰 Stop com lucro' : outcome === 'BE' ? '🟡 BE' : '🛑 Stop';
 
   const STATUS_MAP = {
     TP2_HIT:     { label: '🏆 TP2', color: '#00ff80' },
-    STOP_HIT:    { label: isBE ? '🟡 BE' : '🛑 Stop', color: isBE ? '#ffd166' : '#ff1478' },
-    INVALIDATED: { label: '⚠ Inv.', color: '#ff9f43' },
-    CLOSED:      { label: '✗ Enc.', color: '#64748b' },
+    STOP_HIT:    { label: stopLabel, color: outcomeColor('STOP_HIT', outcome) },
+    INVALIDATED: { label: '⚠ Invalidada', color: '#ff9f43' },
+    CLOSED:      { label: '✗ Encerrada', color: '#64748b' },
   };
   const s = STATUS_MAP[op.status] || { label: op.status, color: '#64748b' };
   const eventos = opTimeline(op);
   const fechamento = eventos.length > 1 ? eventos[eventos.length - 1] : null;
   const motivo = closedReasonLabel(op);
+  const tfChip = timeframeChipLabel(op);
+  const openedMs = new Date(op.created_date).getTime();
+  const closedMs = fechamento ? new Date(fechamento.at).getTime() : NaN;
+  const duration = Number.isFinite(openedMs) && Number.isFinite(closedMs) && closedMs >= openedMs
+    ? formatBackfillLag(closedMs - openedMs)
+    : null;
+  const pnlColor = pnlPct === null ? 'rgba(255,255,255,0.5)' : pnlPct >= 0 ? '#00ff80' : '#ff1478';
 
   // Achado de clareza (pedido do usuário, 2026-09-18): esta era a seção mais
   // vaga de todas — nenhum "por quê" visível, só o status de 1-2 palavras +
@@ -405,37 +429,67 @@ function HistoryRow({ op }) {
   const whyText = decisionOut?.why ?? legacyClosedOperationText(op, pnlPct, outcome, motivo);
 
   return (
-    <div className="rounded-xl px-4 py-2.5 flex flex-col gap-1.5 transition-opacity"
-      style={{ background: 'rgba(12,15,26,0.55)', border: '1px solid rgba(255,255,255,0.05)', opacity: 0.8 }}>
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+    <div className="rounded-xl px-4 py-3 flex flex-col gap-1.5" data-history-row={op.id}
+      style={{ background: 'rgba(12,15,26,0.55)', border: '1px solid rgba(255,255,255,0.05)', borderLeft: `3px solid ${s.color}` }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <TokenIcon symbol={op.symbol} size={16} />
-          <span className="font-semibold text-xs text-foreground shrink-0">{op.symbol?.replace('USDT', '/USDT')}</span>
-          <span className="text-9px font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
-          <span className="text-9px font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</span>
-          <span className="text-9px font-mono text-muted-foreground hidden sm:block">${formatPrice(op.entry_price)}</span>
-          {exitPrice && <span className="text-9px font-mono text-muted-foreground hidden md:block">→ ${formatPrice(exitPrice)}</span>}
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          {pnlPct !== null && (
-            <span className="text-sm font-mono font-bold" style={{ color: pnlPct >= 0 ? '#00ff80' : '#ff1478' }}>
-              {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
-            </span>
-          )}
-          <span className="text-9px font-mono font-semibold" style={{ color: s.color }}>{s.label}</span>
-          {/* Aberta -> fechada, ambos absolutos. Antes só havia a data de
-              criação (item 161); o motivo saiu daqui — agora está sempre
-              visível na linha de "por quê" abaixo, sem depender de hover. */}
-          <span className="text-9px font-mono text-muted-foreground hidden sm:block text-right leading-tight">
-            {fmtBRT(op.created_date)}
-            {fechamento ? <><br />→ {fmtBRT(fechamento.at)}</> : null}
+          <span className="font-semibold text-sm text-foreground shrink-0">{op.symbol?.replace('USDT', '/USDT')}</span>
+          <span className="text-9px font-mono font-bold px-1.5 py-0.5 rounded"
+            style={{ color: isBuy ? '#00ff80' : '#ff1478', background: isBuy ? 'rgba(0,255,128,0.1)' : 'rgba(255,20,120,0.1)' }}>
+            {op.side}
           </span>
+          {tfChip && <span className="text-9px font-mono text-muted-foreground">{tfChip}</span>}
+          <span className="text-10px font-mono font-semibold" style={{ color: s.color }}>{s.label}</span>
         </div>
+        {pnlPct !== null && (
+          <div className="text-right shrink-0 leading-tight">
+            <div className="text-sm font-mono font-bold" style={{ color: pnlColor }}>
+              {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+            </div>
+            {realizedR !== null && (
+              <div className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>{formatSignedR(realizedR)}</div>
+            )}
+          </div>
+        )}
       </div>
-      <p className="text-9px font-mono leading-relaxed line-clamp-2 pl-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
+      {/* Aberta -> fechada, ambos absolutos (item 161) e agora visíveis também no celular, com a duração. */}
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-9px font-mono text-muted-foreground">
+        <span>
+          Aberta {fmtBRT(op.created_date)}
+          {fechamento ? ` → fechada ${fmtBRT(fechamento.at)}` : ''}
+          {duration ? ` (${duration})` : ''}
+        </span>
+        <span>
+          Entrada ${formatPrice(op.entry_price)}
+          {exitPrice ? ` → saída $${formatPrice(exitPrice)}` : ''}
+        </span>
+      </div>
+      <p className="text-9px font-mono leading-relaxed line-clamp-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
         💡 {whyText}
       </p>
     </div>
+  );
+}
+
+/**
+ * "Atualizado há …" do cabeçalho. Tem o próprio relógio (1 s) de propósito: antes o `setInterval` ficava dentro de `Trades()` e a
+ * página inteira era redesenhada a cada segundo. Escrita com `formatQuoteAge` ("25min", "3h"): com a tela atualizando a cada
+ * 30 min (item 301) um "há 1543s" não se lê.
+ */
+function UpdatedAgo({ dataUpdatedAt }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!dataUpdatedAt) return undefined;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [dataUpdatedAt]);
+  const age = dataUpdatedAt ? formatQuoteAge(Math.max(0, now - dataUpdatedAt)) : null;
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="live-dot" style={{ width: 5, height: 5 }} />
+      <span className="text-muted-foreground">{age ? `Atualizado há ${age}` : 'Carregando…'}</span>
+    </span>
   );
 }
 
@@ -444,41 +498,24 @@ export default function Trades() {
   const [showInfoSignals, setShowInfoSignals] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showChart, setShowChart] = useState(true);
-  const [filterTf, setFilterTf] = useState('all');
-  const [filterSide, setFilterSide] = useState('all');
-  const [search, setSearch] = useState('');
-  const [datePreset, setDatePreset] = useState('all');
+  // Item 304: os 4 filtros num estado só; a regra (inclusive o recorte de período) mora em src/lib/tradesOverview.js.
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [editingOp, setEditingOp] = useState(null);
   /** @type {[{ op: object, action: 'invalidate' | 'close' } | null, Function]} */
   const [confirmingOp, setConfirmingOp] = useState(null);
   const queryClient = useQueryClient();
+  const clearFilters = () => setFilters(EMPTY_FILTERS);
 
   // Reset filters on global event
   useEffect(() => {
-    const handler = () => { setSearch(''); setFilterTf('all'); setFilterSide('all'); setDatePreset('all'); };
+    const handler = () => setFilters(EMPTY_FILTERS);
     window.addEventListener('app-reset-filters', handler);
     return () => window.removeEventListener('app-reset-filters', handler);
   }, []);
 
-  const dateRange = useMemo(() => {
-    if (datePreset === 'all') return null;
-    const now = moment();
-    let from, to;
-    switch (datePreset) {
-      case 'today': from = now.clone().startOf('day'); to = now.clone().endOf('day'); break;
-      case 'week': from = now.clone().startOf('week'); to = now.clone().endOf('week'); break;
-      case 'month': from = now.clone().startOf('month'); to = now.clone().endOf('month'); break;
-      case 'last_month': from = now.clone().subtract(1, 'month').startOf('month'); to = now.clone().subtract(1, 'month').endOf('month'); break;
-      case 'quarter': from = now.clone().startOf('quarter'); to = now.clone().endOf('quarter'); break;
-      case 'year': from = now.clone().startOf('year'); to = now.clone().endOf('year'); break;
-      default: return null;
-    }
-    return { from: from.toDate(), to: to.toDate() };
-  }, [datePreset]);
-
   const { data: operations = [], isLoading, isError, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['trade-operations'],
-    queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', OPERATIONS_PAGE_SIZE),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
@@ -618,25 +655,16 @@ export default function Trades() {
     (phase === SIGNAL_PHASE.INFO ? monitoringInfoOnly : monitoringActionable).push(s);
   }
 
-  const applyFilters = (list) => list
-    .filter(o => filterTf === 'all' || o.timeframe === filterTf)
-    .filter(o => filterSide === 'all' || (o.side || o.signal_type) === filterSide)
-    .filter(o => !search || o.symbol?.toLowerCase().includes(search.toLowerCase()))
-    .filter(o => {
-      if (!dateRange) return true;
-      const d = new Date(o.created_date);
-      return d >= dateRange.from && d <= dateRange.to;
-    });
-
-  const [secAgo, setSecAgo] = useState(0);
-  useEffect(() => {
-    if (!dataUpdatedAt) return;
-    const interval = setInterval(() => setSecAgo(Math.floor((Date.now() - dataUpdatedAt) / 1000)), 1000);
-    return () => clearInterval(interval);
-  }, [dataUpdatedAt]);
-
-  const TF_BTNS = ['all', '1h', '4h', '1d'];
-  const SIDE_BTNS = ['all', 'BUY', 'SELL'];
+  // Item 304: o filtro de gráfico comparava com `timeframe` (o da ENTRADA, '15m'/'5m') e escondia toda operação da cascata ao
+  // escolher 1H/4H/1D; a regra corrigida e testada mora em `applyTradeFilters`. As listas são calculadas uma vez aqui (antes
+  // cada bloco do JSX refiltrava a mesma lista, e a página inteira era redesenhada a cada segundo por um contador "há Ns").
+  const filtersOn = countActiveFilters(filters) > 0;
+  const shownActive = applyTradeFilters(active, filters);
+  const shownHistory = applyTradeFilters(history, filters);
+  const shownActionable = applyTradeFilters(monitoringActionable, filters);
+  const shownInfoOnly = applyTradeFilters(monitoringInfoOnly, filters);
+  const activeSummary = summarizeActiveOps(shownActive);
+  const closedSummary = summarizeOps(shownHistory);
 
   return (
     <>
@@ -678,29 +706,37 @@ export default function Trades() {
       </AlertDialog>
 
       <div className="space-y-5 max-w-7xl mx-auto">
-        {/* Header */}
+        {/* Header — como era antes (item 304, revisão do usuário em 16/11: "não faz sentido tirar algumas coisas"):
+            o "Atualizado há …" e a linha de contagem voltaram. O contador agora vive num componente só dele, então
+            o relógio não redesenha mais a página inteira a cada segundo. */}
         <div className="flex items-end justify-between flex-wrap gap-3">
           <div>
             <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Gestão de Operações</p>
             <h1 className="text-3xl font-bold text-foreground tracking-tight">Plano de Trade</h1>
           </div>
           <div className="flex items-center gap-3 text-10px font-mono flex-wrap">
-            <span className="flex items-center gap-1.5">
-              <span className="live-dot" style={{ width: 5, height: 5 }} />
-              <span className="text-muted-foreground">Atualizado há {secAgo}s</span>
-            </span>
+            <UpdatedAgo dataUpdatedAt={dataUpdatedAt} />
             <span className="text-muted-foreground">
               {monitoringActionable.length} em análise · {active.length} ativas · {history.length} histórico
             </span>
           </div>
         </div>
 
-        {/* Performance Report + Charts */}
-        {applyFilters(history).length > 0 && (
+        {/* Resumo de agora (item 304): o que está em jogo, em quatro números. Fica acima de tudo; o resto da página segue
+            na ordem de sempre. */}
+        <TradesNowSummary
+          active={activeSummary}
+          analysisCount={shownActionable.length}
+          closed={{ total: shownHistory.length, wins: closedSummary.wins, be: closedSummary.be, losses: closedSummary.losses }}
+          filtered={filtersOn}
+        />
+
+        {/* Performance Report + Charts — de volta ao lugar original, logo depois do resumo (item 304). */}
+        {shownHistory.length > 0 && (
           <div className="space-y-4">
-            <PerformanceReport trades={applyFilters(history)} />
+            <PerformanceReport trades={shownHistory} />
             <div>
-            <button onClick={() => setShowChart(!showChart)}
+            <button onClick={() => setShowChart(!showChart)} aria-expanded={showChart}
               className="flex items-center gap-2 mb-3 group">
               <BarChart2 className="w-4 h-4" style={{ color: '#00e5ff' }} />
               <h2 className="text-base font-bold text-foreground/80 group-hover:text-foreground transition-colors">
@@ -712,9 +748,9 @@ export default function Trades() {
             </button>
             {showChart && (
               <>
-                <TradeEntryMarkers history={applyFilters(history)} />
+                <TradeEntryMarkers history={shownHistory} />
                 <div className="mt-4">
-                  <PortfolioVsMarket trades={applyFilters(history)} />
+                  <PortfolioVsMarket trades={shownHistory} />
                 </div>
               </>
             )}
@@ -722,161 +758,25 @@ export default function Trades() {
           </div>
         )}
 
-        {/* Filters */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <input type="text" placeholder="Buscar operação..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-7 pr-3 h-8 w-44 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }} />
-          </div>
+        <TradesFilterBar
+          filters={filters}
+          onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
+          onClear={clearFilters}
+          showDetails={showDetails}
+          onToggleDetails={() => setShowDetails((v) => !v)}
+          counts={{
+            activeShown: shownActive.length, activeTotal: active.length,
+            analysisShown: shownActionable.length, analysisTotal: monitoringActionable.length,
+            closedShown: shownHistory.length, closedTotal: history.length,
+          }}
+        />
 
-          <div className="w-px h-4 mx-0.5" style={{ background: 'rgba(255,255,255,0.08)' }} />
-
-          {/* Date presets */}
-          <Calendar className="w-3 h-3 text-muted-foreground shrink-0" />
-          {[
-            { id: 'all', label: 'Tudo' },
-            { id: 'today', label: 'Hoje' },
-            { id: 'week', label: 'Semana' },
-            { id: 'month', label: 'Mês' },
-            { id: 'last_month', label: 'Mês Passado' },
-            { id: 'quarter', label: 'Trimestre' },
-            { id: 'year', label: 'Ano' },
-          ].map(p => (
-            <button key={p.id} onClick={() => setDatePreset(p.id)}
-              className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
-              style={datePreset === p.id
-                ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
-                : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
-              {p.label}
-            </button>
-          ))}
-
-          <div className="w-px h-4 mx-0.5" style={{ background: 'rgba(255,255,255,0.08)' }} />
-
-          {TF_BTNS.map(tf => (
-            <button key={tf} onClick={() => setFilterTf(tf)}
-              className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
-              style={filterTf === tf
-                ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
-                : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
-              {tf === 'all' ? 'Todos TF' : tf.toUpperCase()}
-            </button>
-          ))}
-          <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.08)' }} />
-          {SIDE_BTNS.map(side => (
-            <button key={side} onClick={() => setFilterSide(side)}
-              className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
-              style={filterSide === side
-                ? side === 'BUY' ? { background: 'rgba(0,255,128,0.12)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }
-                  : side === 'SELL' ? { background: 'rgba(255,20,120,0.12)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }
-                  : { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
-                : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
-              {side === 'all' ? 'Todos' : side}
-            </button>
-          ))}
-
-          {/* Densidade — abre/fecha os detalhes técnicos de TODOS os cards de
-              uma vez. Cada card continua podendo ser aberto sozinho depois. */}
-          <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.08)' }} />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button onClick={() => setShowDetails(v => !v)}
-                aria-pressed={showDetails}
-                className="flex items-center gap-1 text-10px font-mono px-2.5 py-1 rounded-md transition-all"
-                style={showDetails
-                  ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
-                  : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
-                {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                {showDetails ? 'Detalhado' : 'Compacto'}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-              Abre ou fecha os detalhes técnicos de todos os cards de operação ao mesmo tempo.
-            </TooltipContent>
-          </Tooltip>
-        </div>
-
-        {/* "Avisos em análise"/"Observações de mercado" dependem de
-            recentSignals — uma falha de rede aqui fazia as duas seções
-            simplesmente sumirem da tela (ambas só renderizam com
-            `.length > 0`), sem nenhum aviso: o mesmo silêncio enganoso que
-            o C-3 original corrigiu na query principal de cada página, só
-            que numa query secundária fora do escopo daquela rodada (achado
-            da 3ª revisão cética, docs/claude/ui-audit-criticos.md). */}
-        {signalsError && (
-          <div className="glass-card rounded-xl p-6">
-            <QueryErrorState message="Não foi possível verificar avisos/sinais recentes agora." onRetry={refetchSignals} />
-          </div>
-        )}
-
-        {/* Avisos em análise — rótulo antigo ("Em Monitoramento") mentia para
-            2 dos 3 estados: expirado não está sendo monitorado e informativo
-            nunca foi. Ver docs/known-risks.md item 156. */}
-        {monitoringActionable.length > 0 && (
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Eye className="w-4 h-4" style={{ color: '#ffd166' }} />
-              <h2 className="text-base font-bold text-foreground">Avisos em análise</h2>
-              <span className="text-xs font-mono" style={{ color: '#ffd166' }}>
-                ({applyFilters(monitoringActionable.map(s => ({ ...s, side: s.signal_type }))).length})
-              </span>
-            </div>
-            <p className="text-10px font-mono mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
-              O app está checando estes. Se algum virar operação, ele abre sozinho e ela aparece em Operações Ativas.
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {applyFilters(monitoringActionable.map(s => ({ ...s, side: s.signal_type }))).map(signal => (
-                <MonitoringCard
-                  key={signal.id}
-                  signal={signal}
-                  asset={assetById.get(signal.asset_id) ?? null}
-                  onDismiss={(sig) => dismissSignalMutation.mutate(sig)}
-                  isDismissing={dismissSignalMutation.isPending}
-                  expandAll={showDetails}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Observações de mercado — nunca viram operação, então saem da lista
-            principal e ficam num acordeão fechado. */}
-        {applyFilters(monitoringInfoOnly.map(s => ({ ...s, side: s.signal_type }))).length > 0 && (
-          <div>
-            <button onClick={() => setShowInfoSignals(!showInfoSignals)}
-              aria-expanded={showInfoSignals}
-              className="flex items-center gap-2 text-11px font-mono transition-colors hover:text-foreground/70"
-              style={{ color: '#60a5fa' }}>
-              {showInfoSignals ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              ℹ {applyFilters(monitoringInfoOnly.map(s => ({ ...s, side: s.signal_type }))).length} observações de mercado
-              <span style={{ color: 'rgba(255,255,255,0.3)' }}>— não viram operação</span>
-            </button>
-            {showInfoSignals && (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-3">
-                {applyFilters(monitoringInfoOnly.map(s => ({ ...s, side: s.signal_type }))).map(signal => (
-                  <MonitoringCard
-                    key={signal.id}
-                    signal={signal}
-                    asset={assetById.get(signal.asset_id) ?? null}
-                    onDismiss={(sig) => dismissSignalMutation.mutate(sig)}
-                    isDismissing={dismissSignalMutation.isPending}
-                    expandAll={showDetails}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Active Operations */}
+        {/* Active Operations — logo depois dos filtros (item 304): é o que está em jogo agora. */}
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Target className="w-4 h-4" style={{ color: '#00ff80' }} />
             <h2 className="text-base font-bold text-foreground">Operações Ativas</h2>
-            <span className="text-xs font-mono text-muted-foreground">({applyFilters(active).length})</span>
+            <span className="text-xs font-mono text-muted-foreground">({shownActive.length})</span>
           </div>
 
           {isLoading ? (
@@ -887,7 +787,7 @@ export default function Trades() {
             <div className="glass-card rounded-xl p-8">
               <QueryErrorState message="Não foi possível carregar as operações agora." onRetry={refetch} />
             </div>
-          ) : applyFilters(active).length === 0 ? (
+          ) : shownActive.length === 0 ? (
             isError ? (
               // Há dado em cache (por isso não caiu no ramo acima), mas a
               // atualização mais recente falhou — "Nenhuma operação ativa"
@@ -895,6 +795,20 @@ export default function Trades() {
               // da revisão pós-PR #396, docs/claude/ui-audit-criticos.md).
               <div className="glass-card rounded-xl p-8">
                 <QueryErrorState message="Não foi possível confirmar se há operações ativas agora — a atualização falhou. Mostrando o último dado conhecido." onRetry={refetch} />
+              </div>
+            ) : active.length > 0 ? (
+              // Item 304: antes aqui também saía "Nenhuma operação ativa." — com operação aberta e só o filtro escondendo.
+              <div className="glass-card rounded-xl p-8 text-center space-y-3">
+                <p className="text-muted-foreground text-sm">
+                  {active.length === 1
+                    ? 'Há 1 operação ativa, mas os filtros ligados a escondem.'
+                    : `Há ${active.length} operações ativas, mas os filtros ligados as escondem.`}
+                </p>
+                <button type="button" onClick={clearFilters}
+                  className="text-10px font-mono px-3 py-1.5 rounded-md"
+                  style={{ background: 'rgba(255,209,102,0.1)', border: '1px solid rgba(255,209,102,0.35)', color: '#ffd166' }}>
+                  Limpar filtros e mostrar
+                </button>
               </div>
             ) : (
               <div className="glass-card rounded-xl p-12 text-center">
@@ -904,7 +818,7 @@ export default function Trades() {
             )
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {applyFilters(active).map(op => (
+              {shownActive.map(op => (
                 <TradeCard
                   key={op.id}
                   operation={op}
@@ -942,15 +856,87 @@ export default function Trades() {
           )}
         </div>
 
+        {/* "Avisos em análise"/"Observações de mercado" dependem de
+            recentSignals — uma falha de rede aqui fazia as duas seções
+            simplesmente sumirem da tela (ambas só renderizam com
+            `.length > 0`), sem nenhum aviso: o mesmo silêncio enganoso que
+            o C-3 original corrigiu na query principal de cada página, só
+            que numa query secundária fora do escopo daquela rodada (achado
+            da 3ª revisão cética, docs/claude/ui-audit-criticos.md). */}
+        {signalsError && (
+          <div className="glass-card rounded-xl p-6">
+            <QueryErrorState message="Não foi possível verificar avisos/sinais recentes agora." onRetry={refetchSignals} />
+          </div>
+        )}
+
+        {/* Avisos em análise — rótulo antigo ("Em Monitoramento") mentia para
+            2 dos 3 estados: expirado não está sendo monitorado e informativo
+            nunca foi. Ver docs/known-risks.md item 156. */}
+        {monitoringActionable.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Eye className="w-4 h-4" style={{ color: '#ffd166' }} />
+              <h2 className="text-base font-bold text-foreground">Avisos em análise</h2>
+              <span className="text-xs font-mono" style={{ color: '#ffd166' }}>
+                ({shownActionable.length})
+              </span>
+            </div>
+            <p className="text-10px font-mono mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              O app está checando estes. Se algum virar operação, ele abre sozinho e ela aparece em Operações Ativas.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {shownActionable.map(signal => (
+                <MonitoringCard
+                  key={signal.id}
+                  signal={signal}
+                  asset={assetById.get(signal.asset_id) ?? null}
+                  onDismiss={(sig) => dismissSignalMutation.mutate(sig)}
+                  isDismissing={dismissSignalMutation.isPending}
+                  expandAll={showDetails}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Observações de mercado — nunca viram operação, então saem da lista
+            principal e ficam num acordeão fechado. */}
+        {shownInfoOnly.length > 0 && (
+          <div>
+            <button onClick={() => setShowInfoSignals(!showInfoSignals)}
+              aria-expanded={showInfoSignals}
+              className="flex items-center gap-2 text-11px font-mono transition-colors hover:text-foreground/70"
+              style={{ color: '#60a5fa' }}>
+              {showInfoSignals ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              ℹ {shownInfoOnly.length} observações de mercado
+              <span style={{ color: 'rgba(255,255,255,0.3)' }}>— não viram operação</span>
+            </button>
+            {showInfoSignals && (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-3">
+                {shownInfoOnly.map(signal => (
+                  <MonitoringCard
+                    key={signal.id}
+                    signal={signal}
+                    asset={assetById.get(signal.asset_id) ?? null}
+                    onDismiss={(sig) => dismissSignalMutation.mutate(sig)}
+                    isDismissing={dismissSignalMutation.isPending}
+                    expandAll={showDetails}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* History */}
         {history.length > 0 && (
           <div>
-            <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 mb-3 group">
+            <button onClick={() => setShowHistory(!showHistory)} aria-expanded={showHistory} className="flex items-center gap-2 mb-3 group">
               <History className="w-4 h-4 text-muted-foreground group-hover:text-foreground/60 transition-colors" />
               <h2 className="text-base font-bold text-foreground/60 group-hover:text-foreground/80 transition-colors">
                 Histórico Completo
               </h2>
-              <span className="text-xs font-mono text-muted-foreground">({applyFilters(history).length})</span>
+              <span className="text-xs font-mono text-muted-foreground">({shownHistory.length})</span>
               <span className="text-10px font-mono" style={{ color: '#00e5ff' }}>
                 {showHistory ? '▲ esconder' : '▼ mostrar'}
               </span>
@@ -958,19 +944,22 @@ export default function Trades() {
 
             {showHistory && (
               <div className="space-y-1.5">
-                {(() => {
-                  const { wins, losses, be, total } = summarizeOps(applyFilters(history));
-                  return (
-                    <div className="flex items-center gap-4 px-3 py-2 rounded-lg mb-3 text-10px font-mono"
-                      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <span style={{ color: '#00ff80' }}>✓ Win: {wins}</span>
-                      <span style={{ color: '#ffd166' }}>↔ BE: {be}</span>
-                      <span style={{ color: '#ff1478' }}>✗ Loss: {losses}</span>
-                      <span className="text-muted-foreground">Total: {total}</span>
-                    </div>
-                  );
-                })()}
-                {applyFilters(history).map(op => <HistoryRow key={op.id} op={op} />)}
+                <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-3 py-2 rounded-lg mb-3 text-10px font-mono"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <span style={{ color: '#00ff80' }}>✓ Ganhos: {closedSummary.wins}</span>
+                  <span style={{ color: '#ffd166' }}>↔ Empates: {closedSummary.be}</span>
+                  <span style={{ color: '#ff1478' }}>✗ Perdas: {closedSummary.losses}</span>
+                  <span className="text-muted-foreground">Total: {closedSummary.total}</span>
+                  <Link to="/history" className="ml-auto underline underline-offset-2" style={{ color: '#00e5ff' }}>
+                    Ver a história de cada operação na aba Histórico →
+                  </Link>
+                </div>
+                {shownHistory.map(op => <HistoryRow key={op.id} op={op} />)}
+                {operations.length >= OPERATIONS_PAGE_SIZE && (
+                  <p className="text-9px font-mono pt-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                    Esta página carrega só as {OPERATIONS_PAGE_SIZE} operações mais recentes (ativas e fechadas); as mais antigas não entram nesta lista nem nos números acima.
+                  </p>
+                )}
               </div>
             )}
           </div>

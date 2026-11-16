@@ -213,6 +213,8 @@ export default function TradeEntryMarkers({ history }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      {/* Item 304: uma <table> com sr-only NÃO encolhe para 1px (tabela cresce até caber o conteúdo) e, por ser absoluta, alargava a página no celular (rolagem lateral). O invólucro sr-only corta o que passa. */}
+      <div className="sr-only">
       <table id={tableId} className="sr-only">
         <caption>Curva de capital com execuções de entrada e saída, ponto por ponto</caption>
         <thead>
@@ -232,6 +234,7 @@ export default function TradeEntryMarkers({ history }) {
           ))}
         </tbody>
       </table>
+      </div>
 
       {/* Recent exits */}
       <div className="flex gap-1.5 flex-wrap pt-1 max-h-24 overflow-y-auto">

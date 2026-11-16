@@ -62,7 +62,7 @@ curto do que entendeu e **espere o meu "pode seguir"** antes de codar.
 > **Estado em 13/11/2026 (item 303 de `docs/known-risks.md`):** o **cartão está FEITO e aprovado por mim** (PR #577: hora de
 > abertura, trilha com nomes e faixas e o lucro sempre à direita, "se bater no stop fecha com +X% (+Y R)", "a história até
 > agora", motivos explicados; só tela, motor intocado). Respostas que já dei: lucro em **% e R** (USDT depois); **só o cartão
-> agora**. **O que falta em A é o segundo PR: lista, filtros e resumo do topo da aba** (plano e imagens antes). Não refaça o
+> agora**. **O segundo pacote (resumo "de agora" no topo, filtros, lista do histórico) está feito no item 304 e aguarda o meu "aprovado" do visual.** Não refaça o
 > que está abaixo: leia o item 303 e o roadmap (linha 7). Ordem combinada: **C → A → B → D**; em C eu já rodei o coletor à mão
 > (verde), mas os 3 jobs do cron-job.org ainda não existem (roteiro campo a campo em `docs/claude/external-cron-setup.md`).
 
@@ -148,7 +148,7 @@ Eu tentei criar os 3 jobs no cron-job.org duas vezes e não consegui (a parte av
 **fim do "Scheduled scan" da hora cheia** como relógio (item 285, addendum 25; `context-collect.yml`): 07h, 12h e 21h de
 Brasília, sem nada para eu configurar. **Não me peça para criar job nenhum.** O que resta: conferir no Actions
 (`mcp__github__actions_list`, workflow `context-collect.yml`) que há uma execução verde (não "skipped") logo depois de 10:00,
-15:00 e 00:00 UTC, e contar as "2 semanas só coletando" a partir de 14/11. Com o scan pausado só a reserva diária coleta.
+15:00 e 00:00 UTC, e contar as "2 semanas só coletando" a partir de 14/11. **A de 00:00 UTC de 15/11 já foi conferida (sucesso, coleta normal); faltam as de 10:00 e 15:00 UTC.** Com o scan pausado só a reserva diária coleta.
 
 ### D. Neon e custo (acompanhar, não "otimizar por otimizar")
 
