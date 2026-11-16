@@ -25,7 +25,7 @@ import { timeframeChipLabel } from '@/lib/tradeStory';
 import { formatSignedR } from '@/lib/stopGuarantee';
 import { formatBackfillLag } from '@/lib/backfillDetection';
 import { outcomeColor } from '@/lib/outcomeColor';
-import { describeProximity, formatPrice, formatSignedPct } from '@/lib/priceProximity';
+import { describeProximity, formatPrice, formatSignedPct, formatQuoteAge } from '@/lib/priceProximity';
 import { classifySignal, phaseCopy, rejectionCopy, formatTimeLeft, REASON_KIND, SIGNAL_PHASE } from '@/lib/signalStatus';
 import { signalTimeline, opTimeline, closedReasonLabel } from '@/lib/eventTimeline';
 import { EventTimeline, fmtBRT } from '@/components/dashboard/EventTimeline';
@@ -472,6 +472,27 @@ function HistoryRow({ op }) {
   );
 }
 
+/**
+ * "Atualizado há …" do cabeçalho. Tem o próprio relógio (1 s) de propósito: antes o `setInterval` ficava dentro de `Trades()` e a
+ * página inteira era redesenhada a cada segundo. Escrita com `formatQuoteAge` ("25min", "3h"): com a tela atualizando a cada
+ * 30 min (item 301) um "há 1543s" não se lê.
+ */
+function UpdatedAgo({ dataUpdatedAt }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!dataUpdatedAt) return undefined;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [dataUpdatedAt]);
+  const age = dataUpdatedAt ? formatQuoteAge(Math.max(0, now - dataUpdatedAt)) : null;
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="live-dot" style={{ width: 5, height: 5 }} />
+      <span className="text-muted-foreground">{age ? `Atualizado há ${age}` : 'Carregando…'}</span>
+    </span>
+  );
+}
+
 export default function Trades() {
   const [showHistory, setShowHistory] = useState(false);
   const [showInfoSignals, setShowInfoSignals] = useState(false);
@@ -492,7 +513,7 @@ export default function Trades() {
     return () => window.removeEventListener('app-reset-filters', handler);
   }, []);
 
-  const { data: operations = [], isLoading, isError, refetch } = useQuery({
+  const { data: operations = [], isLoading, isError, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['trade-operations'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', OPERATIONS_PAGE_SIZE),
     refetchInterval: POLL_OPERATIONAL_MS,
@@ -685,20 +706,57 @@ export default function Trades() {
       </AlertDialog>
 
       <div className="space-y-5 max-w-7xl mx-auto">
-        {/* Header */}
-        <div>
-          <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Gestão de Operações</p>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">Plano de Trade</h1>
+        {/* Header — como era antes (item 304, revisão do usuário em 16/11: "não faz sentido tirar algumas coisas"):
+            o "Atualizado há …" e a linha de contagem voltaram. O contador agora vive num componente só dele, então
+            o relógio não redesenha mais a página inteira a cada segundo. */}
+        <div className="flex items-end justify-between flex-wrap gap-3">
+          <div>
+            <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Gestão de Operações</p>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">Plano de Trade</h1>
+          </div>
+          <div className="flex items-center gap-3 text-10px font-mono flex-wrap">
+            <UpdatedAgo dataUpdatedAt={dataUpdatedAt} />
+            <span className="text-muted-foreground">
+              {monitoringActionable.length} em análise · {active.length} ativas · {history.length} histórico
+            </span>
+          </div>
         </div>
 
-        {/* Resumo de agora (item 304). Substitui a linha de 10px "N em análise · N ativas · N histórico" e o contador
-            "Atualizado há Ns" (o horário da última leitura já está no chip fixo do canto, item 301). */}
+        {/* Resumo de agora (item 304): o que está em jogo, em quatro números. Fica acima de tudo; o resto da página segue
+            na ordem de sempre. */}
         <TradesNowSummary
           active={activeSummary}
           analysisCount={shownActionable.length}
           closed={{ total: shownHistory.length, wins: closedSummary.wins, be: closedSummary.be, losses: closedSummary.losses }}
           filtered={filtersOn}
         />
+
+        {/* Performance Report + Charts — de volta ao lugar original, logo depois do resumo (item 304). */}
+        {shownHistory.length > 0 && (
+          <div className="space-y-4">
+            <PerformanceReport trades={shownHistory} />
+            <div>
+            <button onClick={() => setShowChart(!showChart)} aria-expanded={showChart}
+              className="flex items-center gap-2 mb-3 group">
+              <BarChart2 className="w-4 h-4" style={{ color: '#00e5ff' }} />
+              <h2 className="text-base font-bold text-foreground/80 group-hover:text-foreground transition-colors">
+                Performance Acumulada
+              </h2>
+              <span className="text-10px font-mono" style={{ color: '#00e5ff' }}>
+                {showChart ? '▲ esconder' : '▼ mostrar'}
+              </span>
+            </button>
+            {showChart && (
+              <>
+                <TradeEntryMarkers history={shownHistory} />
+                <div className="mt-4">
+                  <PortfolioVsMarket trades={shownHistory} />
+                </div>
+              </>
+            )}
+            </div>
+          </div>
+        )}
 
         <TradesFilterBar
           filters={filters}
@@ -713,7 +771,7 @@ export default function Trades() {
           }}
         />
 
-        {/* Active Operations — primeiro na página (item 304): é o que está em jogo agora. */}
+        {/* Active Operations — logo depois dos filtros (item 304): é o que está em jogo agora. */}
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Target className="w-4 h-4" style={{ color: '#00ff80' }} />
@@ -904,33 +962,6 @@ export default function Trades() {
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        {/* Performance Report + Charts — depois do que está em jogo agora (item 304; antes abria a página). */}
-        {shownHistory.length > 0 && (
-          <div className="space-y-4">
-            <PerformanceReport trades={shownHistory} />
-            <div>
-            <button onClick={() => setShowChart(!showChart)} aria-expanded={showChart}
-              className="flex items-center gap-2 mb-3 group">
-              <BarChart2 className="w-4 h-4" style={{ color: '#00e5ff' }} />
-              <h2 className="text-base font-bold text-foreground/80 group-hover:text-foreground transition-colors">
-                Performance Acumulada
-              </h2>
-              <span className="text-10px font-mono" style={{ color: '#00e5ff' }}>
-                {showChart ? '▲ esconder' : '▼ mostrar'}
-              </span>
-            </button>
-            {showChart && (
-              <>
-                <TradeEntryMarkers history={shownHistory} />
-                <div className="mt-4">
-                  <PortfolioVsMarket trades={shownHistory} />
-                </div>
-              </>
-            )}
-            </div>
           </div>
         )}
       </div>

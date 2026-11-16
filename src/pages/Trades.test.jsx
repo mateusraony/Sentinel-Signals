@@ -14,6 +14,7 @@
  * operação nunca era escondido.
  */
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { screen, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -704,23 +705,57 @@ describe('Trades — resumo do topo, filtros e histórico (item 304)', () => {
       expect(resumo().textContent).not.toMatch(/NaN|undefined|null/);
     });
 
-    it('REGRESSÃO: o contador "Atualizado há Ns" (que redesenhava a página a cada segundo) saiu', async () => {
-      const { container } = await abrir([ATIVA_CASCATA]);
-      expect(container.textContent).not.toMatch(/Atualizado há/);
+    it('o cabeçalho de sempre continua: "Atualizado há …" e a linha "N em análise · N ativas · N histórico"', async () => {
+      const { container } = await abrir([ATIVA_CASCATA, ATIVA_RISCO, FECHADA_STOP_LUCRO]);
+      await screen.findByText('QNT/USDT');
+      expect(container.textContent).toMatch(/Atualizado há \d+(s|min|h|d)/);
+      screen.getByText('0 em análise · 2 ativas · 1 histórico');
+    });
+
+    it('REGRESSÃO: o relógio do "Atualizado há" não redesenha a página inteira a cada segundo (vive num componente só dele)', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        await abrir([ATIVA_CASCATA]);
+        await screen.findByText('QNT/USDT');
+        const antes = screen.getByText('QNT/USDT');
+        await vi.advanceTimersByTimeAsync(3000);
+        // o mesmo nó do DOM: a página não foi remontada nem trocada
+        expect(screen.getByText('QNT/USDT')).toBe(antes);
+        const fonte = readFileSync('src/pages/Trades.jsx', 'utf8');
+        const corpo = fonte.slice(fonte.indexOf('export default function Trades()'));
+        expect(corpo, 'o setInterval de 1 s não pode voltar para dentro de Trades()').not.toMatch(/setInterval\(/);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
   describe('ordem da página', () => {
-    it('o que está em jogo vem primeiro: Operações Ativas antes de Avisos em análise, do Histórico e do Relatório de Performance', async () => {
+    it('ordem: resumo → Relatório de Performance (de volta ao lugar de antes) → filtros → Operações Ativas → Avisos em análise → Histórico', async () => {
       const aviso = { ...SIGNAL_4H, id: 'sig_novo', symbol: 'XRPUSDT', asset_id: 'ax', created_date: new Date().toISOString(), expired_logged: false };
       await abrir([ATIVA_CASCATA, FECHADA_STOP_LUCRO], [aviso]);
       await screen.findByRole('heading', { name: 'Avisos em análise' });
       const titulos = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent.trim());
       const pos = (texto) => titulos.findIndex((t) => t.startsWith(texto));
-      expect(pos('Operações Ativas')).toBeGreaterThan(-1);
+      expect(pos('Relatório de Performance')).toBeGreaterThan(-1);
+      expect(pos('Performance Acumulada')).toBeGreaterThan(-1);
+      expect(pos('Relatório de Performance')).toBeLessThan(pos('Operações Ativas'));
+      expect(pos('Performance Acumulada')).toBeLessThan(pos('Operações Ativas'));
       expect(pos('Operações Ativas')).toBeLessThan(pos('Avisos em análise'));
       expect(pos('Avisos em análise')).toBeLessThan(pos('Histórico Completo'));
-      expect(pos('Histórico Completo')).toBeLessThan(pos('Relatório de Performance'));
+      // o resumo de agora (cartões) e os filtros ficam antes/depois do relatório, respectivamente
+      const resumoEl = resumo();
+      const barra = screen.getByRole('search', { name: 'Filtros das operações' });
+      const relatorio = screen.getByRole('heading', { name: 'Relatório de Performance' });
+      expect(resumoEl.compareDocumentPosition(relatorio) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(relatorio.compareDocumentPosition(barra) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('os gráficos de performance continuam acompanhando os filtros (como antes)', async () => {
+      await abrir([ATIVA_CASCATA, FECHADA_STOP_LUCRO, FECHADA_PERDA]);
+      await screen.findByRole('heading', { name: 'Relatório de Performance' });
+      fireEvent.click(botaoDoGrupo('Lado', 'BUY'));
+      screen.getByText('(1 trades fechados)');
     });
   });
 

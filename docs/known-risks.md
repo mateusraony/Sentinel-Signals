@@ -35140,15 +35140,15 @@ Execução do item 302, com as respostas do usuário: lucro protegido em **% e R
 - **Depois da escolha da opção A (mesmo dia):** saíram a opção B e os 2 testes dela (`tradeRail` 23, `TradeCard` 58 no arquivo); gate repetido: lint, 5.233 testes, build, `typecheck:ratchet` em 13. Os números acima (74 mutações, 5.235 testes) são os da primeira rodada, com a opção B ainda no código.
 - Revisão de impacto: `TradeCard` só é renderizado por `src/pages/Trades.jsx`; `tradeStory.js` só ganhou um `export` (`formatWhen`); nenhuma rota, workflow ou script lê os módulos novos; Telegram, Histórico, Dashboard e backtest não mudam.
 
-## 304. Aba Trades, 2º pacote: resumo "de agora" no topo, barra de filtros e lista do histórico (implementado, 2026-11-15; **aguarda o "aprovado" do visual para mesclar**)
+## 304. Aba Trades, 2º pacote: resumo "de agora" no topo, barra de filtros e lista do histórico (implementado, 2026-11-15, revisado em 2026-11-16; **aguarda o "aprovado" da primeira tela revisada para mesclar**)
 Combinado com o usuário no item 303: o cartão primeiro, depois "lista, filtros e resumo do topo". Com a ordem de trabalho dele ("pode seguir com o plano e as imagens do segundo PR"). **Só tela**: nenhum arquivo do motor mudou, nada novo é gravado, nenhuma consulta nova ao banco (a mesma `TradeOperation.list(…, 100)` e `SignalEvent.list(…, 50)`).
 
 ### O que estava errado (medido no código e na tela, antes de mexer)
 1. **O filtro "1H / 4H / 1D" escondia todas as operações da cascata.** Comparava com `TradeOperation.timeframe` (o gráfico da ENTRADA, `15m`/`5m`), nunca com o do aviso (`4h`/`1h`) — o mesmo defeito que o Histórico já tinha corrigido com `opSignalTimeframe` (item 291). Reproduzido nas imagens "antes": escolher "4H" deixava "Operações Ativas (0)" e "Nenhuma operação ativa." com 3 operações abertas.
 2. **"Nenhuma operação ativa." com operação aberta**, quando era só o filtro escondendo. Afirmação falsa.
-3. **O topo era uma linha de 10 px** ("1 em análise · 3 ativas · 9 histórico") e um contador "Atualizado há 1543s" que **redesenhava a página inteira a cada segundo** (`setInterval` de 1 s em `Trades.jsx`). O horário da última leitura do banco já está no chip fixo do item 301.
+3. **O topo era uma linha de 10 px** ("1 em análise · 3 ativas · 9 histórico") e um contador "Atualizado há 1543s" que **redesenhava a página inteira a cada segundo** (`setInterval` de 1 s dentro de `Trades()`). *(Revisão do usuário, 16/11: ele quer o cabeçalho de sempre — ver "Revisão do usuário" abaixo.)*
 4. **A fila de filtros eram 17 botões soltos** (7 de período + 4 de gráfico + 3 de lado + busca + densidade), sem dizer o que cada grupo filtra, sem "limpar" e sem dizer quanto estava escondido.
-5. **O Relatório de Performance e dois gráficos abriam a página**, empurrando para baixo o que está em jogo agora (as operações ativas).
+5. **O Relatório de Performance e dois gráficos abriam a página**, empurrando para baixo as operações ativas. *(Eu os tinha levado para o fim da página por conta própria; o usuário não aprovou — ver "Revisão do usuário".)*
 6. **Linha do histórico pobre:** data e preços com `hidden sm:block` (sumiam no celular), selo só com o gráfico da entrada ("15M"), resultado sem o R, "🛑 Stop" vermelho ao lado de um **+2,86% verde** (stop elevado que fechou no lucro).
 7. **Achado de passagem, fora do pedido, corrigido por ser pequeno e certo:** as tabelas invisíveis (`sr-only`) dos gráficos de performance alargavam a página no celular (rolagem lateral: a página media 596 px numa tela de 390). Uma `<table>` com `sr-only` não encolhe para 1 px; o invólucro `sr-only` ao redor corta o que passa (`TradeEntryMarkers.jsx`, `PortfolioVsMarket.jsx`). `PnLChart.jsx` tem a mesma tabela mas só é usado no Histórico, e não mexi.
 
@@ -35157,15 +35157,22 @@ Combinado com o usuário no item 303: o cartão primeiro, depois "lista, filtros
 - **Barra de filtros** (`TradesFilterBar.jsx`): cada grupo tem o nome escrito ("Gráfico do aviso", "Lado"); o período virou um seletor (era uma fila de 7 botões); **"Limpar filtros (N)"** e a linha **"Filtros ligados — mostrando 1 de 2 ativas · 0 de 0 avisos · 1 de 1 fechadas."** só aparecem com filtro. O evento global `app-reset-filters` continua funcionando.
 - **Regras puras** (`src/lib/tradesOverview.js`, testadas): `applyTradeFilters` (gráfico do AVISO via `opSignalTimeframe`, lado em `side`/`signal_type`, busca, recorte de período com as bordas do dia incluídas), `periodRange`, `countActiveFilters`, `summarizeActiveOps`, `describeActiveSummary`. As listas são calculadas **uma vez** (antes cada bloco do JSX refiltrava a mesma lista).
 - **Quando o filtro esconde tudo:** "Há 1 operação ativa, mas os filtros ligados a escondem." + botão "Limpar filtros e mostrar". "Nenhuma operação ativa." só quando de fato não há nenhuma.
-- **Ordem da página:** resumo → filtros → **Operações Ativas** → Avisos em análise → Observações de mercado → Histórico Completo → Relatório de Performance e gráficos (os blocos são os mesmos, só mudaram de lugar).
+- **Ordem da página (final, depois da revisão):** cabeçalho → resumo de agora → **Relatório de Performance e gráficos (no lugar de sempre)** → filtros → **Operações Ativas** → Avisos em análise → Observações de mercado → Histórico Completo.
 - **Linha do histórico:** selo `4H → 15M`, resultado em % **e R**, "Aberta 08/11 23:47 → fechada 12/11 15:47 (3d 16h)" e "Entrada $… → saída $…" visíveis também no celular, borda e selo na cor do RESULTADO (`outcomeColor`, a regra do resto do app): **"💰 Stop com lucro"** quando o stop elevado fechou no lucro, "🟡 BE", "🛑 Stop" só na perda. Link "Ver a história de cada operação na aba Histórico →" (a aba Histórico já tem a história completa, H1–H3) e aviso quando a página bateu no teto de 100 operações carregadas.
 - **Textos:** "Win/BE/Loss" do resumo da lista viraram "Ganhos/Empates/Perdas".
+
+### Revisão do usuário (2026-11-16) — o que NÃO foi aprovado e o que eu corrigi
+O usuário aprovou "o restante" (filtros, histórico, celular), mas **não as imagens `pc-1 → pc-2` e `cel-1 → cel-2`** (primeira tela): *"não faz sentido tirar algumas coisas… fica estranho"*. **Nada tinha sido apagado**, mas eu tinha (a) levado o Relatório de Performance e os gráficos para o **fim** da página, (b) tirado o **"Atualizado há …"** e a linha **"N em análise · N ativas · N histórico"** do cabeçalho e (c) mandado só imagens da parte de cima, então o fim da página (onde o relatório ficou) nem aparecia: parecia que tinha sumido. **A mudança de lugar do relatório não foi pedida** (o pedido era "lista, filtros e resumo do topo") e quebrava a regra do projeto de não alterar o que funciona sem pedido; eu mesmo tinha anotado o risco ao enviar as imagens.
+- **Corrigido:** o relatório e os gráficos voltaram ao lugar original (logo depois do resumo de agora, antes dos filtros, como era antes dos filtros). O cabeçalho voltou: "Atualizado há …" e a linha de contagem.
+- **Mantido (decisão técnica):** o relógio do "Atualizado há" **não** volta para dentro de `Trades()` (redesenhava a página inteira por segundo): vive em `UpdatedAgo`, com o próprio relógio, e passou a escrever "há 25min" em vez de "há 1543s" (a tela agora atualiza a cada 30 min, item 301).
+- **Prova:** testes novos (cabeçalho presente; ordem resumo → relatório → filtros → ativas → avisos → histórico; gráficos seguem os filtros; tripwire contra o `setInterval` voltar para dentro da página) e 4 mutações plantadas derrubadas. As imagens de aprovação agora incluem a **página inteira** (antes só a parte de cima), geradas esperando o gráfico terminar de animar.
+- **Lição registrada:** em mudança de layout, mostrar a página inteira e listar o que mudou de lugar ANTES de pedir o "aprovado"; mexer na ordem do que já existe é pedido separado.
 
 ### Pesquisa antes do plano (o que mudou na decisão)
 Boas práticas de filtro (Baymard, vários guias de UX): **mostrar os filtros aplicados e quanto escondem, ter "limpar tudo" e contagem de resultado** — virou a linha "Filtros ligados" + o botão com o número. É guia de e-commerce (a busca não trouxe um padrão de estado vazio com filtro escondendo tudo; o desenho do aviso "há N ativas, mas os filtros as escondem" é próprio). <https://baymard.com/blog/how-to-design-applied-filters> · <https://baymard.com/learn/ecommerce-filter-ui>
 
 ### Pendências
-- **Do usuário: "aprovado" do visual** (imagens de computador e celular enviadas no chat; harness local não commitado, dados de EXEMPLO).
+- **Do usuário: "aprovado" só das imagens que mudaram depois da revisão** (primeira tela e página inteira, computador e celular; o restante já foi aprovado em 16/11).
 - Fora do escopo (decisão do usuário): lucro em USDT (precisa da banca) e a linha do tempo completa do stop (precisa de mudança no motor).
 - `PnLChart.jsx` (só na aba Histórico) tem a mesma tabela `sr-only` sem invólucro; não alarga a página hoje (conferido só em `/trades`), fica anotado.
 
@@ -35176,7 +35183,7 @@ Boas práticas de filtro (Baymard, vários guias de UX): **mostrar os filtros ap
 - Dados das imagens são de EXEMPLO (harness local, nunca no repositório).
 
 ### Prova
-- Testes novos: `tradesOverview` 24, `Trades` +15 (44 no arquivo; 3 antigos ajustados porque buscavam o texto "Avisos em análise" que agora aparece também no cartão do resumo, e o seletor de período).
+- Testes novos: `tradesOverview` 24, `Trades` +17 (46 no arquivo, depois da revisão; 3 antigos ajustados porque buscavam o texto "Avisos em análise" que agora aparece também no cartão do resumo, e o seletor de período).
 - **Mutações plantadas: 51, todas derrubadas** depois de reforçar 2 testes (data nula/ilegível e o resumo acompanhando o filtro) e remover 1 checagem redundante.
 - Gate: lint, 5.276 testes (com Postgres local; 18 pulados sem relação), build, `typecheck:ratchet` em 13 (subiu a 16 com anotações de tipo rígidas demais nos arquivos novos; corrigido antes do commit).
 - Revisão de impacto: `Trades.jsx` só é usado pela rota `/trades`; o `TradeCard` e os módulos do item 303 não mudaram; `tradeStory.js`/`tradeMetrics.js` só são lidos; nenhum workflow, rota de servidor ou script depende do que mudou; Histórico, Dashboard e Telegram não mudam.
