@@ -3,7 +3,7 @@
 // probabilidade, compra ou venda. Reaproveita a lógica da faixa do painel (`src/lib/marketContextBand.js`) para que a
 // hora, a contagem regressiva e os rótulos sejam exatamente os mesmos nos dois lugares.
 import {
-  parseEvents, upcomingEvents, formatCountdown, formatEventWhen, resultRows, EVENT_LABELS, EVENT_HINTS, EVENT_META, STATUS_LABELS, CONTEXT_EMOJI,
+  parseEvents, upcomingEvents, formatCountdown, formatEventWhen, resultRows, splitValueText, compareValues, EVENT_LABELS, EVENT_HINTS, EVENT_META, STATUS_LABELS, CONTEXT_EMOJI,
 } from '../src/lib/marketContextBand.js';
 import { summarizeReactions } from './contextBtcHistory.mjs';
 
@@ -128,7 +128,7 @@ export function buildReactionBlock(label, rows) {
  * divulgações do mesmo tipo. Sem operações abertas (decisão do usuário em 01/11: ler o banco acordaria o Neon).
  * @param {{ reactions?: Array<{ date: string, reaction: object|null }>|null }} [extra]
  */
-export function buildPreEventBriefing(event, nowMs, { reactions = null } = {}) {
+export function buildPreEventBriefing(event, nowMs, { reactions = null, consensus = null } = {}) {
   const label = EVENT_LABELS[event.kind];
   const meta = EVENT_META[event.kind];
   const lines = [
@@ -138,9 +138,14 @@ export function buildPreEventBriefing(event, nowMs, { reactions = null } = {}) {
     '',
   ];
   if (event.values?.previous) lines.push(`<b>Anterior (BLS):</b> ${escapeHtml(event.values.previous)}`);
+  else if (consensus?.previous) lines.push(`<b>Anterior (informado por você):</b> ${escapeHtml(consensus.previous)}`);
   else if (HAS_BLS_PREVIOUS.has(event.kind)) lines.push('<b>Anterior:</b> indisponível agora (o BLS não respondeu na última coleta).');
-  else lines.push('<b>Anterior:</b> sem fonte oficial automática para este tipo.');
-  lines.push('<b>Projeção do mercado (consenso):</b> indisponível — é dado pago; o sistema não inventa um número.', '');
+  else lines.push('<b>Anterior:</b> sem fonte oficial automática para este tipo (você pode registrar no botão "Registrar projeção do Contexto").');
+  if (consensus?.projection) {
+    lines.push(`<b>Projeção (informada por você):</b> ${escapeHtml(consensus.projection)} — não é o consenso oficial do mercado.`, '');
+  } else {
+    lines.push('<b>Projeção do mercado (consenso):</b> indisponível — é dado pago; o sistema não inventa um número. Você pode registrar a sua no botão "Registrar projeção do Contexto" (Actions).', '');
+  }
   lines.push(...buildReactionBlock(label, reactions), '');
   lines.push('Sem previsão de direção (alta ou baixa): com poucos casos isso seria precisão inventada.', NEUTRAL_NOTE);
   return lines.join('\n');
@@ -151,6 +156,7 @@ export function buildPreEventBriefing(event, nowMs, { reactions = null } = {}) {
 // e o que o BTC fez desde a divulgação. Sem projeção do mercado (não existe de graça), então nunca diz que foi "surpresa" nem prevê o próximo passo.
 
 const DIRECTION_WORDS = Object.freeze({ acima: 'acima do anterior', abaixo: 'abaixo do anterior', igual: 'igual ao anterior' });
+const PROJECTION_WORDS = Object.freeze({ acima: 'acima da projeção', abaixo: 'abaixo da projeção', igual: 'igual à projeção' });
 
 /** "+0,10%" por prazo, ou "ainda não passou" enquanto aquele prazo não terminou. */
 const moveWord = (n, v) => (v === null || v === undefined ? `${n} min ainda não passou` : `${n} min ${formatPct(v)}`);
@@ -159,7 +165,7 @@ const moveWord = (n, v) => (v === null || v === undefined ? `${n} min ainda não
  * @param {{ moves?: { 5: number|null, 30: number|null, 60: number|null }|null, typical?: ReturnType<typeof summarizeReactions>|null }} [extra]
  *   `moves`: movimento do BTC desde a divulgação (`partialMoves`); `null` = a fonte de preços não respondeu. `typical`: resumo das últimas divulgações do tipo.
  */
-export function buildResultMessage(event, nowMs, { moves = null, typical = null } = {}) {
+export function buildResultMessage(event, nowMs, { moves = null, typical = null, consensus = null } = {}) {
   const label = EVENT_LABELS[event.kind];
   const lines = [
     `${CONTEXT_EMOJI.released} <b>${escapeHtml(label)} — saiu o resultado</b>`,
@@ -168,18 +174,28 @@ export function buildResultMessage(event, nowMs, { moves = null, typical = null 
   ];
   const rows = event.values?.actual ? resultRows(event.values, event.reference ?? null) : [];
   const withNumber = rows.filter((r) => r.actual !== null);
+  // A projeção que o USUÁRIO registrou (addendum 30), medida por medida ("mom"/"yoy"/"jobs"), para dizer acima/abaixo/igual a ELA.
+  const projection = consensus?.projection ?? null;
+  const projectionByKey = new Map(projection ? splitValueText(projection).map((x) => [x.key, x.value]) : []);
+  let comparedToProjection = false;
   if (withNumber.length) {
     for (const r of withNumber) {
       const prev = r.previous !== null ? ` (anterior ${escapeHtml(r.previous)})` : '';
       const dir = r.direction ? ` — ${DIRECTION_WORDS[r.direction]}` : '';
+      const projValue = projectionByKey.get(r.key) ?? null;
+      const projDir = projValue !== null ? compareValues(r.actual, projValue) : null;
+      if (projDir) comparedToProjection = true;
+      const proj = projDir ? ` · ${PROJECTION_WORDS[projDir]} (${escapeHtml(projValue)})` : '';
       const rev = r.revised !== null ? `; mês anterior revisado para ${escapeHtml(r.revised)}` : '';
-      lines.push(`${CONTEXT_EMOJI.compare} ${escapeHtml(r.label)}: <b>${escapeHtml(r.actual)}</b>${prev}${dir}${rev}`);
+      lines.push(`${CONTEXT_EMOJI.compare} ${escapeHtml(r.label)}: <b>${escapeHtml(r.actual)}</b>${prev}${dir}${proj}${rev}`);
     }
     lines.push('Fonte dos números: BLS.');
   } else if (['CPI', 'PPI', 'NFP'].includes(event.kind)) {
     lines.push('O número oficial do BLS ainda não chegou ao sistema; assim que chegar ele aparece no painel.');
+    if (projection) lines.push(`Sua projeção era: ${escapeHtml(projection)}.`);
   } else {
     lines.push('Este tipo não tem número oficial coletado automaticamente: o aviso traz só o movimento do BTC.');
+    if (projection) lines.push(`Sua projeção era: ${escapeHtml(projection)} — confira o resultado no site do órgão.`);
   }
   lines.push('');
   if (moves) {
@@ -191,6 +207,10 @@ export function buildResultMessage(event, nowMs, { moves = null, typical = null 
     const quando = typical.n === 1 ? 'Na última divulgação' : `Nas últimas ${typical.n} divulgações`;
     lines.push(`${quando} de ${escapeHtml(label)}, o tamanho mediano do movimento em 1 h foi ${formatPct(typical.medAbs60).replace('+', '')}.`);
   }
-  lines.push('', 'Sem a projeção do mercado (dado pago) não dá para dizer se o número foi surpresa.', NEUTRAL_NOTE);
+  if (comparedToProjection) {
+    lines.push('', 'A projeção é a que você registrou (não é o consenso oficial do mercado): "acima/abaixo da projeção" compara só com ela.', NEUTRAL_NOTE);
+  } else {
+    lines.push('', 'Sem a projeção do mercado (dado pago) não dá para dizer se o número foi surpresa.', NEUTRAL_NOTE);
+  }
   return lines.join('\n');
 }

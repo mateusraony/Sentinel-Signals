@@ -279,6 +279,42 @@ describe('o aviso de resultado (addendum 28)', () => {
   });
 });
 
+describe('a projeção registrada pelo usuário chega ao aviso (addendum 30)', () => {
+  const MIN = 60 * 1000;
+  const T0 = Date.parse('2026-12-10T13:30:00.000Z');
+  const EV = [{ id: 'CPI-2026-12-10', kind: 'CPI', reference: '2026-11', startsAtUtc: '2026-12-10T13:30:00.000Z', status: 'oficial', firstSeenAt: '2026-10-31T12:00:00.000Z', lastChangedAt: '2026-10-31T12:00:00.000Z',
+    values: { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,2% m/m · +3,1% a/a', source: 'BLS' } }];
+  const router = () => vi.fn(async (u) => (String(u).startsWith('https://api.telegram.org/') ? { ok: true, status: 200 } : { ok: false, status: 500, text: async () => '' }));
+  const body = (f) => f.mock.calls.filter(([u]) => String(u).startsWith('https://api.telegram.org/')).map(([, i]) => JSON.parse(i.body).text);
+  const go = (f, now) => { saida = []; return main(['--dir', dir, '--enviar', '--categorias-ligadas', ''], ENV, { fetchImpl: f, now: () => now, sleep: async () => {} }); };
+  beforeEach(() => { fs.writeFileSync(path.join(dir, 'events.json'), JSON.stringify(EV)); });
+
+  it('1 h antes: usa a projeção do arquivo consensus.json', async () => {
+    fs.writeFileSync(path.join(dir, 'consensus.json'), JSON.stringify({ version: 1, items: { 'CPI-2026-12-10': { at: '2026-12-09T12:00:00.000Z', projection: '+0,3% m/m · +3,1% a/a' } } }));
+    const f = router();
+    await go(f, T0 - 60 * MIN);
+    expect(body(f)[0]).toContain('Projeção (informada por você):</b> +0,3% m/m · +3,1% a/a');
+  });
+  it('o resultado compara com a projeção registrada', async () => {
+    fs.writeFileSync(path.join(dir, 'consensus.json'), JSON.stringify({ version: 1, items: { 'CPI-2026-12-10': { at: '2026-12-09T12:00:00.000Z', projection: '+0,3% m/m · +3,1% a/a' } } }));
+    const f = router();
+    await go(f, T0 + 30 * MIN);
+    expect(body(f)[0]).toContain('abaixo da projeção (+0,3%)');
+  });
+  it('sem o arquivo, ou com ele ilegível ou com formato fora da lista fechada: segue sem projeção (nunca quebra, nunca usa texto livre)', async () => {
+    for (const conteudo of [null, '{ lixo', JSON.stringify({ version: 1, items: { 'CPI-2026-12-10': { at: '2026-12-09T12:00:00.000Z', projection: 'vai ser enorme' } } })]) {
+      fs.rmSync(path.join(dir, 'alerts-sent.json'), { force: true });
+      if (conteudo === null) fs.rmSync(path.join(dir, 'consensus.json'), { force: true });
+      else fs.writeFileSync(path.join(dir, 'consensus.json'), conteudo);
+      const f = router();
+      const code = await go(f, T0 - 60 * MIN);
+      expect(code).toBe(0);
+      expect(body(f)[0]).toContain('Projeção do mercado (consenso):</b> indisponível');
+      expect(body(f)[0]).not.toContain('vai ser enorme');
+    }
+  });
+});
+
 describe('entrada ruim', () => {
   it('sem --dir ou com agenda ilegível: sai com 1 e explica, sem rede', async () => {
     const a = await run(['--enviar', '--categorias-ligadas', 'pre-evento'], { env: ENV });

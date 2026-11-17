@@ -275,6 +275,7 @@ function problemasDoColetor(yml) {
 // Telegram (e só quando "Enviar de verdade?" está marcado), nenhum banco.
 const NOTIFICADOR = '.github/workflows/context-notify.yml';
 const ALERTADOR = '.github/workflows/context-alert.yml';
+const CONSENSO = '.github/workflows/context-consensus.yml';
 const SEGREDOS_DO_NOTIFICADOR = new Set(['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']);
 
 function problemasDoNotificador(yml) {
@@ -355,7 +356,7 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
   });
 
   it('nenhum outro workflow de contexto pede escrita', () => {
-    const outros = arquivosDoContexto().filter((rel) => rel.startsWith('.github/') && rel !== COLETOR && rel !== ALERTADOR);
+    const outros = arquivosDoContexto().filter((rel) => rel.startsWith('.github/') && rel !== COLETOR && rel !== ALERTADOR && rel !== CONSENSO);
     expect(outros.length).toBeGreaterThanOrEqual(1); // não-vacuidade: a sonda
     for (const rel of outros) {
       const codigo = readFileSync(join(ROOT, rel), 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
@@ -808,5 +809,95 @@ describe('tripwire: o aviso automático de 1 h antes só grava o registro, só f
     const comBanco = plantados.find((yml) => yml.includes('secrets.DATABASE_URL'));
     expect(comBanco, 'a variante com banco precisa existir').toBeDefined();
     expect(violacoes(ALERTADOR, comBanco).length).toBeGreaterThan(0);
+  });
+});
+
+// Fase 4b-4 (addendum 30): o botão "Registrar projeção do Contexto". Terceiro workflow de contexto com `contents: write` — e só para gravar `consensus.json` na branch pública
+// `context-data`. NENHUM segredo (nem o do Telegram), nenhuma variável, nenhum banco; só gatilho manual; o que o usuário digita entra SÓ por `env:`.
+const LINHA_COM_EXPRESSAO_DO_CONSENSO = /^(TIPO|DATA|PROJECAO|ANTERIOR):\s*\$\{\{ inputs\.(tipo|data|projecao|anterior) \}\}$/;
+const PUSH_DO_CONSENSO = /^\s*if git push origin HEAD:refs\/heads\/context-data; then\s*$/;
+const ADD_DO_CONSENSO = /^\s*git add consensus\.json\s*$/;
+
+function problemasDoConsenso(yml) {
+  const codigo = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  const linhas = codigo.split('\n');
+  const p = [];
+  if (!/permissions:\s*\n\s*contents:\s*write\s*\n/.test(codigo)) p.push('permissões: esperado só `contents: write`');
+  if ((codigo.match(/:\s*write\b/g) || []).length !== 1) p.push('permissões: há escrita além de `contents`');
+  // Só o botão manual: nada que outra pessoa ou o relógio possa acionar.
+  if (/^\s*(schedule|workflow_run|pull_request|pull_request_target|push|issue_comment|repository_dispatch):/m.test(codigo)) p.push('gatilho além do botão manual');
+  if (!/workflow_dispatch/.test(codigo)) p.push('sem disparo manual');
+  // Nenhum segredo e nenhuma variável de repositório.
+  if (/\bsecrets\b/.test(codigo)) p.push('usa `secrets` (este botão não precisa de segredo nenhum)');
+  if (/\bvars\./.test(codigo)) p.push('usa variável de repositório');
+  if (/TELEGRAM/.test(codigo)) p.push('Telegram (só o alertador e o notificador falam com o Telegram)');
+  // O que vai para a branch pública: só o registro, só em context-data, sem forçar.
+  const pushes = linhas.filter((l) => /\bgit\b.*\bpush\b/.test(l));
+  if (!pushes.length) p.push('nenhum git push (a regra abaixo ficaria vazia)');
+  for (const l of pushes) if (!PUSH_DO_CONSENSO.test(l)) p.push(`git push fora do permitido: ${l.trim()}`);
+  const adds = linhas.filter((l) => /\bgit\s+(?:-[A-Za-z]\s+\S+\s+)*add\b/.test(l));
+  if (!adds.length) p.push('nenhum git add');
+  for (const l of adds) if (!ADD_DO_CONSENSO.test(l)) p.push(`git add fora do permitido: ${l.trim()}`);
+  if (/--force|--force-with-lease|\s-f\b|\+HEAD/.test(codigo)) p.push('push forçado');
+  // Entrada só por `env:` — nunca dentro do texto de um `run:` (injeção de comando: o usuário digita texto livre).
+  for (const l of linhas.filter((x) => /\$\{\{/.test(x))) if (!LINHA_COM_EXPRESSAO_DO_CONSENSO.test(l.trim())) p.push(`expressão fora de um env: ${l.trim()}`);
+  for (const l of linhas.filter((x) => /\binputs\./.test(x))) if (!LINHA_COM_EXPRESSAO_DO_CONSENSO.test(l.trim())) p.push(`entrada fora de um env: ${l.trim()}`);
+  if (!/node scripts\/context-consensus\.mjs --dir data --tipo "\$TIPO" --data "\$DATA" --projecao "\$PROJECAO" --anterior "\$ANTERIOR"/.test(codigo)) p.push('o script precisa receber a entrada só pelas variáveis entre aspas');
+  if (!/timeout-minutes:\s*\d+/.test(codigo)) p.push('sem timeout-minutes');
+  return p;
+}
+
+describe('tripwire: o "Registrar projeção" só grava o consensus.json, sem segredo, sem banco, só manual e com a entrada só por env (item 285, addendum 30)', () => {
+  const real = readFileSync(join(ROOT, CONSENSO), 'utf8');
+
+  it('context-consensus.yml segue as regras', () => {
+    expect(problemasDoConsenso(real)).toEqual([]);
+  });
+
+  it('não-vacuidade: o workflow e os scripts são achados como arquivos do contexto (as regras globais de banco/Firebase/motor os cobrem)', () => {
+    expect(arquivosDoContexto()).toContain(CONSENSO);
+    expect(arquivosDoContexto()).toContain('scripts/contextConsensus.mjs');
+    expect(arquivosDoContexto()).toContain('scripts/context-consensus.mjs');
+  });
+
+  it('o registro só é gravado depois da trava do formato público (serializeConsensus chama assertPublicConsensus)', () => {
+    expect(readFileSync(join(ROOT, 'scripts/contextConsensus.mjs'), 'utf8')).toMatch(/export const serializeConsensus = [^\n]*assertPublicConsensus/);
+    expect(readFileSync(join(ROOT, 'scripts/context-consensus.mjs'), 'utf8')).toMatch(/fs\.writeFileSync\(tmp, texto\)/);
+  });
+
+  it('prova: pega gatilho de relógio/PR, segredo, variável, Telegram, escrita a mais, push de outra branch ou forçado, add largo, entrada no texto do run e script sem aspas', () => {
+    const push = 'if git push origin HEAD:refs/heads/context-data; then';
+    expect(real).toContain(push);
+    const outra = ['refs/heads', 'outra'].join('/'); // (o nome da branch é montado por partes: o hook de proteção do repositório lê o texto dos comandos)
+    const adicionar = 'git add consensus.json';
+    const rodar = 'node scripts/context-consensus.mjs --dir data --tipo "$TIPO" --data "$DATA" --projecao "$PROJECAO" --anterior "$ANTERIOR"';
+    expect(real).toContain(rodar);
+    const plantados = [
+      real.replace('on:\n  workflow_dispatch:', "on:\n  schedule:\n    - cron: '0 * * * *'\n  workflow_dispatch:"),
+      real.replace('on:\n  workflow_dispatch:', 'on:\n  pull_request:\n  workflow_dispatch:'),
+      real.replace('on:\n  workflow_dispatch:', 'on:\n  workflow_run:\n    workflows: ["Scheduled scan"]\n    types: [completed]\n  workflow_dispatch:'),
+      real.replace('permissions:\n  contents: write', 'permissions:\n  contents: write\n  pull-requests: write'),
+      real.replace('permissions:\n  contents: write', 'permissions:\n  contents: read'),
+      real.replace('TIPO: ${{ inputs.tipo }}', 'TIPO: ${{ inputs.tipo }}\n          X: ${{ secrets.TELEGRAM_BOT_TOKEN }}'),
+      real.replace('TIPO: ${{ inputs.tipo }}', 'TIPO: ${{ inputs.tipo }}\n          D: ${{ secrets.DATABASE_URL }}'),
+      real.replace('TIPO: ${{ inputs.tipo }}', 'TIPO: ${{ inputs.tipo }}\n          V: ${{ vars.CONTEXT_TELEGRAM_CATEGORIES }}'),
+      real.replace(push, `if git push origin HEAD:${outra}; then`),
+      real.replace(push, 'if git push --force origin HEAD:refs/heads/context-data; then'),
+      real.replace(push, 'if git push origin +HEAD:refs/heads/context-data; then'),
+      real.replace(adicionar, 'git add .'),
+      real.replace(adicionar, `${adicionar} events.json`),
+      real.replace(adicionar, `${adicionar}\n          git -C . add -A`),
+      real.replace(rodar, 'node scripts/context-consensus.mjs --dir data --tipo "${{ inputs.tipo }}" --projecao "${{ inputs.projecao }}"'),
+      real.replace(rodar, 'node scripts/context-consensus.mjs --dir data --tipo $TIPO --data $DATA --projecao $PROJECAO --anterior $ANTERIOR'),
+      real.replace('node scripts/context-consensus.mjs', 'echo sem registro'),
+      real.replace('timeout-minutes: 5', ''),
+    ];
+    plantados.forEach((yml, i) => {
+      expect(yml, `variante plantada nº ${i} não mudou o arquivo`).not.toBe(real);
+      expect(problemasDoConsenso(yml).length, `variante plantada nº ${i}`).toBeGreaterThan(0);
+    });
+    // Banco plantado também cai na regra global do contexto.
+    const comBanco = plantados.find((yml) => yml.includes('secrets.DATABASE_URL'));
+    expect(violacoes(CONSENSO, comBanco).length).toBeGreaterThan(0);
   });
 });

@@ -17,6 +17,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isCategoryEnabled, readEvents, buildPreEventBriefing, buildResultMessage } from './contextMessages.mjs';
 import { loadReactions, loadMovesSince, summarizeReactions, readHistoryFile } from './contextBtcHistory.mjs';
+import { CONSENSUS_FILE, parseConsensus, consensusFor } from './contextConsensus.mjs';
 import { sendTelegram, describeSendFailure } from './contextTelegram.mjs';
 import { SENT_FILE, pickDueEvents, pickDueResults, parseSent, markSent, serializeSent, alertKey } from './contextAlert.mjs';
 
@@ -87,12 +88,17 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   // As mensagens completas (addenda 27 e 28) usam o que o BTC fez nas divulgações do mesmo tipo e desde a divulgação: velas da Binance (sem chave).
   // Falha de rede vira "sem dado" naquela linha — o aviso NUNCA deixa de sair por causa do preço.
   const history = readHistoryFile(dir);
+  // A projeção que o usuário registrou no botão "Registrar projeção do Contexto" (addendum 30); ausente/ilegível = nenhuma.
+  let consensusState = null;
+  try { consensusState = JSON.parse(fs.readFileSync(path.join(dir, CONSENSUS_FILE), 'utf8')); } catch { consensusState = null; }
+  const consensusOf = (event) => consensusFor(parseConsensus(consensusState, nowMs), event, nowMs);
   const categoryOf = ({ phase }) => (phase === 'pre' ? 'pre-evento' : 'resultado');
   const compose = async ({ event, phase }) => {
     const rows = await loadReactions({ kind: event.kind, history, fetchImpl, env: {}, sleep });
-    if (phase === 'pre') return buildPreEventBriefing(event, nowMs, { reactions: rows });
+    const consensus = consensusOf(event);
+    if (phase === 'pre') return buildPreEventBriefing(event, nowMs, { reactions: rows, consensus });
     const moves = await loadMovesSince({ t0Ms: event.startMs, nowMs, fetchImpl, env: {}, sleep });
-    return buildResultMessage(event, nowMs, { moves, typical: rows.length ? summarizeReactions(rows) : null });
+    return buildResultMessage(event, nowMs, { moves, typical: rows.length ? summarizeReactions(rows) : null, consensus });
   };
 
   if (!enviar) {
