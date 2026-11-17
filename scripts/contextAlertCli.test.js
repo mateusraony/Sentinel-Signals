@@ -56,7 +56,7 @@ describe('envio (--enviar)', () => {
     for (const ligadas of ['nenhuma', 'agenda']) {
       const r = await run(['--dir', dir, '--enviar', '--categorias-ligadas', ligadas], { env: ENV });
       expect(r.code).toBe(0);
-      expect(r.texto).toContain('Categoria desligada');
+      expect(r.texto).toContain('desligada');
       expect(r.texto).toContain('CONTEXT_TELEGRAM_CATEGORIES');
       expect(r.fetchImpl).not.toHaveBeenCalled();
       expect(fs.existsSync(sentFile())).toBe(false);
@@ -84,7 +84,7 @@ describe('envio (--enviar)', () => {
     const r2 = await run(['--dir', dir, '--enviar', '--categorias-ligadas', 'pre-evento'], { env: ENV, now: NOW + 15 * 60 * 1000 });
     expect(r2.code).toBe(0);
     expect(r2.fetchImpl).not.toHaveBeenCalled();
-    expect(r2.texto).toContain('nada a enviar');
+    expect(r2.texto).toContain('Nada a enviar agora');
   });
 
   it('a mensagem enviada é só fato (evento, hora, situação), sem previsão e sem operações', async () => {
@@ -198,6 +198,84 @@ describe('o aviso completo: com o histórico das divulgações passadas (addendu
     expect(r.texto).toContain('+0,80%');
     expect(fetchImpl.mock.calls.some(([u]) => String(u).startsWith('https://api.telegram.org/'))).toBe(false);
     expect(fs.existsSync(sentFile())).toBe(false);
+  });
+});
+
+describe('o aviso de resultado (addendum 28)', () => {
+  const MIN = 60 * 1000;
+  const T0 = Date.parse('2026-12-10T13:30:00.000Z');
+  const AFTER = T0 + 30 * MIN;
+  const RESULTADO = [{
+    id: 'CPI-2026-12-10', kind: 'CPI', reference: '2026-11', startsAtUtc: '2026-12-10T13:30:00.000Z', status: 'oficial',
+    firstSeenAt: '2026-10-31T12:00:00.000Z', lastChangedAt: '2026-12-10T13:40:00.000Z',
+    values: { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,2% m/m · +3,1% a/a', source: 'BLS' },
+  }];
+  const candles = JSON.stringify(Array.from({ length: 31 }, (_, i) => {
+    const t = T0 + (i - 1) * MIN;
+    const c = i === 0 ? 100 : 100 + i * 0.01;
+    return [t, String(c), String(c), String(c), String(c), '1', t + 59999];
+  }));
+  const router = () => vi.fn(async (url) => (String(url).startsWith('https://api.telegram.org/')
+    ? { ok: true, status: 200 }
+    : { ok: true, status: 200, text: async () => candles }));
+  const go = (fetchImpl, argv, now = AFTER) => { saida = []; return main(argv, ENV, { fetchImpl, now: () => now, sleep: async () => {} }).then((code) => ({ code, texto: saida.join('\n') })); };
+  const telegramBodies = (f) => f.mock.calls.filter(([u]) => String(u).startsWith('https://api.telegram.org/')).map(([, init]) => JSON.parse(init.body).text);
+  beforeEach(() => { fs.writeFileSync(path.join(dir, 'events.json'), JSON.stringify(RESULTADO)); });
+
+  it('30 min depois da divulgação, com o número do BLS: envia o resultado com o BTC, registra `:post` e NÃO repete na passada seguinte', async () => {
+    const f = router();
+    const r = await go(f, ['--dir', dir, '--enviar', '--categorias-ligadas', '']);
+    expect(r.code).toBe(0);
+    const msgs = telegramBodies(f);
+    expect(msgs.length).toBe(1);
+    expect(msgs[0]).toContain('CPI — saiu o resultado');
+    expect(msgs[0]).toContain('abaixo do anterior');
+    expect(msgs[0]).toContain('BTC desde a divulgação:</b> 5 min +0,05% · 30 min +0,30% · 60 min ainda não passou');
+    expect(JSON.parse(fs.readFileSync(sentFile(), 'utf8')).sent).toEqual({ 'CPI-2026-12-10:post': new Date(AFTER).toISOString() });
+    const f2 = router();
+    const r2 = await go(f2, ['--dir', dir, '--enviar', '--categorias-ligadas', ''], AFTER + 15 * MIN);
+    expect(r2.texto).toContain('Nada a enviar agora');
+    expect(telegramBodies(f2).length).toBe(0);
+  });
+
+  it('antes dos 5 min ou sem o número do BLS (e menos de 2 h): ainda não avisa', async () => {
+    const f = router();
+    expect((await go(f, ['--dir', dir, '--enviar', '--categorias-ligadas', ''], T0 + 4 * MIN)).texto).toContain('Nada a enviar agora');
+    fs.writeFileSync(path.join(dir, 'events.json'), JSON.stringify([{ ...RESULTADO[0], values: null }]));
+    expect((await go(f, ['--dir', dir, '--enviar', '--categorias-ligadas', ''], T0 + 60 * MIN)).texto).toContain('Nada a enviar agora');
+    expect(telegramBodies(f).length).toBe(0);
+  });
+
+  it('lista que liga só `pre-evento`: o resultado fica de fora (não envia e NÃO registra, para poder enviar se a categoria for ligada depois)', async () => {
+    const f = router();
+    const r = await go(f, ['--dir', dir, '--enviar', '--categorias-ligadas', 'pre-evento']);
+    expect(r.texto).toContain('Categoria `resultado` desligada');
+    expect(telegramBodies(f).length).toBe(0);
+    expect(fs.existsSync(sentFile())).toBe(false);
+  });
+
+  it('a simulação mostra a mensagem do resultado sem enviar nem registrar', async () => {
+    const f = router();
+    const r = await go(f, ['--dir', dir, '--categorias-ligadas', '']);
+    expect(r.texto).toContain('CPI-2026-12-10:post');
+    expect(r.texto).toContain('saiu o resultado');
+    expect(telegramBodies(f).length).toBe(0);
+    expect(fs.existsSync(sentFile())).toBe(false);
+  });
+
+  it('o preço fora do ar NÃO impede o aviso do resultado (BTC "indisponível agora")', async () => {
+    const f = vi.fn(async (url) => (String(url).startsWith('https://api.telegram.org/') ? { ok: true, status: 200 } : { ok: false, status: 500, text: async () => '' }));
+    const r = await go(f, ['--dir', dir, '--enviar', '--categorias-ligadas', '']);
+    expect(r.code).toBe(0);
+    expect(telegramBodies(f)[0]).toContain('BTC desde a divulgação:</b> indisponível agora');
+  });
+
+  it('o aviso de antes e o de resultado de eventos diferentes saem na MESMA passada, cada um com a sua chave', async () => {
+    const antes = { ...RESULTADO[0], id: 'FOMC-2026-12-10', kind: 'FOMC', startsAtUtc: '2026-12-10T14:30:00.000Z', values: null };
+    fs.writeFileSync(path.join(dir, 'events.json'), JSON.stringify([RESULTADO[0], antes]));
+    const f = router();
+    await go(f, ['--dir', dir, '--enviar', '--categorias-ligadas', ''], Date.parse('2026-12-10T13:35:00.000Z'));
+    expect(Object.keys(JSON.parse(fs.readFileSync(sentFile(), 'utf8')).sent).sort()).toEqual(['CPI-2026-12-10:post', 'FOMC-2026-12-10:pre']);
   });
 });
 

@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   PRE_ALERT_FROM_MS, PRE_ALERT_TO_MS, SENT_KEEP_MS, SENT_MAX_ENTRIES, alertKey, parseSent, pickDueEvents, markSent, assertPublicSent, serializeSent,
+  pickDueResults, RESULT_AFTER_ACTUAL_MS, RESULT_BLS_WAIT_MS, RESULT_NO_NUMBER_AFTER_MS, RESULT_MAX_AFTER_MS,
 } from './contextAlert.mjs';
 
 const MIN = 60 * 1000;
@@ -115,5 +116,63 @@ describe('trava do conteúdo público', () => {
       { version: 1, sent: Object.fromEntries(Array.from({ length: SENT_MAX_ENTRIES + 1 }, (_, i) => [`CPI-2026-01-${String(i).padStart(2, '0')}:pre`, '2026-11-10T12:00:00.000Z'])) },
     ];
     for (const r of ruins) expect(() => assertPublicSent(r), JSON.stringify(r)?.slice(0, 80)).toThrow(/alerts-sent\.json/);
+  });
+});
+
+// Fase 4b-3 (addendum 28): quando avisar o RESULTADO.
+describe('pickDueResults: o resultado, depois da divulgação', () => {
+  const after = (min, over = {}) => ev({ startMs: NOW - min * MIN, ...over });
+  const COM_NUMERO = { values: { previous: '+0,3% m/m', actual: '+0,2% m/m', source: 'BLS' } };
+
+  it('com o "Atual" do BLS: avisa a partir de 5 min depois (inclusive) e até 6 h', () => {
+    for (const min of [5, 6, 30, 120, 360]) expect(pickDueResults([after(min, COM_NUMERO)], NOW).length, `${min} min`).toBe(1);
+    for (const min of [4, 0, -10, 361, 1440]) expect(pickDueResults([after(min, COM_NUMERO)], NOW).length, `${min} min`).toBe(0);
+    expect([RESULT_AFTER_ACTUAL_MS, RESULT_MAX_AFTER_MS]).toEqual([5 * MIN, 360 * MIN]);
+  });
+
+  it('CPI/PPI/Payroll SEM o número ainda: espera o BLS até 2 h; passado isso avisa só com o BTC', () => {
+    expect(pickDueResults([after(60)], NOW).length).toBe(0);
+    expect(pickDueResults([after(119)], NOW).length).toBe(0);
+    expect(pickDueResults([after(120)], NOW).length).toBe(1);
+    expect(RESULT_BLS_WAIT_MS).toBe(120 * MIN);
+    for (const kind of ['PPI', 'NFP']) expect(pickDueResults([after(130, { kind, id: `${kind}-2026-11-10` })], NOW).length).toBe(1);
+  });
+
+  it('PCE e FOMC (sem número oficial coletado): avisa depois de 35 min', () => {
+    for (const kind of ['PCE', 'FOMC']) {
+      expect(pickDueResults([after(34, { kind, id: `${kind}-2026-11-10` })], NOW).length, `${kind} 34`).toBe(0);
+      expect(pickDueResults([after(35, { kind, id: `${kind}-2026-11-10` })], NOW).length, `${kind} 35`).toBe(1);
+    }
+    expect(RESULT_NO_NUMBER_AFTER_MS).toBe(35 * MIN);
+  });
+
+  it('só data firme; a_confirmar nunca', () => {
+    expect(pickDueResults([after(30, { ...COM_NUMERO, status: 'a_confirmar' })], NOW).length).toBe(0);
+    expect(pickDueResults([after(30, { ...COM_NUMERO, status: 'confirmada' })], NOW).length).toBe(1);
+  });
+
+  it('o registro `post` é independente do `pre`: avisar antes não impede o resultado, e avisar o resultado não repete', () => {
+    const e = after(30, COM_NUMERO);
+    const soPre = markSent(undefined, e, NOW, 'pre');
+    expect(pickDueResults([e], NOW, soPre).length).toBe(1);
+    const comPost = markSent(soPre, e, NOW, 'post');
+    expect(pickDueResults([e], NOW, comPost).length).toBe(0);
+    expect(Object.keys(comPost.sent).sort()).toEqual(['CPI-2026-11-10:post', 'CPI-2026-11-10:pre']);
+    expect(alertKey(e, 'post')).toBe('CPI-2026-11-10:post');
+    expect(alertKey(e)).toBe('CPI-2026-11-10:pre');
+  });
+
+  it('o registro `post` também passa pela trava pública e pelo parse; fase inventada não', () => {
+    const ok = { version: 1, sent: { 'CPI-2026-11-10:post': '2026-11-10T14:00:00.000Z' } };
+    expect(() => assertPublicSent(ok)).not.toThrow();
+    expect(parseSent(ok).sent).toEqual(ok.sent);
+    expect(() => assertPublicSent({ version: 1, sent: { 'CPI-2026-11-10:resultado': '2026-11-10T14:00:00.000Z' } })).toThrow(/alerts-sent\.json/);
+    expect(parseSent({ version: 1, sent: { 'CPI-2026-11-10:xyz': '2026-11-10T14:00:00.000Z' } }).sent).toEqual({});
+  });
+
+  it('vários: do mais antigo ao mais novo; lixo é ignorado', () => {
+    const lista = [after(30, { ...COM_NUMERO, id: 'PPI-2026-11-10', kind: 'PPI', startMs: NOW - 30 * MIN }), after(90, { ...COM_NUMERO, id: 'NFP-2026-11-10', kind: 'NFP' }), null, {}, 7];
+    expect(pickDueResults(lista, NOW).map((e) => e.id)).toEqual(['NFP-2026-11-10', 'PPI-2026-11-10']);
+    expect(pickDueResults('x', NOW)).toEqual([]);
   });
 });

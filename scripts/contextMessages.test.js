@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   CATEGORIES, NEUTRAL_NOTE, parseCategories, isCategoryEnabled, readEvents, escapeHtml,
-  buildTestMessage, buildAgendaMessage, nextAlertableEvent, buildPreEventMessage, buildPreEventBriefing, buildReactionBlock, formatPct,
+  buildTestMessage, buildAgendaMessage, nextAlertableEvent, buildPreEventMessage, buildPreEventBriefing, buildReactionBlock, formatPct, buildResultMessage, AUTOMATIC_ONLY, DEFAULT_CATEGORIES,
 } from './contextMessages.mjs';
 
 const NOW = Date.parse('2026-11-05T12:00:00.000Z');
@@ -202,5 +202,77 @@ describe('buildReactionBlock: os três estados do histórico', () => {
   it('todas sem dado: nenhuma linha de resumo (não inventa mediana)', () => {
     const tudo = buildReactionBlock('CPI', [{ date: '2026-10-24', reaction: null }]).join('\n');
     expect(tudo).not.toContain('Tamanho mediano');
+  });
+});
+
+// Fase 4b-3 (addendum 28): o aviso de resultado.
+describe('buildResultMessage: o resultado e o BTC desde a divulgação', () => {
+  const COM = readEvents([{ ...ev('CPI-2026-12-10', 'CPI', '2026-12-10T13:30:00.000Z'), reference: '2026-11', values: { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,2% m/m · +3,1% a/a', revised: '+0,4% m/m', source: 'BLS' } }])[0];
+  const AFTER = Date.parse('2026-12-10T14:10:00.000Z');
+  const moves = { 5: -0.1, 30: 0.25, 60: null };
+  const typical = { n: 3, medAbs60: 0.4 };
+  const texto = buildResultMessage(COM, AFTER, { moves, typical });
+
+  it('traz o Atual de cada medida com o Anterior e "acima/abaixo do anterior" como fato sobre os dois números', () => {
+    expect(texto).toContain('<b>CPI — saiu o resultado</b>');
+    expect(texto).toContain('No mês: <b>+0,2%</b> (anterior +0,3%) — abaixo do anterior');
+    expect(texto).toContain('Em 12 meses: <b>+3,1%</b> (anterior +3,0%) — acima do anterior');
+    expect(texto).toContain('mês anterior revisado para +0,4%');
+    expect(texto).toContain('Fonte dos números: BLS.');
+  });
+
+  it('o BTC desde a divulgação: cada prazo com seu valor ou "ainda não passou"; e o tamanho típico das últimas divulgações', () => {
+    expect(texto).toContain('<b>BTC desde a divulgação:</b> 5 min −0,10% · 30 min +0,25% · 60 min ainda não passou');
+    expect(texto).toContain('Nas últimas 3 divulgações de CPI, o tamanho mediano do movimento em 1 h foi 0,40%.');
+  });
+
+  it('não chama de surpresa: diz que sem a projeção do mercado isso não dá para dizer', () => {
+    expect(texto).toContain('Sem a projeção do mercado (dado pago) não dá para dizer se o número foi surpresa.');
+    expect(texto.trimEnd().endsWith(NEUTRAL_NOTE)).toBe(true);
+  });
+
+  it('BLS sem o número, PCE/FOMC e fonte de preços fora do ar: cada um diz a sua verdade', () => {
+    const semNumero = buildResultMessage({ ...COM, values: undefined }, AFTER, { moves, typical: null });
+    expect(semNumero).toContain('O número oficial do BLS ainda não chegou ao sistema');
+    expect(semNumero).not.toContain('Fonte dos números');
+    expect(semNumero).not.toContain('Nas últimas');
+    const pce = buildResultMessage({ ...COM, kind: 'PCE', values: undefined }, AFTER, { moves, typical: null });
+    expect(pce).toContain('Este tipo não tem número oficial coletado automaticamente');
+    const semPreco = buildResultMessage(COM, AFTER, { moves: null, typical: null });
+    expect(semPreco).toContain('BTC desde a divulgação:</b> indisponível agora');
+  });
+
+  it('1 divulgação anterior só: singular', () => {
+    expect(buildResultMessage(COM, AFTER, { moves, typical: { n: 1, medAbs60: 0.2 } })).toContain('Na última divulgação de CPI');
+  });
+
+  it('TEXTO NEUTRO em todas as variações (sem probabilidade, compra, venda, recomendação, "vai subir/cair")', () => {
+    const variacoes = [
+      texto,
+      buildResultMessage({ ...COM, values: undefined }, AFTER, { moves: null }),
+      buildResultMessage({ ...COM, kind: 'FOMC', values: undefined }, AFTER),
+      buildResultMessage(COM, AFTER, { moves: { 5: null, 30: null, 60: null }, typical }),
+    ];
+    for (const m of variacoes) {
+      expect(m).not.toMatch(PROIBIDO);
+      expect(m.length).toBeLessThan(1800);
+    }
+  });
+
+  it('o que vem de arquivo público é escapado', () => {
+    const m = buildResultMessage({ ...COM, values: { ...COM.values, actual: '<i>&x</i> m/m' } }, AFTER, { moves });
+    expect(m).not.toContain('<i>');
+  });
+});
+
+describe('categoria "resultado"', () => {
+  it('só existe no envio automático (não está no botão manual) e vem ligada por padrão junto com o aviso de antes', () => {
+    expect(AUTOMATIC_ONLY).toContain('resultado');
+    expect(CATEGORIES).not.toContain('resultado');
+    expect([...DEFAULT_CATEGORIES].sort()).toEqual(['pre-evento', 'resultado']);
+    expect(isCategoryEnabled('resultado', '')).toBe(true);
+    expect(isCategoryEnabled('resultado', 'pre-evento')).toBe(false); // lista: só o listado
+    expect(isCategoryEnabled('resultado', 'resultado')).toBe(true);
+    expect(isCategoryEnabled('resultado', 'nenhuma')).toBe(false);
   });
 });

@@ -24,12 +24,12 @@ export const SENT_KEEP_MS = 30 * DAY_MS;
 /** Teto de entradas (defesa: o arquivo é pequeno por construção — 1 aviso por evento, ~2 eventos por semana). */
 export const SENT_MAX_ENTRIES = 200;
 
-const KEY_RE = /^[A-Z]+-\d{4}-\d{2}-\d{2}:pre$/;
+const KEY_RE = /^[A-Z]+-\d{4}-\d{2}-\d{2}:(pre|post)$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const FIRM = new Set(Object.keys(STATUS_LABELS).filter((s) => s !== 'a_confirmar'));
 
-/** A chave do "já avisei" de um evento (o id traz o tipo e a data; remarcar a data muda o id, então é um aviso novo). */
-export const alertKey = (event) => `${event.id}:pre`;
+/** A chave do "já avisei" de um evento e fase — `pre` (1 h antes) ou `post` (resultado). O id traz o tipo e a data; remarcar a data muda o id, então é um aviso novo. */
+export const alertKey = (event, phase = 'pre') => `${event.id}:${phase}`;
 
 const emptyState = () => ({ version: SENT_VERSION, sent: {} });
 
@@ -60,18 +60,18 @@ export function pickDueEvents(events, nowMs, sent = emptyState()) {
     .sort((a, b) => (a.startMs === b.startMs ? String(a.id).localeCompare(String(b.id)) : a.startMs - b.startMs));
 }
 
-/** O registro com `event` marcado como avisado em `nowMs`; entradas com mais de 30 dias saem (e o teto é respeitado). Não muda o original. */
-export function markSent(state, event, nowMs) {
+/** O registro com `event` marcado como avisado (fase `pre` ou `post`) em `nowMs`; entradas com mais de 30 dias saem (e o teto é respeitado). Não muda o original. */
+export function markSent(state, event, nowMs, phase = 'pre') {
   const base = parseSent(state).sent;
   const next = {};
   for (const [key, at] of Object.entries(base)) if (nowMs - Date.parse(at) <= SENT_KEEP_MS) next[key] = at;
-  next[alertKey(event)] = new Date(nowMs).toISOString();
+  next[alertKey(event, phase)] = new Date(nowMs).toISOString();
   const keep = Object.entries(next).sort((a, b) => b[1].localeCompare(a[1]) || a[0].localeCompare(b[0])).slice(0, SENT_MAX_ENTRIES);
   return { version: SENT_VERSION, sent: Object.fromEntries(keep.sort((a, b) => a[0].localeCompare(b[0]))) };
 }
 
 /**
- * Trava do conteúdo PÚBLICO (a branch `context-data` é legível por qualquer pessoa): só `version` e `sent` (chave "TIPO-AAAA-MM-DD:pre" →
+ * Trava do conteúdo PÚBLICO (a branch `context-data` é legível por qualquer pessoa): só `version` e `sent` (chave "TIPO-AAAA-MM-DD:pre|post" →
  * instante ISO). Nada de texto livre, mensagem, chat, erro ou segredo. Lança se o formato fugir.
  */
 export function assertPublicSent(state) {
@@ -91,3 +91,31 @@ export function assertPublicSent(state) {
 
 /** O texto exato gravado no arquivo (chaves em ordem, 2 espaços, quebra de linha final). */
 export const serializeSent = (state) => `${JSON.stringify(assertPublicSent(state), null, 2)}\n`;
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Fase 4b-3 (addendum 28): o aviso de DEPOIS — o resultado e o que o BTC fez desde a divulgação.
+/** Com o "Atual" do BLS no arquivo, avisa assim que passaram 5 min da divulgação (já existe o movimento de +5 min). */
+export const RESULT_AFTER_ACTUAL_MS = 5 * MIN_MS;
+/** BLS sem o "Atual" ainda: espera até 2 h; passado isso avisa só com o BTC e diz que o número oficial não chegou. */
+export const RESULT_BLS_WAIT_MS = 120 * MIN_MS;
+/** PCE e FOMC não têm número oficial coletado: avisa depois de 35 min (já existe o movimento de +30 min). */
+export const RESULT_NO_NUMBER_AFTER_MS = 35 * MIN_MS;
+/** Depois disto o aviso de resultado já não faz sentido (o resumo do dia cobre). */
+export const RESULT_MAX_AFTER_MS = 6 * 60 * MIN_MS;
+const HAS_OFFICIAL_NUMBER = new Set(['CPI', 'PPI', 'NFP']);
+
+/** Eventos que pedem o aviso de RESULTADO agora: data firme, já começou, dentro da janela de cada caso e sem registro `post`. Do mais antigo ao mais novo. */
+export function pickDueResults(events, nowMs, sent = emptyState()) {
+  const registry = parseSent(sent).sent;
+  return (Array.isArray(events) ? events : [])
+    .filter((e) => e && typeof e.id === 'string' && Number.isFinite(e.startMs) && FIRM.has(e.status))
+    .filter((e) => {
+      const depois = nowMs - e.startMs;
+      if (depois > RESULT_MAX_AFTER_MS) return false;
+      if (e.values?.actual) return depois >= RESULT_AFTER_ACTUAL_MS;
+      if (HAS_OFFICIAL_NUMBER.has(e.kind)) return depois >= RESULT_BLS_WAIT_MS;
+      return depois >= RESULT_NO_NUMBER_AFTER_MS;
+    })
+    .filter((e) => !Object.prototype.hasOwnProperty.call(registry, alertKey(e, 'post')))
+    .sort((a, b) => (a.startMs === b.startMs ? String(a.id).localeCompare(String(b.id)) : a.startMs - b.startMs));
+}

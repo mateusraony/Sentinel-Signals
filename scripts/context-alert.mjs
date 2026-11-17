@@ -15,10 +15,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { isCategoryEnabled, readEvents, buildPreEventBriefing } from './contextMessages.mjs';
-import { loadReactions, readHistoryFile } from './contextBtcHistory.mjs';
+import { isCategoryEnabled, readEvents, buildPreEventBriefing, buildResultMessage } from './contextMessages.mjs';
+import { loadReactions, loadMovesSince, summarizeReactions, readHistoryFile } from './contextBtcHistory.mjs';
 import { sendTelegram, describeSendFailure } from './contextTelegram.mjs';
-import { SENT_FILE, pickDueEvents, parseSent, markSent, serializeSent, alertKey } from './contextAlert.mjs';
+import { SENT_FILE, pickDueEvents, pickDueResults, parseSent, markSent, serializeSent, alertKey } from './contextAlert.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -61,7 +61,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   const enviar = args.enviar === true;
   const ligadas = typeof args['categorias-ligadas'] === 'string' ? args['categorias-ligadas'] : String(env.CATEGORIAS_LIGADAS ?? '');
   const dir = typeof args.dir === 'string' ? args.dir : '';
-  const out = ['## Aviso automático do Contexto — 1 hora antes do evento', ''];
+  const out = ['## Aviso automático do Contexto — antes e depois do evento', ''];
 
   const loaded = dir ? loadEvents(dir) : { error: 'falta --dir (pasta da branch context-data)' };
   if (loaded.error) {
@@ -72,43 +72,57 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
 
   const nowMs = now();
   const { state, fresh } = loadSent(dir);
-  const due = pickDueEvents(loaded.events, nowMs, state);
-  if (!due.length) {
-    out.push('Nenhum evento com data firme entre 45 e 75 minutos à frente (ou já avisado): nada a enviar.');
+  // Duas fases: `pre` (1 h antes) e `post` (o resultado depois da divulgação, addendum 28). Cada uma é uma categoria que se liga/desliga à parte.
+  const items = [
+    ...pickDueEvents(loaded.events, nowMs, state).map((event) => ({ event, phase: 'pre' })),
+    ...pickDueResults(loaded.events, nowMs, state).map((event) => ({ event, phase: 'post' })),
+  ];
+  if (!items.length) {
+    out.push('Nada a enviar agora: nenhum evento de data firme entre 45 e 75 minutos à frente e nenhum resultado pendente de aviso (ou já avisados).');
     console.log(out.join('\n'));
     return 0;
   }
   if (fresh) out.push('_Ainda não havia registro de avisos enviados (primeira vez, ou arquivo ilegível)._', '');
 
-  // A mensagem completa (addendum 27) inclui o que o BTC fez nas últimas divulgações do mesmo tipo: busca as velas na Binance (sem chave).
-  // Falha de rede vira "sem dado" naquela linha — o aviso NUNCA deixa de sair por causa do histórico.
+  // As mensagens completas (addenda 27 e 28) usam o que o BTC fez nas divulgações do mesmo tipo e desde a divulgação: velas da Binance (sem chave).
+  // Falha de rede vira "sem dado" naquela linha — o aviso NUNCA deixa de sair por causa do preço.
   const history = readHistoryFile(dir);
-  const compose = async (event) => buildPreEventBriefing(event, nowMs, { reactions: await loadReactions({ kind: event.kind, history, fetchImpl, env: {}, sleep }) });
+  const categoryOf = ({ phase }) => (phase === 'pre' ? 'pre-evento' : 'resultado');
+  const compose = async ({ event, phase }) => {
+    const rows = await loadReactions({ kind: event.kind, history, fetchImpl, env: {}, sleep });
+    if (phase === 'pre') return buildPreEventBriefing(event, nowMs, { reactions: rows });
+    const moves = await loadMovesSince({ t0Ms: event.startMs, nowMs, fetchImpl, env: {}, sleep });
+    return buildResultMessage(event, nowMs, { moves, typical: rows.length ? summarizeReactions(rows) : null });
+  };
 
-  const ligada = isCategoryEnabled('pre-evento', ligadas);
-  if (!enviar || !ligada) {
-    for (const event of due) out.push(`Evento \`${alertKey(event)}\` — mensagem:`, '', '```', await compose(event), '```', '');
-    out.push(enviar
-      ? '**Categoria desligada — nada foi enviado.** Para ligar de novo, apague a variável de repositório `CONTEXT_TELEGRAM_CATEGORIES` (vazia = ligado) ou ponha `pre-evento` nela. O valor `nenhuma` desliga.'
-      : '**Simulação — nada foi enviado nem registrado.** O aviso automático está ligado por padrão (desligue com o valor `nenhuma` na variável `CONTEXT_TELEGRAM_CATEGORIES`).');
+  if (!enviar) {
+    for (const item of items) out.push(`\`${alertKey(item.event, item.phase)}\` — mensagem:`, '', '```', await compose(item), '```', '');
+    out.push('**Simulação — nada foi enviado nem registrado.** Os avisos automáticos estão ligados por padrão (desligue com o valor `nenhuma` na variável `CONTEXT_TELEGRAM_CATEGORIES`).');
     console.log(out.join('\n'));
     return 0;
   }
 
   let current = state;
   let falhou = false;
-  for (const event of due) {
-    const text = await compose(event);
-    const result = await sendTelegram({ text, env, fetchImpl });
+  let desligadas = 0;
+  for (const item of items) {
+    const chave = alertKey(item.event, item.phase);
+    if (!isCategoryEnabled(categoryOf(item), ligadas)) {
+      out.push(`Categoria \`${categoryOf(item)}\` desligada: \`${chave}\` não foi enviado.`);
+      desligadas += 1;
+      continue;
+    }
+    const result = await sendTelegram({ text: await compose(item), env, fetchImpl });
     if (!result.ok) {
-      out.push(`**Não enviada** (\`${alertKey(event)}\`): ${describeSendFailure(result.reason)}. A próxima passada tenta de novo.`);
+      out.push(`**Não enviada** (\`${chave}\`): ${describeSendFailure(result.reason)}. A próxima passada tenta de novo.`);
       falhou = true;
       break;
     }
-    current = markSent(current, event, nowMs);
+    current = markSent(current, item.event, nowMs, item.phase);
     saveSent(dir, current); // grava a cada envio: se o próximo falhar, este já fica registrado
-    out.push(`**Enviada ao Telegram:** \`${alertKey(event)}\`.`);
+    out.push(`**Enviada ao Telegram:** \`${chave}\`.`);
   }
+  if (desligadas) out.push('', 'Para ligar de novo, apague a variável de repositório `CONTEXT_TELEGRAM_CATEGORIES` (vazia = ligado) ou ponha o nome da categoria nela. O valor `nenhuma` desliga tudo.');
   console.log(out.join('\n'));
   return falhou ? 1 : 0;
 }
