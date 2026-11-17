@@ -734,6 +734,15 @@ describe('tripwire: o aviso automático de 1 h antes só grava o registro, só f
     expect(problemasDoAlertador(real)).toEqual([]);
   });
 
+  it('a simulação AVISA em voz alta nos dois botões manuais (anotação no topo da execução): rodar sem marcar "Enviar de verdade?" não pode parecer sucesso do envio (17/11: o usuário rodou duas vezes sem marcar e achou que tinha falhado)', () => {
+    for (const rel of [ALERTADOR, NOTIFICADOR]) {
+      const codigo = readFileSync(join(ROOT, rel), 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+      expect(codigo, rel).toMatch(/::notice title=SIMULAÇÃO — nada foi enviado ao Telegram::/);
+      // o aviso só aparece quando NÃO é para enviar (no ramo `else` do teste de ENVIAR)
+      expect(codigo, rel).toMatch(/if \[ "\$ENVIAR" = "true" \]; then\s*\n\s*ARGS\+=\(--enviar\)\s*\n\s*else\s*\n\s*echo "::notice/);
+    }
+  });
+
   it('não-vacuidade: o arquivo e os scripts são achados como arquivos do contexto (as regras globais de banco/Firebase/motor os cobrem)', () => {
     expect(arquivosDoContexto()).toContain(ALERTADOR);
     expect(arquivosDoContexto()).toContain('scripts/contextAlert.mjs');

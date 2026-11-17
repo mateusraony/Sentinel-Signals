@@ -89,7 +89,11 @@ jobs:
         run: |
           set -o pipefail
           ARGS=(--dir data --categorias-ligadas "$CATEGORIAS_LIGADAS")
-          if [ "$ENVIAR" = "true" ]; then ARGS+=(--enviar); fi
+          if [ "$ENVIAR" = "true" ]; then
+            ARGS+=(--enviar)
+          else
+            echo "::notice title=SIMULAÇÃO — nada foi enviado ao Telegram::Para enviar de verdade, rode de novo e MARQUE a caixa Enviar de verdade? (a execução verde sozinha não prova o envio)."
+          fi
           node scripts/context-alert.mjs "${ARGS[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Registrar o aviso na branch context-data
