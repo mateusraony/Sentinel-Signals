@@ -2,11 +2,13 @@ name: Aviso automático do Contexto — 1 hora antes (Sentinel Signals)
 
 # docs/known-risks.md item 285, addendum 26 — Fase 4b do Contexto de Mercado. Manda no Telegram UM aviso, cerca de 1 hora antes de cada
 # evento com data firme (CPI, Payroll, PPI, PCE, FOMC): só o evento, a hora e a situação da data. Sem previsão, sem probabilidade, sem
-# operações (isso exigiria ler o banco, e o Contexto nunca acorda o Neon). Texto em scripts/contextMessages.mjs.
+# operações (isso exigiria ler o banco, e o Contexto nunca acorda o Neon). Texto em scripts/contextMessages.mjs (`buildPreEventBriefing`): o que é,
+# importância, valor anterior (BLS), onde a projeção do mercado não existe de graça e o que o BTC fez nas últimas 3 divulgações do mesmo tipo
+# (velas da Binance, datas de `history.json`).
 #
-# DESLIGADO POR PADRÃO: o job só começa quando a variável de repositório CONTEXT_TELEGRAM_CATEGORIES contém `pre-evento`
-# (Settings → Secrets and variables → Actions → aba Variables). Sem ela este workflow nem roda no gatilho automático — não gasta minuto
-# e os segredos do Telegram nem chegam ao passo. Para desligar de novo: tire `pre-evento` da variável.
+# LIGADO POR PADRÃO (addendum 27): com a variável de repositório CONTEXT_TELEGRAM_CATEGORIES vazia ou ausente o aviso automático funciona.
+# Para DESLIGAR: Settings → Secrets and variables → Actions → aba Variables → CONTEXT_TELEGRAM_CATEGORIES = `nenhuma` (o job nem começa:
+# não gasta minuto e os segredos do Telegram nem chegam ao passo). Uma lista (ex.: `agenda`) liga só o que está nela.
 #
 # Relógio: o fim do "Scheduled scan" (~15 min), o mesmo que já serve ao coletor (`context-collect.yml`). Em cada passada o script confere se
 # falta de 45 a 75 minutos para algum evento firme; se sim e ainda não avisou, envia e anota em `alerts-sent.json` na branch pública
@@ -38,15 +40,15 @@ concurrency:
 
 jobs:
   alert:
-    # Manual: sempre (é a simulação). Automático: só com a categoria `pre-evento` ligada na variável do repositório E só se o scan é deste
-    # repositório e veio do cron-job.org ou da reserva (nunca de PR/push).
+    # Manual: sempre (é a simulação). Automático: só com a categoria `pre-evento` ligada (variável vazia = padrão ligado; `nenhuma` desliga) E só se o
+    # scan é deste repositório e veio do cron-job.org ou da reserva (nunca de PR/push).
     if: >-
       github.event_name == 'workflow_dispatch' || (
-      contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento')
+      (vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento'))
       && github.event.workflow_run.head_repository.full_name == github.repository
       && (github.event.workflow_run.event == 'workflow_dispatch' || github.event.workflow_run.event == 'schedule'))
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v5
 

@@ -8,8 +8,9 @@ name: Aviso do Contexto no Telegram (Sentinel Signals)
 # (simulação nem recebe os segredos); os checkouts não deixam o token do GitHub no disco; nenhum DATABASE_URL.
 # As regras estão travadas por scripts/contextIsolationTripwire.test.js.
 #
-# Ligar uma categoria (menos "teste"): Settings → Secrets and variables → Actions → aba Variables → variável de
-# repositório CONTEXT_TELEGRAM_CATEGORIES com o valor `agenda`, `pre-evento` ou os dois separados por vírgula.
+# Categorias (menos "teste", sempre permitida): variável de repositório CONTEXT_TELEGRAM_CATEGORIES (Settings → Secrets and variables → Actions
+# → aba Variables). Vazia/ausente = o padrão (addendum 27): `pre-evento` ligado e `agenda` desligada; `agenda`, `pre-evento` ou os dois
+# (separados por vírgula) ligam só o listado; `nenhuma` desliga tudo.
 
 on:
   workflow_dispatch:
