@@ -382,6 +382,13 @@ paths:
   - **Travado por** `scripts/contextIsolationTripwire.test.js` (`problemasDoNotificador`, com variantes plantadas) e pelos
     testes `contextTelegram`/`contextMessages`/`contextNotify`.
 
+- `context-alert.yml` — **aviso AUTOMÁTICO do Contexto, 1 hora antes de cada evento** (Fase 4b, 1ª fatia, `docs/known-risks.md` item 285, addendum 26). **DESLIGADO por padrão:** o gatilho
+  automático (`workflow_run`, fim do "Scheduled scan", o mesmo relógio do coletor) só começa se a variável de repositório `CONTEXT_TELEGRAM_CATEGORIES` contém `pre-evento`.
+  - **O que faz:** `scripts/context-alert.mjs` confere se falta de **45 a 75 min** para algum evento de data firme; se sim e ainda não avisou, envia 1 mensagem (a de `buildPreEventMessage`: evento, hora, situação, **sem previsão e sem operações**) e anota em `alerts-sent.json` (`context-data`; só código do evento + hora; travado por `assertPublicSent`). Regras puras em `scripts/contextAlert.mjs`.
+  - **Manual = simulação:** o botão abre com "Enviar de verdade?" desmarcado (sem segredos, não grava).
+  - **Escrita:** único workflow de contexto além do coletor com `contents: write`, só `git add alerts-sent.json` + push para `context-data` (sem --force; até 3 tentativas com `fetch`+`rebase`). **Segredos:** só os 2 do Telegram, só na condição de envio. **Sem banco** (não acorda o Neon).
+  - **Limite:** scan pausado = sem relógio = sem aviso. Travado por `scripts/contextIsolationTripwire.test.js` (`problemasDoAlertador`, 23 variantes plantadas).
+
 - `context-reaction.yml` — **medição da reação do BTC nas divulgações passadas** (Agenda 4d, etapa 1, `docs/known-risks.md` item 285, addendum 18). Disparo **manual** (`workflow_dispatch` só, sem campos).
   - **O que faz:** `scripts/context-reaction.mjs` lê as DATAS passadas de Payroll/CPI/PPI/PCE no FRED (nunca valor de série), baixa as velas de 1 min do BTC/USDT (`data-api.binance.vision`) e imprime no resumo do job o tamanho do movimento em +5/+30/+60 min contra o mesmo horário em dias úteis sem divulgação. **Medido, não previsto:** sempre com o N, sem texto de direção.
   - **Só leitura:** `contents: read`, nada gravado no repositório (só o JSON de artefato), sem banco, sem Telegram. Segredos só `FRED_API_KEY` (na URL da requisição) e `CONTEXT_CONTACT_EMAIL` (no User-Agent). Travado por `scripts/contextIsolationTripwire.test.js` (`problemasDaMedicao`, com variantes plantadas).

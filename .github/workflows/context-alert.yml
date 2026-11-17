@@ -1,0 +1,118 @@
+name: Aviso automático do Contexto — 1 hora antes (Sentinel Signals)
+
+# docs/known-risks.md item 285, addendum 26 — Fase 4b do Contexto de Mercado. Manda no Telegram UM aviso, cerca de 1 hora antes de cada
+# evento com data firme (CPI, Payroll, PPI, PCE, FOMC): só o evento, a hora e a situação da data. Sem previsão, sem probabilidade, sem
+# operações (isso exigiria ler o banco, e o Contexto nunca acorda o Neon). Texto em scripts/contextMessages.mjs.
+#
+# DESLIGADO POR PADRÃO: o job só começa quando a variável de repositório CONTEXT_TELEGRAM_CATEGORIES contém `pre-evento`
+# (Settings → Secrets and variables → Actions → aba Variables). Sem ela este workflow nem roda no gatilho automático — não gasta minuto
+# e os segredos do Telegram nem chegam ao passo. Para desligar de novo: tire `pre-evento` da variável.
+#
+# Relógio: o fim do "Scheduled scan" (~15 min), o mesmo que já serve ao coletor (`context-collect.yml`). Em cada passada o script confere se
+# falta de 45 a 75 minutos para algum evento firme; se sim e ainda não avisou, envia e anota em `alerts-sent.json` na branch pública
+# `context-data` (só o código do evento e a hora do aviso — nada de mensagem, chat ou segredo; travado por `assertPublicSent`).
+# Scan PAUSADO = sem relógio = sem aviso (limite aceito: o GitHub atrasa `schedule` em horas, não serve para 1 hora antes).
+#
+# Escrita: só `alerts-sent.json`, só na branch `context-data`, sem --force. Segredos: só os 2 do Telegram, e só quando é para enviar.
+# O botão manual abre em SIMULAÇÃO ("Enviar de verdade?" desmarcado): mostra o que seria enviado agora, sem segredos, sem gravar.
+# Nenhum banco (não acorda o Neon), nenhum motor, nenhuma ordem. As regras estão travadas por scripts/contextIsolationTripwire.test.js.
+
+on:
+  workflow_dispatch:
+    inputs:
+      enviar:
+        description: "Enviar de verdade? Desmarcado = só mostra o que seria enviado agora e não manda nada nem grava"
+        type: boolean
+        default: false
+  workflow_run:
+    workflows: ["Scheduled scan"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: context-alert
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    # Manual: sempre (é a simulação). Automático: só com a categoria `pre-evento` ligada na variável do repositório E só se o scan é deste
+    # repositório e veio do cron-job.org ou da reserva (nunca de PR/push).
+    if: >-
+      github.event_name == 'workflow_dispatch' || (
+      contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento')
+      && github.event.workflow_run.head_repository.full_name == github.repository
+      && (github.event.workflow_run.event == 'workflow_dispatch' || github.event.workflow_run.event == 'schedule'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Abrir a branch de dados
+        # Só abre se já existir (o coletor a cria). Sem ela não há agenda: nada a avisar, e o job termina verde.
+        id: dados
+        run: |
+          set -uo pipefail
+          set +e
+          git ls-remote --exit-code --heads origin context-data >/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            git fetch --depth=1 origin context-data
+            git worktree add data FETCH_HEAD
+            git -C data checkout -q -B context-data
+            echo "existe=sim" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" -eq 2 ]; then
+            echo "A branch context-data ainda não existe: sem agenda, nada a avisar." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "existe=nao" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Não consegui consultar o repositório para saber se a branch context-data existe (código $rc). Nada foi alterado."
+            exit 1
+          fi
+
+      - name: Conferir e (se for o caso) enviar o aviso
+        if: steps.dados.outputs.existe == 'sim'
+        env:
+          # Automático (fim do scan) = envio; manual = só se "Enviar de verdade?" estiver marcado.
+          ENVIAR: ${{ github.event_name == 'workflow_run' || inputs.enviar }}
+          CATEGORIAS_LIGADAS: ${{ vars.CONTEXT_TELEGRAM_CATEGORIES }}
+          TELEGRAM_BOT_TOKEN: ${{ (github.event_name == 'workflow_run' || inputs.enviar) && secrets.TELEGRAM_BOT_TOKEN || '' }}
+          TELEGRAM_CHAT_ID: ${{ (github.event_name == 'workflow_run' || inputs.enviar) && secrets.TELEGRAM_CHAT_ID || '' }}
+        run: |
+          set -o pipefail
+          ARGS=(--dir data --categorias-ligadas "$CATEGORIAS_LIGADAS")
+          if [ "$ENVIAR" = "true" ]; then ARGS+=(--enviar); fi
+          node scripts/context-alert.mjs "${ARGS[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Registrar o aviso na branch context-data
+        # `if: always()` de propósito: se o envio de um 2º evento falhar, o registro do 1º (já enviado) precisa ser publicado mesmo assim.
+        if: always() && steps.dados.outputs.existe == 'sim'
+        run: |
+          set -euo pipefail
+          cd data
+          if [ ! -e alerts-sent.json ]; then
+            echo "Nada a registrar."
+            exit 0
+          fi
+          git add alerts-sent.json
+          if git diff --cached --quiet; then
+            echo "Nada mudou."
+            exit 0
+          fi
+          git -c user.name="sentinel-signals-bot" -c user.email="actions@users.noreply.github.com" commit -q -m "Aviso de contexto registrado $(date -u +%Y-%m-%dT%H:%MZ)"
+          # O coletor também publica nesta branch: se o push for recusado, atualiza e tenta de novo (até 3 vezes), sem forçar.
+          for tentativa in 1 2 3; do
+            if git push origin HEAD:refs/heads/context-data; then
+              exit 0
+            fi
+            git fetch -q origin context-data
+            git rebase -q FETCH_HEAD
+          done
+          echo "::error::Não consegui registrar o aviso na branch context-data (o aviso já foi enviado; a próxima passada pode repeti-lo)."
+          exit 1

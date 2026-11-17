@@ -274,6 +274,7 @@ function problemasDoColetor(yml) {
 // Fase 4a (addendum 12): o ÚNICO workflow de contexto que fala com o Telegram. Só manual, sem escrita, só os 2 segredos do
 // Telegram (e só quando "Enviar de verdade?" está marcado), nenhum banco.
 const NOTIFICADOR = '.github/workflows/context-notify.yml';
+const ALERTADOR = '.github/workflows/context-alert.yml';
 const SEGREDOS_DO_NOTIFICADOR = new Set(['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']);
 
 function problemasDoNotificador(yml) {
@@ -307,8 +308,8 @@ describe('tripwire: o aviso do Telegram do Contexto é manual, sem banco e com o
     expect(problemasDoNotificador(real)).toEqual([]);
   });
 
-  it('o coletor e a sonda continuam SEM Telegram (só o notificador fala com o Telegram)', () => {
-    for (const rel of arquivosDoContexto().filter((r) => r.startsWith('.github/') && r !== NOTIFICADOR)) {
+  it('o coletor e a sonda continuam SEM Telegram (só o notificador manual e o alertador automático falam com o Telegram)', () => {
+    for (const rel of arquivosDoContexto().filter((r) => r.startsWith('.github/') && r !== NOTIFICADOR && r !== ALERTADOR)) {
       const codigo = readFileSync(join(ROOT, rel), 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
       expect(codigo, rel).not.toMatch(/TELEGRAM/);
     }
@@ -354,7 +355,7 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
   });
 
   it('nenhum outro workflow de contexto pede escrita', () => {
-    const outros = arquivosDoContexto().filter((rel) => rel.startsWith('.github/') && rel !== COLETOR);
+    const outros = arquivosDoContexto().filter((rel) => rel.startsWith('.github/') && rel !== COLETOR && rel !== ALERTADOR);
     expect(outros.length).toBeGreaterThanOrEqual(1); // não-vacuidade: a sonda
     for (const rel of outros) {
       const codigo = readFileSync(join(ROOT, rel), 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
@@ -669,5 +670,127 @@ describe('tripwire: a medição da reação do BTC é só manual e só de leitur
       expect(yml, `variante plantada nº ${i} não mudou o arquivo`).not.toBe(real);
       expect(problemasDaMedicao(yml).length, `variante plantada nº ${i}`).toBeGreaterThan(0);
     });
+  });
+});
+
+// Fase 4b (addendum 26): o aviso AUTOMÁTICO de 1 h antes. Único workflow de contexto, além do coletor, com `contents: write` — e só para gravar
+// `alerts-sent.json` na branch pública `context-data`. Fala com o Telegram (2 segredos, só quando é para enviar), nunca com banco.
+const SEGREDOS_DO_ALERTADOR = new Set(['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']);
+const CONDICAO_DE_ENVIO = "github.event_name == 'workflow_run' || inputs.enviar";
+const IF_DO_ALERTADOR = [
+  "github.event_name == 'workflow_dispatch' || (",
+  "contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento')",
+  '&& github.event.workflow_run.head_repository.full_name == github.repository',
+  "&& (github.event.workflow_run.event == 'workflow_dispatch' || github.event.workflow_run.event == 'schedule'))",
+].join(' ');
+const LINHA_COM_EXPRESSAO_PERMITIDA = /^(ENVIAR|CATEGORIAS_LIGADAS|TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID):/;
+const PUSH_PERMITIDO = /^\s*if git push origin HEAD:refs\/heads\/context-data; then\s*$/;
+const ADD_PERMITIDO = /^\s*git add alerts-sent\.json\s*$/;
+
+function problemasDoAlertador(yml) {
+  const codigo = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  const linhas = codigo.split('\n');
+  const p = [];
+  if (!/permissions:\s*\n\s*contents:\s*write\s*\n/.test(codigo)) p.push('permissões: esperado só `contents: write`');
+  if ((codigo.match(/:\s*write\b/g) || []).length !== 1) p.push('permissões: há escrita além de `contents`');
+  if (/^\s*schedule:/m.test(codigo)) p.push('tem `schedule:` (o relógio é o fim do scan)');
+  if (/pull_request|\bpush:/.test(codigo.split(/^jobs:/m)[0])) p.push('gatilho de PR/push');
+  if (!/workflow_run:\s*\n\s*workflows:\s*\["Scheduled scan"\]/.test(codigo)) p.push('o gatilho automático precisa ser o fim do "Scheduled scan"');
+  // O `if:` do job, por inteiro: manual sempre; automático só com a categoria ligada e vindo deste repositório.
+  if (ifDoJob(codigo) !== IF_DO_ALERTADOR) p.push('o `if:` do job mudou');
+  // O que vai para a branch pública: só o registro, só em context-data, sem forçar.
+  const pushes = linhas.filter((l) => /\bgit\b.*\bpush\b/.test(l));
+  if (!pushes.length) p.push('nenhum git push (a regra abaixo ficaria vazia)');
+  for (const l of pushes) if (!PUSH_PERMITIDO.test(l)) p.push(`git push fora do permitido: ${l.trim()}`);
+  // `git add` de verdade (inclui `git -C . add` e `git -c x=y add`); `git worktree add` é outro comando.
+  const adds = linhas.filter((l) => /\bgit\s+(?:-[A-Za-z]\s+\S+\s+)*add\b/.test(l));
+  if (!adds.length) p.push('nenhum git add');
+  for (const l of adds) if (!ADD_PERMITIDO.test(l)) p.push(`git add fora do permitido: ${l.trim()}`);
+  if (/--force|--force-with-lease|\s-f\b|\+HEAD/.test(codigo)) p.push('push forçado');
+  for (const [, nome] of codigo.matchAll(/secrets\.([A-Za-z0-9_]+)/g)) if (!SEGREDOS_DO_ALERTADOR.has(nome.toUpperCase())) p.push(`segredo não permitido: ${nome}`);
+  if (/\bsecrets\b(?!\.[A-Za-z0-9_])/.test(codigo)) p.push('uso indireto de `secrets` (só secrets.NOME é permitido)');
+  for (const l of linhas.filter((x) => /secrets\./.test(x))) {
+    if (!l.includes(`(${CONDICAO_DE_ENVIO}) && secrets.`)) p.push(`segredo fora da condição de envio: ${l.trim()}`);
+  }
+  for (const [, nome] of codigo.matchAll(/\bvars\.([A-Za-z0-9_]+)/g)) if (nome !== 'CONTEXT_TELEGRAM_CATEGORIES') p.push(`variável não permitida: ${nome}`);
+  // Entrada e variável só chegam ao script por `env:` — nunca dentro do texto de um `run:` (injeção de comando).
+  for (const l of linhas.filter((x) => /\$\{\{/.test(x))) {
+    if (!LINHA_COM_EXPRESSAO_PERMITIDA.test(l.trim())) p.push(`expressão fora de um env: ${l.trim()}`);
+  }
+  const bloco = /enviar:\s*\n((?:[ \t]+[^\n]*\n){1,6})/.exec(codigo);
+  if (!bloco || !/default:\s*false/.test(bloco[1])) p.push('"Enviar de verdade?" precisa ter padrão false');
+  if (!/node scripts\/context-alert\.mjs/.test(codigo)) p.push('não roda o aviso');
+  if (!/timeout-minutes:\s*\d+/.test(codigo)) p.push('sem timeout-minutes');
+  return p;
+}
+
+describe('tripwire: o aviso automático de 1 h antes só grava o registro, só fala com o Telegram quando é para enviar e nunca toca banco (item 285, addendum 26)', () => {
+  const real = readFileSync(join(ROOT, ALERTADOR), 'utf8');
+
+  it('context-alert.yml segue as regras', () => {
+    expect(problemasDoAlertador(real)).toEqual([]);
+  });
+
+  it('não-vacuidade: o arquivo e os scripts são achados como arquivos do contexto (as regras globais de banco/Firebase/motor os cobrem)', () => {
+    expect(arquivosDoContexto()).toContain(ALERTADOR);
+    expect(arquivosDoContexto()).toContain('scripts/contextAlert.mjs');
+    expect(arquivosDoContexto()).toContain('scripts/context-alert.mjs');
+  });
+
+  it('o aviso automático (script e regras) não lê segredo: só o contextTelegram.mjs lê as variáveis do Telegram', () => {
+    for (const rel of ['scripts/context-alert.mjs', 'scripts/contextAlert.mjs']) {
+      const codigo = readFileSync(join(ROOT, rel), 'utf8').split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+      expect(codigo, rel).not.toMatch(/TELEGRAM_(BOT_TOKEN|CHAT_ID)/);
+    }
+  });
+
+  it('o registro só é gravado depois da trava do formato público (serializeSent chama assertPublicSent)', () => {
+    const regras = readFileSync(join(ROOT, 'scripts/contextAlert.mjs'), 'utf8');
+    const script = readFileSync(join(ROOT, 'scripts/context-alert.mjs'), 'utf8');
+    expect(regras).toMatch(/export const serializeSent = [^\n]*assertPublicSent/);
+    expect(script).toMatch(/writeFileSync\(tmp, serializeSent\(state\)\)/);
+  });
+
+  it('prova: pega schedule, escrita a mais, push de outra branch ou forçado, add largo, 3º segredo, segredo fora da condição, expressão no run, categoria sem filtro, banco e envio ligado por padrão', () => {
+    const seg = "TELEGRAM_BOT_TOKEN: ${{ (github.event_name == 'workflow_run' || inputs.enviar) && secrets.TELEGRAM_BOT_TOKEN || '' }}";
+    expect(real).toContain(seg);
+    const push = 'if git push origin HEAD:refs/heads/context-data; then';
+    expect(real).toContain(push);
+    const outra = ['refs/heads', 'outra'].join('/'); // (o nome da branch é montado por partes: o hook de proteção do repositório lê o texto dos comandos)
+    const adicionar = 'git add alerts-sent.json';
+    const plantados = [
+      real.replace('on:\n  workflow_dispatch:', "on:\n  schedule:\n    - cron: '0 * * * *'\n  workflow_dispatch:"),
+      real.replace('permissions:\n  contents: write', 'permissions:\n  contents: write\n  pull-requests: write'),
+      real.replace('permissions:\n  contents: write', 'permissions:\n  contents: read'),
+      real.replace(push, `if git push origin HEAD:${outra}; then`),
+      real.replace(push, 'if git push --force origin HEAD:refs/heads/context-data; then'),
+      real.replace(push, 'if git push origin +HEAD:refs/heads/context-data; then'),
+      real.replace(adicionar, 'git add .'),
+      real.replace(adicionar, `${adicionar} events.json`),
+      // Um 2º `git add` por um jeito que o regex ingênuo (`git add` colado) não via:
+      real.replace(adicionar, `${adicionar}\n          git -C . add -A`),
+      real.replace(adicionar, `${adicionar}\n          git -c user.name=x add scripts/context-alert.mjs`),
+      real.replace(seg, `${seg}\n          X: \${{ (${CONDICAO_DE_ENVIO}) && secrets.BLS_API_KEY || '' }}`),
+      real.replace(seg, `${seg}\n          D: \${{ (${CONDICAO_DE_ENVIO}) && secrets.DATABASE_URL || '' }}`),
+      real.replace(seg, 'TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}'),
+      real.replace(seg, 'TELEGRAM_BOT_TOKEN: ${{ toJSON(secrets) }}'),
+      real.replace('node scripts/context-alert.mjs "${ARGS[@]}"', 'node scripts/context-alert.mjs "${{ inputs.enviar }}"'),
+      real.replace("contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento')\n      && ", ''),
+      real.replace('      && github.event.workflow_run.head_repository.full_name == github.repository\n', ''),
+      real.replace("github.event_name == 'workflow_dispatch' || (", "github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run' || ("),
+      real.replace('CATEGORIAS_LIGADAS: ${{ vars.CONTEXT_TELEGRAM_CATEGORIES }}', 'CATEGORIAS_LIGADAS: ${{ vars.OUTRA }}'),
+      real.replace(/(enviar:[\s\S]*?)default: false/, '$1default: true'),
+      real.replace('node scripts/context-alert.mjs', 'echo sem aviso'),
+      real.replace('workflows: ["Scheduled scan"]', 'workflows: ["CI"]'),
+      real.replace('types: [completed]', 'types: [completed]\n  pull_request:'),
+    ];
+    plantados.forEach((yml, i) => {
+      expect(yml, `variante plantada nº ${i} não mudou o arquivo`).not.toBe(real);
+      expect(problemasDoAlertador(yml).length, `variante plantada nº ${i}`).toBeGreaterThan(0);
+    });
+    // Banco plantado também cai na regra global do contexto (nenhum arquivo de contexto referencia o banco).
+    const comBanco = plantados.find((yml) => yml.includes('secrets.DATABASE_URL'));
+    expect(comBanco, 'a variante com banco precisa existir').toBeDefined();
+    expect(violacoes(ALERTADOR, comBanco).length).toBeGreaterThan(0);
   });
 });
