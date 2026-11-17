@@ -125,7 +125,7 @@ ver o cartão de uma operação **fechada** e de uma **de compra** para o mesmo 
 
 ### B. **Contexto de Mercado — Fases 4b, 4c, 5 e 6** (itens 284/285; só informativas, **nunca tocam motor/score, sem Neon**)
 
-Estado: Fases 1–3 e 4a feitas. Pendências, na ordem do plano:
+Estado: Fases 1–3 e 4a feitas; **4b 1ª fatia (aviso automático 1 h antes, `context-alert.yml`) feita em 17/11 e DESLIGADA** (item 285, addendum 26; liga com `pre-evento` na variável `CONTEXT_TELEGRAM_CATEGORIES`; falta o usuário rodar a simulação e esperar as 2 semanas de coleta). Pendências, na ordem do plano:
 1. **Regularidade do coletor** (ver seção C: resolvido no código em 14/11, sem passo meu). O critério "**2 semanas só
    coletando**" (≥ 95% das 42 coletas, 0 push perdido, 0 acesso ao Neon) conta a partir de 14/11. Medir o critério (ler
    `status.json` da branch `context-data` e as execuções no Actions) e só então liberar a 4b.
