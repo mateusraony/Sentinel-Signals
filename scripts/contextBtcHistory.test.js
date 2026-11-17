@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadReactions, summarizeReactions, readHistoryFile, REACTION_COUNT } from './contextBtcHistory.mjs';
+import { loadReactions, summarizeReactions, readHistoryFile, partialMoves, loadMovesSince, REACTION_COUNT } from './contextBtcHistory.mjs';
 import { nyToUtc } from './contextTime.mjs';
 
 const MIN = 60 * 1000;
@@ -137,5 +137,46 @@ describe('readHistoryFile', () => {
     expect(readHistoryFile(dir)).toEqual({ version: 1, dates: {} });
     fs.writeFileSync(path.join(dir, 'history.json'), JSON.stringify({ version: 1, dates: { CPI: ['2026-10-24'] } }));
     expect(readHistoryFile(dir).dates.CPI).toEqual(['2026-10-24']);
+  });
+});
+
+// Fase 4b-3: o movimento DESDE a divulgação, parcial (cada prazo só aparece quando terminou).
+describe('partialMoves / loadMovesSince', () => {
+  const T0 = Date.parse('2026-12-10T13:30:00.000Z');
+  const candlesUntil = (minutes) => {
+    const c = [{ t: T0 - MIN, o: 100, h: 100, l: 100, c: 100 }];
+    for (let i = 0; i < minutes; i += 1) c.push({ t: T0 + i * MIN, o: 100, h: 101, l: 99, c: 100 + (i + 1) / 10 });
+    return c;
+  };
+  it('só entra o prazo que JÁ terminou (a vela do prazo precisa ter fechado)', () => {
+    const m = partialMoves(candlesUntil(31), T0, T0 + 31 * MIN);
+    expect(m[5]).toBeCloseTo(0.5, 6);
+    expect(m[30]).toBeCloseTo(3, 6);
+    expect(m[60]).toBeNull();
+  });
+  it('a vela que ainda está se formando (prazo não fechou) NÃO conta, mesmo existindo na resposta', () => {
+    const m = partialMoves(candlesUntil(31), T0, T0 + 30 * MIN - 1); // faltam 1 ms para o prazo de 30 min fechar
+    expect(m[5]).not.toBeNull();
+    expect(m[30]).toBeNull();
+  });
+  it('sem a vela de referência: null; com buraco no meio: só o que tem vela', () => {
+    expect(partialMoves(candlesUntil(31).slice(1), T0, T0 + 31 * MIN)).toBeNull();
+    expect(partialMoves([], T0, T0)).toBeNull();
+    expect(partialMoves(null, T0, T0)).toBeNull();
+    const furado = candlesUntil(31).filter((c) => c.t !== T0 + 29 * MIN);
+    const m = partialMoves(furado, T0, T0 + 31 * MIN);
+    expect(m[5]).not.toBeNull();
+    expect(m[30]).toBeNull();
+  });
+  it('loadMovesSince busca as velas da divulgação; fonte fora do ar ou que lança vira null (nunca lança)', async () => {
+    const corpo = JSON.stringify(candlesUntil(31).map((c) => [c.t, String(c.o), String(c.h), String(c.l), String(c.c), '1', c.t + 59999]));
+    const ok = vi.fn(async () => ({ ok: true, status: 200, text: async () => corpo }));
+    const m = await loadMovesSince({ t0Ms: T0, nowMs: T0 + 31 * MIN, fetchImpl: ok, sleep: async () => {} });
+    expect(m[30]).toBeCloseTo(3, 6);
+    expect(Number(new URL(ok.mock.calls[0][0]).searchParams.get('startTime'))).toBe(T0 - MIN);
+    const fora = vi.fn(async () => ({ ok: false, status: 403, text: async () => '' }));
+    expect(await loadMovesSince({ t0Ms: T0, nowMs: T0, fetchImpl: fora, sleep: async () => {} })).toBeNull();
+    const lanca = vi.fn(async () => { throw new Error('x'); });
+    expect(await loadMovesSince({ t0Ms: T0, nowMs: T0, fetchImpl: lanca, sleep: async () => {} })).toBeNull();
   });
 });

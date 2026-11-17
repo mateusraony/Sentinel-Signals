@@ -5,13 +5,14 @@
 //
 // Sem banco, sem Telegram, sem segredo (a Binance não pede chave). Falha de rede de UMA divulgação vira "sem dado" daquela linha; nunca lança.
 import { fetchWindow } from './context-reaction.mjs';
-import { reactionAt, median } from './contextReaction.mjs';
+import { reactionAt, median, OFFSETS_MIN } from './contextReaction.mjs';
 import { KIND_TIMES } from './contextCalendar.mjs';
 import { nyToUtc } from './contextTime.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { HISTORY_FILE, parseHistory, lastDates } from './contextHistory.mjs';
 
+const MIN = 60 * 1000;
 export const REACTION_COUNT = 3;
 
 const releaseMs = (kind, date) => {
@@ -60,5 +61,32 @@ export function readHistoryFile(dir) {
     return parseHistory(JSON.parse(fs.readFileSync(path.join(dir, HISTORY_FILE), 'utf8')));
   } catch {
     return parseHistory(null);
+  }
+}
+
+/**
+ * O movimento do BTC DESDE a divulgação até agora: `{ 5, 30, 60 }` em %, cada um `null` enquanto aquele prazo não terminou (a vela de 1 min do prazo precisa
+ * já ter FECHADO: a que ainda está se formando tem preço provisório) ou se a vela faltar. A referência é a mesma da medição (fechamento do minuto antes).
+ * Devolve `null` se não há nem a vela de referência.
+ */
+export function partialMoves(candles, t0Ms, nowMs) {
+  const byOpen = new Map((candles ?? []).map((c) => [c.t, c]));
+  const ref = byOpen.get(t0Ms - MIN);
+  if (!ref) return null;
+  const moves = {};
+  for (const n of OFFSETS_MIN) {
+    const c = byOpen.get(t0Ms + (n - 1) * MIN);
+    moves[n] = c && t0Ms + n * MIN <= nowMs ? (c.c / ref.c - 1) * 100 : null;
+  }
+  return moves;
+}
+
+/** Busca as velas e devolve o movimento parcial desde `t0Ms` (ver `partialMoves`); `null` se a fonte não respondeu. Nunca lança. */
+export async function loadMovesSince({ t0Ms, nowMs, fetchImpl, env = {}, sleep }) {
+  try {
+    const candles = await fetchWindow(t0Ms, { fetchImpl, env, ...(sleep ? { sleep } : {}) });
+    return candles ? partialMoves(candles, t0Ms, nowMs) : null;
+  } catch {
+    return null;
   }
 }

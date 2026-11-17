@@ -3,19 +3,21 @@
 // probabilidade, compra ou venda. Reaproveita a lógica da faixa do painel (`src/lib/marketContextBand.js`) para que a
 // hora, a contagem regressiva e os rótulos sejam exatamente os mesmos nos dois lugares.
 import {
-  parseEvents, upcomingEvents, formatCountdown, formatEventWhen, EVENT_LABELS, EVENT_HINTS, EVENT_META, STATUS_LABELS,
+  parseEvents, upcomingEvents, formatCountdown, formatEventWhen, resultRows, EVENT_LABELS, EVENT_HINTS, EVENT_META, STATUS_LABELS, CONTEXT_EMOJI,
 } from '../src/lib/marketContextBand.js';
 import { summarizeReactions } from './contextBtcHistory.mjs';
 
 /** Categorias de aviso. `teste` é sempre permitida (é o botão manual); as outras só se estiverem na variável do repositório. */
 export const CATEGORIES = Object.freeze(['teste', 'agenda', 'pre-evento']);
+/** Categorias que só existem no envio AUTOMÁTICO (o botão manual não as oferece): o resultado depois da divulgação (addendum 28). */
+export const AUTOMATIC_ONLY = Object.freeze(['resultado']);
 export const NEUTRAL_NOTE = 'Só informação — não altera sinais nem operações.';
 const EMOJI = '🗓️';
 
 export const escapeHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** Ligadas quando a variável do repositório está vazia ou ausente (addendum 27): os avisos automáticos. `agenda` é só o botão manual. */
-export const DEFAULT_CATEGORIES = Object.freeze(['pre-evento']);
+export const DEFAULT_CATEGORIES = Object.freeze(['pre-evento', 'resultado']);
 /** O valor que desliga todos os avisos automáticos. */
 export const OFF_WORD = 'nenhuma';
 
@@ -27,7 +29,7 @@ export function parseCategories(csv) {
   const tokens = String(csv ?? '').toLowerCase().split(/[\s,;]+/).filter(Boolean);
   if (!tokens.length) return new Set(DEFAULT_CATEGORIES);
   if (tokens.includes(OFF_WORD)) return new Set();
-  return new Set(tokens.filter((c) => CATEGORIES.includes(c)));
+  return new Set(tokens.filter((c) => CATEGORIES.includes(c) || AUTOMATIC_ONLY.includes(c)));
 }
 
 export function isCategoryEnabled(category, csv) {
@@ -141,5 +143,54 @@ export function buildPreEventBriefing(event, nowMs, { reactions = null } = {}) {
   lines.push('<b>Projeção do mercado (consenso):</b> indisponível — é dado pago; o sistema não inventa um número.', '');
   lines.push(...buildReactionBlock(label, reactions), '');
   lines.push('Sem previsão de direção (alta ou baixa): com poucos casos isso seria precisão inventada.', NEUTRAL_NOTE);
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Fase 4b-3 (addendum 28): o aviso de DEPOIS — o resultado (Atual × Anterior × Revisado, com "acima/abaixo do anterior" como FATO sobre os dois números)
+// e o que o BTC fez desde a divulgação. Sem projeção do mercado (não existe de graça), então nunca diz que foi "surpresa" nem prevê o próximo passo.
+
+const DIRECTION_WORDS = Object.freeze({ acima: 'acima do anterior', abaixo: 'abaixo do anterior', igual: 'igual ao anterior' });
+
+/** "+0,10%" por prazo, ou "ainda não passou" enquanto aquele prazo não terminou. */
+const moveWord = (n, v) => (v === null || v === undefined ? `${n} min ainda não passou` : `${n} min ${formatPct(v)}`);
+
+/**
+ * @param {{ moves?: { 5: number|null, 30: number|null, 60: number|null }|null, typical?: ReturnType<typeof summarizeReactions>|null }} [extra]
+ *   `moves`: movimento do BTC desde a divulgação (`partialMoves`); `null` = a fonte de preços não respondeu. `typical`: resumo das últimas divulgações do tipo.
+ */
+export function buildResultMessage(event, nowMs, { moves = null, typical = null } = {}) {
+  const label = EVENT_LABELS[event.kind];
+  const lines = [
+    `${CONTEXT_EMOJI.released} <b>${escapeHtml(label)} — saiu o resultado</b>`,
+    `${escapeHtml(EVENT_META[event.kind]?.title ?? EVENT_HINTS[event.kind])} · ${escapeHtml(formatEventWhen(event.startsAtUtc))}`,
+    '',
+  ];
+  const rows = event.values?.actual ? resultRows(event.values, event.reference ?? null) : [];
+  const withNumber = rows.filter((r) => r.actual !== null);
+  if (withNumber.length) {
+    for (const r of withNumber) {
+      const prev = r.previous !== null ? ` (anterior ${escapeHtml(r.previous)})` : '';
+      const dir = r.direction ? ` — ${DIRECTION_WORDS[r.direction]}` : '';
+      const rev = r.revised !== null ? `; mês anterior revisado para ${escapeHtml(r.revised)}` : '';
+      lines.push(`${CONTEXT_EMOJI.compare} ${escapeHtml(r.label)}: <b>${escapeHtml(r.actual)}</b>${prev}${dir}${rev}`);
+    }
+    lines.push('Fonte dos números: BLS.');
+  } else if (['CPI', 'PPI', 'NFP'].includes(event.kind)) {
+    lines.push('O número oficial do BLS ainda não chegou ao sistema; assim que chegar ele aparece no painel.');
+  } else {
+    lines.push('Este tipo não tem número oficial coletado automaticamente: o aviso traz só o movimento do BTC.');
+  }
+  lines.push('');
+  if (moves) {
+    lines.push(`${CONTEXT_EMOJI.horizon} <b>BTC desde a divulgação:</b> ${moveWord(5, moves[5])} · ${moveWord(30, moves[30])} · ${moveWord(60, moves[60])}`);
+  } else {
+    lines.push(`${CONTEXT_EMOJI.horizon} <b>BTC desde a divulgação:</b> indisponível agora (a fonte de preços não respondeu).`);
+  }
+  if (typical && typical.n > 0) {
+    const quando = typical.n === 1 ? 'Na última divulgação' : `Nas últimas ${typical.n} divulgações`;
+    lines.push(`${quando} de ${escapeHtml(label)}, o tamanho mediano do movimento em 1 h foi ${formatPct(typical.medAbs60).replace('+', '')}.`);
+  }
+  lines.push('', 'Sem a projeção do mercado (dado pago) não dá para dizer se o número foi surpresa.', NEUTRAL_NOTE);
   return lines.join('\n');
 }
