@@ -378,13 +378,14 @@ paths:
   - **Segredos:** só `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, e só chegam ao passo quando "Enviar de verdade?" está
     marcado (a simulação nem os recebe). O resultado de uma falha é só um código (`rede`, `http_401`…): nunca a URL, que tem o token.
   - **Categorias:** `teste` sempre permitida; `agenda` e `pre-evento` só se estiverem na variável de repositório
-    `CONTEXT_TELEGRAM_CATEGORIES` (Settings → Secrets and variables → Actions → Variables). Padrão vazio = tudo desligado.
+    `CONTEXT_TELEGRAM_CATEGORIES` (Settings → Secrets and variables → Actions → Variables). Vazio/ausente = o padrão (addendum 27): `pre-evento` ligado, `agenda` só no botão manual; `nenhuma` desliga tudo.
   - **Travado por** `scripts/contextIsolationTripwire.test.js` (`problemasDoNotificador`, com variantes plantadas) e pelos
     testes `contextTelegram`/`contextMessages`/`contextNotify`.
 
-- `context-alert.yml` — **aviso AUTOMÁTICO do Contexto, 1 hora antes de cada evento** (Fase 4b, 1ª fatia, `docs/known-risks.md` item 285, addendum 26). **DESLIGADO por padrão:** o gatilho
-  automático (`workflow_run`, fim do "Scheduled scan", o mesmo relógio do coletor) só começa se a variável de repositório `CONTEXT_TELEGRAM_CATEGORIES` contém `pre-evento`.
-  - **O que faz:** `scripts/context-alert.mjs` confere se falta de **45 a 75 min** para algum evento de data firme; se sim e ainda não avisou, envia 1 mensagem (a de `buildPreEventMessage`: evento, hora, situação, **sem previsão e sem operações**) e anota em `alerts-sent.json` (`context-data`; só código do evento + hora; travado por `assertPublicSent`). Regras puras em `scripts/contextAlert.mjs`.
+- `context-alert.yml` — **aviso AUTOMÁTICO do Contexto, 1 hora antes de cada evento** (Fase 4b, `docs/known-risks.md` item 285, addenda 26 e 27). **LIGADO por padrão (addendum 27):** o gatilho
+  automático (`workflow_run`, fim do "Scheduled scan", o mesmo relógio do coletor) só NÃO começa se a variável de repositório `CONTEXT_TELEGRAM_CATEGORIES` for `nenhuma` (vazia/ausente = ligado; uma lista liga só o listado).
+  - **O que faz:** `scripts/context-alert.mjs` confere se falta de **45 a 75 min** para algum evento de data firme; se sim e ainda não avisou, envia 1 mensagem COMPLETA (`buildPreEventBriefing`: importância, "Anterior" do BLS, projeção indisponível dita às claras e o que o BTC fez nas últimas 3 divulgações do tipo via velas da Binance + `history.json`; **sem previsão de direção e sem operações**) e anota em `alerts-sent.json` (`context-data`; só código do evento + hora; travado por `assertPublicSent`). Regras puras em `scripts/contextAlert.mjs`.
+  - **Datas passadas:** o coletor (`context-collect.yml`) publica também `history.json` (só datas AAAA-MM-DD por tipo, `scripts/contextHistory.mjs`, travado por `assertHistoryShape` e pela lista fechada de `git add` no tripwire).
   - **Manual = simulação:** o botão abre com "Enviar de verdade?" desmarcado (sem segredos, não grava).
   - **Escrita:** único workflow de contexto além do coletor com `contents: write`, só `git add alerts-sent.json` + push para `context-data` (sem --force; até 3 tentativas com `fetch`+`rebase`). **Segredos:** só os 2 do Telegram, só na condição de envio. **Sem banco** (não acorda o Neon).
   - **Limite:** scan pausado = sem relógio = sem aviso. Travado por `scripts/contextIsolationTripwire.test.js` (`problemasDoAlertador`, 23 variantes plantadas).

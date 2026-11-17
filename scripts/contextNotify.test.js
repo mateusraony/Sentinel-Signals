@@ -56,7 +56,7 @@ describe('envio (--enviar)', () => {
   it('"agenda"/"pre-evento" só enviam se a categoria estiver ligada; senão explica como ligar e não chama a rede', async () => {
     for (const categoria of ['agenda', 'pre-evento']) {
       saida = [];
-      const r = await run(['--categoria', categoria, '--dir', dir, '--enviar', '--categorias-ligadas', ''], ENV);
+      const r = await run(['--categoria', categoria, '--dir', dir, '--enviar', '--categorias-ligadas', 'nenhuma'], ENV);
       expect(r.code).toBe(0);
       expect(r.texto).toContain('Categoria desligada — nada foi enviado');
       expect(r.texto).toContain('CONTEXT_TELEGRAM_CATEGORIES');
@@ -66,6 +66,15 @@ describe('envio (--enviar)', () => {
     const ligada = await run(['--categoria', 'agenda', '--dir', dir, '--enviar', '--categorias-ligadas', 'agenda'], ENV);
     expect(ligada.fetchImpl).toHaveBeenCalledTimes(1);
     expect(JSON.parse(ligada.fetchImpl.mock.calls[0][1].body).text).toContain('Agenda de eventos dos EUA');
+  });
+
+  it('variável vazia = o padrão (addendum 27): "pre-evento" liga sozinha, "agenda" (só botão manual) continua desligada', async () => {
+    const agenda = await run(['--categoria', 'agenda', '--dir', dir, '--enviar', '--categorias-ligadas', ''], ENV);
+    expect(agenda.texto).toContain('Categoria desligada');
+    expect(agenda.fetchImpl).not.toHaveBeenCalled();
+    saida = [];
+    const pre = await run(['--categoria', 'pre-evento', '--dir', dir, '--enviar', '--categorias-ligadas', ''], ENV);
+    expect(pre.fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('a variável também pode vir do ambiente (CATEGORIAS_LIGADAS)', async () => {

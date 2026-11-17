@@ -53,7 +53,7 @@ describe('simulação (sem --enviar)', () => {
 
 describe('envio (--enviar)', () => {
   it('categoria desligada: não envia, não registra, e explica como ligar', async () => {
-    for (const ligadas of ['', 'agenda']) {
+    for (const ligadas of ['nenhuma', 'agenda']) {
       const r = await run(['--dir', dir, '--enviar', '--categorias-ligadas', ligadas], { env: ENV });
       expect(r.code).toBe(0);
       expect(r.texto).toContain('Categoria desligada');
@@ -61,6 +61,16 @@ describe('envio (--enviar)', () => {
       expect(r.fetchImpl).not.toHaveBeenCalled();
       expect(fs.existsSync(sentFile())).toBe(false);
     }
+  });
+
+  it('variável vazia ou ausente = LIGADO por padrão (addendum 27); só `nenhuma` desliga', async () => {
+    const r = await run(['--dir', dir, '--enviar', '--categorias-ligadas', ''], { env: ENV });
+    expect(r.code).toBe(0);
+    expect(r.fetchImpl).toHaveBeenCalledTimes(1);
+    expect(r.texto).toContain('Enviada ao Telegram');
+    fs.rmSync(sentFile(), { force: true });
+    const semArgumento = await run(['--dir', dir, '--enviar'], { env: ENV });
+    expect(semArgumento.fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('ligada: envia 1 mensagem, registra, e a 2ª passada dentro da janela NÃO repete', async () => {
@@ -133,6 +143,61 @@ describe('envio (--enviar)', () => {
     expect(r.code).toBe(0);
     expect(JSON.parse(fs.readFileSync(sentFile(), 'utf8')).version).toBe(1);
     expect(fs.existsSync(`${sentFile()}.tmp`)).toBe(false);
+  });
+});
+
+describe('o aviso completo: com o histórico das divulgações passadas (addendum 27)', () => {
+  const MIN = 60 * 1000;
+  const T0 = (date) => Date.parse(`${date}T13:30:00.000Z`); // novembro/outubro: 08:30 de Nova York = 13:30 UTC (horário de inverno a partir de 01/11)
+  // 2026-10-24 ainda é horário de verão (12:30 UTC): usa as datas do inverno para ficar simples.
+  const DATES = ['2026-11-06', '2026-12-04'];
+  const klines = (t0, pct60) => JSON.stringify(Array.from({ length: 61 }, (_, i) => {
+    const t = t0 + (i - 1) * MIN;
+    const c = i === 0 ? 100 : 100 * (1 + (pct60 * Math.min(i, 60)) / 60 / 100);
+    return [t, String(c), String(c * 1.001), String(c * 0.999), String(c), '1', t + 59999, '1', 1, '1', '1', '0'];
+  }));
+  const router = ({ binanceOk = true } = {}) => vi.fn(async (url, init) => {
+    const u = String(url);
+    if (u.startsWith('https://api.telegram.org/')) return { ok: true, status: 200 };
+    if (!binanceOk) return { ok: false, status: 500, text: async () => '' };
+    const t0 = Number(new URL(u).searchParams.get('startTime')) + MIN;
+    return { ok: true, status: 200, text: async () => klines(t0, t0 === T0(DATES[0]) ? 0.8 : -0.4) };
+  });
+  beforeEach(() => {
+    fs.writeFileSync(path.join(dir, 'history.json'), JSON.stringify({ version: 1, dates: { CPI: ['2026-11-06', '2026-10-03'] } }));
+  });
+  const SEM_ESPERA = async () => {};
+  const runFull = (fetchImpl, argv) => { saida = []; return main(argv, ENV, { fetchImpl, now: () => NOW, sleep: SEM_ESPERA }).then((code) => ({ code, texto: saida.join('\n') })); };
+
+  it('a mensagem enviada traz importância, "Anterior" indisponível (sem BLS no arquivo), projeção indisponível e o BTC das divulgações passadas', async () => {
+    const fetchImpl = router();
+    const r = await runFull(fetchImpl, ['--dir', dir, '--enviar', '--categorias-ligadas', '']);
+    expect(r.code).toBe(0);
+    const envio = fetchImpl.mock.calls.find(([u]) => String(u).startsWith('https://api.telegram.org/'));
+    const texto = JSON.parse(envio[1].body).text;
+    expect(texto).toContain('importância alta');
+    expect(texto).toContain('<b>Projeção do mercado (consenso):</b> indisponível');
+    expect(texto).toContain('<b>BTC nas últimas 2 divulgações de CPI</b>');
+    expect(texto).toContain('• 06/11: <b>+0,80%</b>');
+    expect(texto).toContain('• 03/10: <b>-0,40%'.replace('-', '−'));
+    expect(fetchImpl.mock.calls.filter(([u]) => !String(u).startsWith('https://api.telegram.org/')).length).toBe(2);
+  });
+
+  it('a Binance fora do ar NÃO impede o aviso: a mensagem sai com "sem dado" nas linhas do BTC', async () => {
+    const fetchImpl = router({ binanceOk: false });
+    const r = await runFull(fetchImpl, ['--dir', dir, '--enviar', '--categorias-ligadas', '']);
+    expect(r.code).toBe(0);
+    const envio = fetchImpl.mock.calls.find(([u]) => String(u).startsWith('https://api.telegram.org/'));
+    expect(JSON.parse(envio[1].body).text).toContain('• 06/11: sem dado');
+    expect(fs.existsSync(sentFile())).toBe(true); // foi enviado e registrado
+  });
+
+  it('a simulação também busca o histórico (para mostrar a mensagem de verdade) mas NÃO manda Telegram nem grava o registro', async () => {
+    const fetchImpl = router();
+    const r = await runFull(fetchImpl, ['--dir', dir, '--categorias-ligadas', '']);
+    expect(r.texto).toContain('+0,80%');
+    expect(fetchImpl.mock.calls.some(([u]) => String(u).startsWith('https://api.telegram.org/'))).toBe(false);
+    expect(fs.existsSync(sentFile())).toBe(false);
   });
 });
 

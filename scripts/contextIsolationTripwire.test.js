@@ -238,7 +238,7 @@ function problemasDoColetor(yml) {
   const adds = codigo.split('\n').filter((l) => /\bgit\b(?!.*\bworktree\b).*\badd\b/.test(l)); // `git worktree add` abre a pasta da branch, não põe nada no commit
   if (!adds.length) p.push('nenhum git add (a regra abaixo ficaria vazia)');
   for (const l of adds) {
-    if (!/^\s*git add (events\.json status\.json|bls-base\.json)\s*$/.test(l)) p.push(`git add fora do permitido: ${l.trim()}`);
+    if (!/^\s*git add (events\.json status\.json|bls-base\.json|history\.json)\s*$/.test(l)) p.push(`git add fora do permitido: ${l.trim()}`);
   }
   // Nome de segredo não diferencia maiúscula de minúscula no GitHub: `secrets.database_url` é o DATABASE_URL.
   for (const [, nome] of codigo.matchAll(/secrets\.([A-Za-z0-9_]+)/g)) if (!SEGREDOS_DO_COLETOR.has(nome.toUpperCase())) p.push(`segredo não permitido: ${nome}`);
@@ -399,14 +399,17 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
       real.replace('git add events.json status.json', 'git add events.json status.json scripts/x.json'),
       real.replace('git add bls-base.json', ['git add bls-base.json ..', '/', 'arquivo-secreto'].join('')),
       real.replace('git add bls-base.json', 'git add --all'),
+      // As datas passadas (addendum 27): só o history.json, nunca a pasta inteira nem outro arquivo.
+      real.replace('git add history.json', 'git add history.json events.json'),
+      real.replace('git add history.json', 'git add -A'),
     ];
     for (const yml of plantados) expect(problemasDoColetor(yml).length, yml.slice(-200)).toBeGreaterThan(0);
   });
 
-  it('o coletor publica exatamente os arquivos da lista fechada (eventos, estado e a base do BLS)', () => {
+  it('o coletor publica exatamente os arquivos da lista fechada (eventos, estado, a base do BLS e as datas passadas)', () => {
     const real = readFileSync(join(ROOT, COLETOR), 'utf8');
     const adds = real.split('\n').filter((l) => /\bgit\b(?!.*\bworktree\b).*\badd\b/.test(l) && !/^\s*#/.test(l)).map((l) => l.trim());
-    expect(adds).toEqual(['git add events.json status.json', 'git add bls-base.json']);
+    expect(adds).toEqual(['git add events.json status.json', 'git add bls-base.json', 'git add history.json']);
   });
 
   it('prova: não acusa o coletor real nem o nome do segredo em minúscula quando é um permitido', () => {
@@ -679,7 +682,7 @@ const SEGREDOS_DO_ALERTADOR = new Set(['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']
 const CONDICAO_DE_ENVIO = "github.event_name == 'workflow_run' || inputs.enviar";
 const IF_DO_ALERTADOR = [
   "github.event_name == 'workflow_dispatch' || (",
-  "contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento')",
+  "(vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento'))",
   '&& github.event.workflow_run.head_repository.full_name == github.repository',
   "&& (github.event.workflow_run.event == 'workflow_dispatch' || github.event.workflow_run.event == 'schedule'))",
 ].join(' ');
@@ -775,7 +778,10 @@ describe('tripwire: o aviso automático de 1 h antes só grava o registro, só f
       real.replace(seg, 'TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}'),
       real.replace(seg, 'TELEGRAM_BOT_TOKEN: ${{ toJSON(secrets) }}'),
       real.replace('node scripts/context-alert.mjs "${ARGS[@]}"', 'node scripts/context-alert.mjs "${{ inputs.enviar }}"'),
-      real.replace("contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento')\n      && ", ''),
+      real.replace("(vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento'))\n      && ", ''),
+      // Ligar sem filtro nenhum ou fazer o `nenhuma` não desligar (o `nenhuma` precisa fazer o job nem começar):
+      real.replace("(vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento'))", "(vars.CONTEXT_TELEGRAM_CATEGORIES != 'nenhuma')"),
+      real.replace("vars.CONTEXT_TELEGRAM_CATEGORIES == '' ||", ''),
       real.replace('      && github.event.workflow_run.head_repository.full_name == github.repository\n', ''),
       real.replace("github.event_name == 'workflow_dispatch' || (", "github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run' || ("),
       real.replace('CATEGORIAS_LIGADAS: ${{ vars.CONTEXT_TELEGRAM_CATEGORIES }}', 'CATEGORIAS_LIGADAS: ${{ vars.OUTRA }}'),

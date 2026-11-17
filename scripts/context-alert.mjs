@@ -7,14 +7,16 @@
 //   node scripts/context-alert.mjs --dir data --categorias-ligadas "$CATEGORIAS_LIGADAS" [--enviar]
 //
 // Sem `--enviar` é SIMULAÇÃO: mostra o que seria enviado agora e não manda nada nem grava o registro (o workflow nem entrega os
-// segredos nesse caso). Com `--enviar`, a categoria `pre-evento` precisa estar ligada na variável do repositório
-// CONTEXT_TELEGRAM_CATEGORIES; desligada = nada é enviado (e o workflow nem começa, o `if:` do job confere a mesma variável).
+// segredos nesse caso). Com `--enviar`, a categoria `pre-evento` precisa estar ligada: LIGADA POR PADRÃO (variável do repositório
+// CONTEXT_TELEGRAM_CATEGORIES vazia ou ausente); o valor `nenhuma` desliga tudo; uma lista liga só o que está nela. Desligada = nada é enviado
+// (e o workflow nem começa: o `if:` do job confere a mesma variável).
 // Registro do "já avisei": `<dir>/alerts-sent.json` — gravado SÓ depois de o Telegram aceitar a mensagem (falha de envio não marca,
 // e a próxima passada tenta de novo). Nenhum banco, nenhum motor. Imprime Markdown no stdout (Job Summary); NUNCA imprime segredo.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { isCategoryEnabled, readEvents, buildPreEventMessage } from './contextMessages.mjs';
+import { isCategoryEnabled, readEvents, buildPreEventBriefing } from './contextMessages.mjs';
+import { loadReactions, readHistoryFile } from './contextBtcHistory.mjs';
 import { sendTelegram, describeSendFailure } from './contextTelegram.mjs';
 import { SENT_FILE, pickDueEvents, parseSent, markSent, serializeSent, alertKey } from './contextAlert.mjs';
 
@@ -54,7 +56,7 @@ function saveSent(dir, state) {
   fs.renameSync(tmp, file);
 }
 
-export async function main(argv = process.argv.slice(2), env = process.env, { fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+export async function main(argv = process.argv.slice(2), env = process.env, { fetchImpl = globalThis.fetch, now = Date.now, sleep } = {}) {
   const args = parseArgs(argv);
   const enviar = args.enviar === true;
   const ligadas = typeof args['categorias-ligadas'] === 'string' ? args['categorias-ligadas'] : String(env.CATEGORIAS_LIGADAS ?? '');
@@ -78,12 +80,17 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   }
   if (fresh) out.push('_Ainda não havia registro de avisos enviados (primeira vez, ou arquivo ilegível)._', '');
 
+  // A mensagem completa (addendum 27) inclui o que o BTC fez nas últimas divulgações do mesmo tipo: busca as velas na Binance (sem chave).
+  // Falha de rede vira "sem dado" naquela linha — o aviso NUNCA deixa de sair por causa do histórico.
+  const history = readHistoryFile(dir);
+  const compose = async (event) => buildPreEventBriefing(event, nowMs, { reactions: await loadReactions({ kind: event.kind, history, fetchImpl, env: {}, sleep }) });
+
   const ligada = isCategoryEnabled('pre-evento', ligadas);
   if (!enviar || !ligada) {
-    for (const event of due) out.push(`Evento \`${alertKey(event)}\` — mensagem:`, '', '```', buildPreEventMessage(event, nowMs), '```', '');
+    for (const event of due) out.push(`Evento \`${alertKey(event)}\` — mensagem:`, '', '```', await compose(event), '```', '');
     out.push(enviar
-      ? '**Categoria desligada — nada foi enviado.** Para ligar, crie a variável de repositório `CONTEXT_TELEGRAM_CATEGORIES` com o valor `pre-evento` (várias: separe por vírgula).'
-      : '**Simulação — nada foi enviado nem registrado.** O envio automático só acontece com a categoria `pre-evento` ligada.');
+      ? '**Categoria desligada — nada foi enviado.** Para ligar de novo, apague a variável de repositório `CONTEXT_TELEGRAM_CATEGORIES` (vazia = ligado) ou ponha `pre-evento` nela. O valor `nenhuma` desliga.'
+      : '**Simulação — nada foi enviado nem registrado.** O aviso automático está ligado por padrão (desligue com o valor `nenhuma` na variável `CONTEXT_TELEGRAM_CATEGORIES`).');
     console.log(out.join('\n'));
     return 0;
   }
@@ -91,7 +98,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   let current = state;
   let falhou = false;
   for (const event of due) {
-    const text = buildPreEventMessage(event, nowMs);
+    const text = await compose(event);
     const result = await sendTelegram({ text, env, fetchImpl });
     if (!result.ok) {
       out.push(`**Não enviada** (\`${alertKey(event)}\`): ${describeSendFailure(result.reason)}. A próxima passada tenta de novo.`);

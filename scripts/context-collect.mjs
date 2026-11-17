@@ -21,6 +21,7 @@ import { pathToFileURL } from 'node:url';
 import { buildEvents, buildStatus, assertPublicShape, fetchFredDates, sanitizePrevious, needsResultCheck, FRED_RELEASES } from './contextCollect.mjs';
 import { fetchBlsSeries, allSeriesIds } from './contextBls.mjs';
 import { mergeBase, baseToSeries, baseToGaps, assertBaseShape, sanitizeBase, serializeBase, describeBase } from './contextBlsBase.mjs';
+import { HISTORY_FILE, buildHistory, serializeHistory } from './contextHistory.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -70,6 +71,29 @@ export function writeBase(file, base) {
   if (atual === texto) return 'inalterada';
   fs.writeFileSync(file, texto);
   return 'gravada';
+}
+
+/**
+ * Grava `history.json` (as datas PASSADAS das divulgações; addendum 27) só se há datas e mudou. Devolve o estado para o resumo: 'gravado' |
+ * 'inalterado' | 'não gravado (sem datas)' | 'NÃO gravado (a trava recusou)'. Nunca lança e nunca apaga: tipo que o FRED não respondeu mantém o que estava.
+ */
+export function writeHistory(file, fredDatesByKind, nowMs) {
+  let previous = null;
+  try { previous = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { previous = null; }
+  const history = buildHistory({ fredDatesByKind, previous, nowMs });
+  if (!Object.keys(history.dates).length) return 'não gravado (sem datas)';
+  let texto;
+  try {
+    texto = serializeHistory(history);
+  } catch (err) {
+    console.error(`[context-collect] ${err.message} — o histórico não foi gravado.`);
+    return 'NÃO gravado (a trava recusou)';
+  }
+  let atual = null;
+  try { atual = fs.readFileSync(file, 'utf8'); } catch { atual = null; }
+  if (atual === texto) return 'inalterado';
+  fs.writeFileSync(file, texto);
+  return 'gravado';
 }
 
 /**
@@ -149,7 +173,10 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   fs.writeFileSync(statusFile, `${JSON.stringify(status, null, 2)}\n`);
   // A base é aditiva: se a trava recusar, os eventos já gravados seguem e só a base fica de fora (o log diz).
   const baseState = writeBase(baseFile, merged.base);
+  // As datas passadas (addendum 27): aditivo como a base — se a trava recusar, os eventos já gravados seguem e só o histórico fica de fora.
+  const historyState = writeHistory(path.join(args.dir, HISTORY_FILE), fredDatesByKind, nowMs);
   console.log(formatCollectMarkdown(status, events, fredDatesByKind, bls, describeBase(merged.base, merged.stats, baseState)));
+  console.log(`\nHistórico de datas passadas (history.json): ${historyState}.`);
   return 0;
 }
 

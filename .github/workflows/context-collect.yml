@@ -114,6 +114,10 @@ jobs:
           if [ -e bls-base.json ]; then
             git add bls-base.json
           fi
+          # As datas passadas das divulgações (addendum 27) só existem depois da 1ª coleta com o FRED respondendo.
+          if [ -e history.json ]; then
+            git add history.json
+          fi
           if git diff --cached --quiet; then
             echo "Nada mudou."
             exit 0

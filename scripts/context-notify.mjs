@@ -13,8 +13,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  CATEGORIES, isCategoryEnabled, readEvents, buildTestMessage, buildAgendaMessage, nextAlertableEvent, buildPreEventMessage,
+  CATEGORIES, isCategoryEnabled, readEvents, buildTestMessage, buildAgendaMessage, nextAlertableEvent, buildPreEventBriefing,
 } from './contextMessages.mjs';
+import { loadReactions, readHistoryFile } from './contextBtcHistory.mjs';
 import { sendTelegram, describeSendFailure } from './contextTelegram.mjs';
 
 function parseArgs(argv) {
@@ -36,7 +37,7 @@ function loadEvents(dir) {
   }
 }
 
-export async function main(argv = process.argv.slice(2), env = process.env, { fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+export async function main(argv = process.argv.slice(2), env = process.env, { fetchImpl = globalThis.fetch, now = Date.now, sleep } = {}) {
   const args = parseArgs(argv);
   const categoria = typeof args.categoria === 'string' ? args.categoria : '';
   const enviar = args.enviar === true;
@@ -70,7 +71,8 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
         console.log(out.join('\n'));
         return 0;
       }
-      text = buildPreEventMessage(next, nowMs);
+      // O mesmo texto completo do aviso automático (addendum 27): anterior, importância e o que o BTC fez nas últimas divulgações do tipo.
+      text = buildPreEventBriefing(next, nowMs, { reactions: await loadReactions({ kind: next.kind, history: readHistoryFile(dir), fetchImpl, env: {}, sleep }) });
     }
   }
 
