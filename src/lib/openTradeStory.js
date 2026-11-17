@@ -13,7 +13,7 @@
 import { getTp1Price } from './tradeMetrics.js';
 import { closesFullyAtTp1 } from './opExitRules.js';
 import { formatPrice, formatSignedPct, stopPosture } from './priceProximity.js';
-import { opSignalTimeframe, elapsedLabel, formatWhen } from './tradeStory.js';
+import { opSignalTimeframe, elapsedLabel, formatWhen, eventWhenText } from './tradeStory.js';
 import { formatSignedR } from './stopGuarantee.js';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -130,8 +130,7 @@ export function buildOpenTradeStory(op, { fmt = defaultFmt } = {}) {
     const price = money(getTp1Price(op));
     const partial = isNum(op.partial_percent) ? op.partial_percent : 50;
     const what = closesFullyAtTp1(op) ? 'fechou toda a posição' : `realizou ${partial}% da posição, deixando o resto correndo`;
-    const whenTp1 = formatWhen(fmt, op.tp1_hit_real_time) ?? formatWhen(fmt, op.tp1_hit_at);
-    steps.push({ key: 'tp1', text: `🎯 Bateu o TP1${price ? ` (${price})` : ''}${whenTp1 ? ` em ${whenTp1}` : ''} e ${what}.` });
+    steps.push({ key: 'tp1', text: `🎯 Bateu o TP1${price ? ` (${price})` : ''}${eventWhenText(fmt, op.tp1_hit_real_time, op.tp1_hit_at)} e ${what}.` });
   }
 
   // 5. O stop

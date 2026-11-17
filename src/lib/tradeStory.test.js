@@ -87,16 +87,42 @@ describe('buildTradeStory — compra que bateu o TP1 e saiu no stop movido', () 
     expect(steps[1].text).toMatch(/^No caminho, chegou a \+2\.40R a favor e a -0\.30R contra \(o melhor ponto veio ~12 h depois da entrada\); o resultado final \([+-]\d\.\d{2}R\) ficou \d\.\d{2}R abaixo desse melhor ponto\.$/);
   });
   it('TP1: preço, horário e o que foi realizado', () => {
-    expect(steps[2].text).toBe(`🎯 Bateu o TP1 (${p(107.5)}) em T(2026-11-02) e realizou 50% da posição, deixando o resto correndo.`);
+    expect(steps[2].text).toBe(`🎯 Bateu o TP1 (${p(107.5)}) (percebido pelo painel em T(2026-11-02)) e realizou 50% da posição, deixando o resto correndo.`);
   });
   it('stop movido: de onde para onde, e que acompanhou o preço (compra: subiu)', () => {
     expect(steps[3].text).toBe(`O stop saiu de ${p(95)} (inicial) para ${p(100)} (último valor), acompanhando o preço a favor da posição.`);
   });
   it('saída e resultado batem com a fonte única de métricas', () => {
-    expect(steps[4].text).toBe(`🛑 Saiu pelo stop a ${p(100)} em T(2026-11-03).`);
+    expect(steps[4].text).toBe(`🛑 Saiu pelo stop a ${p(100)} (percebido pelo painel em T(2026-11-03)).`);
     const pnl = calcRealizedPnlPct(BUY_STOP_APOS_TP1);
     const r = calcRealizedR(BUY_STOP_APOS_TP1);
     expect(steps[5].text).toBe(`Resultado final: ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}% (${r >= 0 ? '+' : ''}${r.toFixed(2)}R).`);
+  });
+});
+
+describe('buildTradeStory — horário de TP1/TP2/stop é o da VELA, nunca o do toque (item 305)', () => {
+  const comVela = {
+    ...BUY_STOP_APOS_TP1,
+    tp1_hit_real_time: '2026-11-02T07:59:59Z', stop_hit_real_time: '2026-11-03T03:59:59Z',
+  };
+  it('TP1 e stop com horário de vela dizem "na vela que fechou em"', () => {
+    const steps = buildTradeStory(comVela, { fmt });
+    expect(steps.find((s) => s.key === 'tp1').text).toContain(' na vela que fechou em T(2026-11-02) e realizou');
+    expect(steps.find((s) => s.key === 'exit').text).toBe(`🛑 Saiu pelo stop a ${p(100)} na vela que fechou em T(2026-11-03).`);
+  });
+  it('TP2 também', () => {
+    const steps = buildTradeStory({ ...SELL_TP2, tp2_hit_real_time: '2026-11-04T11:59:59Z' }, { fmt });
+    expect(steps.find((s) => s.key === 'tp2').text).toBe(`🏆 Bateu o TP2 (${p(85)}) na vela que fechou em T(2026-11-04).`);
+  });
+  it('sem horário de vela, assume só o que sabe: quando o painel percebeu', () => {
+    const t = buildTradeStory(BUY_STOP_APOS_TP1, { fmt }).find((s) => s.key === 'tp1').text;
+    expect(t).toContain('(percebido pelo painel em ');
+    expect(t).not.toContain('na vela');
+  });
+  it('horário de vela ruim cai para o seguinte válido, sem "Invalid date"', () => {
+    const op = { ...comVela, stop_hit_real_time: '2026-02-30T12:00:00Z', closed_at_real_time: '2026-11-03T03:59:59Z' };
+    const exit = buildTradeStory(op, { fmt: (iso) => (iso === '2026-02-30T12:00:00Z' ? 'Invalid date' : `T(${String(iso).slice(0, 10)})`) }).find((s) => s.key === 'exit');
+    expect(exit.text).toContain('na vela que fechou em T(2026-11-03)');
   });
 });
 
@@ -105,7 +131,7 @@ describe('buildTradeStory — venda que bateu o TP2', () => {
   it('TP1 e TP2 contados; sem frase de stop movido (inicial = atual) e sem passo de saída duplicado', () => {
     expect(keys(steps)).toEqual(['opened', 'tp1', 'tp2', 'result']);
     expect(steps[0].text).toContain('de venda');
-    expect(steps[2].text).toBe(`🏆 Bateu o TP2 (${p(85)}) em T(2026-11-04).`);
+    expect(steps[2].text).toBe(`🏆 Bateu o TP2 (${p(85)}) (percebido pelo painel em T(2026-11-04)).`);
   });
   it('venda com stop que DESCE é a favor; que sobe não é', () => {
     const desce = buildTradeStory({ ...SELL_TP2, current_stop: 100 }, { fmt }).find((s) => s.key === 'stop_moved');
@@ -188,7 +214,7 @@ describe('horários — nunca inventados e nunca "Invalid date"', () => {
   });
   it('com carimbo de encerramento, usa-o (closed_at quando o do stop falta)', () => {
     const exit = buildTradeStory({ ...SEM_CARIMBO, closed_at: '2026-10-03T00:00:00Z' }, { fmt }).find((s) => s.key === 'exit');
-    expect(exit.text).toBe(`🛑 Saiu pelo stop a ${p(95)} em T(2026-10-03).`);
+    expect(exit.text).toBe(`🛑 Saiu pelo stop a ${p(95)} (percebido pelo painel em T(2026-10-03)).`);
   });
 
   it('REGRESSÃO: `true` e 30/02 não viram horário (o formatador real devolveria "Invalid date")', () => {
@@ -202,7 +228,7 @@ describe('horários — nunca inventados e nunca "Invalid date"', () => {
   it('o primeiro horário VÁLIDO entre os candidatos vale: stop_hit_at ruim, closed_at bom', () => {
     const op = { ...SEM_CARIMBO, stop_hit_at: '2026-02-30T12:00:00Z', closed_at: '2026-10-05T00:00:00Z' };
     const exit = buildTradeStory(op, { fmt: momentLike }).find((s) => s.key === 'exit');
-    expect(exit.text).toContain('em T(2026-10-05)');
+    expect(exit.text).toContain('(percebido pelo painel em T(2026-10-05))');
   });
   it('número, objeto e texto sem data não viram horário', () => {
     for (const ruim of [1730000000000, {}, [], 'ontem', '', null, NaN]) {

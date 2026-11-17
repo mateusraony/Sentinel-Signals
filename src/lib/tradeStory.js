@@ -56,6 +56,20 @@ export function formatWhen(fmt, iso) {
   return typeof out === 'string' && out.trim() && !/invalid/i.test(out) ? out : null;
 }
 
+/**
+ * Frase de horário de um evento de stop/TP1/TP2 (item 305). `realIso` é o FECHAMENTO da vela em que o motor viu o
+ * cruzamento (limite superior — o preço pode ter tocado horas antes, dentro da vela); `detectedIso` é o instante em que
+ * a passada do scan percebeu. Nenhum dos dois é o instante exato do toque, então a frase nunca diz só "em HH:mm".
+ * @returns {string} começa com espaço, ou '' sem horário válido
+ */
+export function eventWhenText(fmt, realIso, detectedIso) {
+  const first = (isos) => { for (const iso of [].concat(isos)) { const w = formatWhen(fmt, iso); if (w) return w; } return null; };
+  const real = first(realIso);
+  if (real) return ` na vela que fechou em ${real}`;
+  const seen = first(detectedIso);
+  return seen ? ` (percebido pelo painel em ${seen})` : '';
+}
+
 /** Horas em linguagem simples ("~12 h", "~3 dias"); `null` se não for um número ≥ 0. Reusada pelo bloco de contexto (item 292). */
 export function hoursLabel(hours) {
   if (!isNum(hours) || hours < 0) return null;
@@ -127,13 +141,13 @@ export function buildTradeStory(op, { fmt = defaultFmt } = {}) {
     const what = closesFullyAtTp1(op)
       ? 'fechou toda a posição'
       : `realizou ${partial}% da posição, deixando o resto correndo`;
-    steps.push({ key: 'tp1', text: `🎯 Bateu o TP1${price ? ` (${price})` : ''}${at(op.tp1_hit_real_time, op.tp1_hit_at)} e ${what}.` });
+    steps.push({ key: 'tp1', text: `🎯 Bateu o TP1${price ? ` (${price})` : ''}${eventWhenText(fmt, op.tp1_hit_real_time, op.tp1_hit_at)} e ${what}.` });
   }
 
   // 4. TP2
   if (op.tp2_hit === true || op.tp2_hit_at) {
     const price = money(isNum(op.tp2_hit_price) ? op.tp2_hit_price : op.tp2);
-    steps.push({ key: 'tp2', text: `🏆 Bateu o TP2${price ? ` (${price})` : ''}${at(op.tp2_hit_real_time, op.tp2_hit_at)}.` });
+    steps.push({ key: 'tp2', text: `🏆 Bateu o TP2${price ? ` (${price})` : ''}${eventWhenText(fmt, op.tp2_hit_real_time, op.tp2_hit_at)}.` });
   }
 
   // 5. O stop andou? (só o valor final é gravado — não se sabe QUANDO subiu)
@@ -150,7 +164,7 @@ export function buildTradeStory(op, { fmt = defaultFmt } = {}) {
   // e a história diria que a operação saiu "no instante em que abriu" — sem carimbo conhecido, a frase simplesmente não traz horário.
   const exitPrice = money(getExitPrice(op));
   if (op.status === 'STOP_HIT') {
-    steps.push({ key: 'exit', text: `🛑 Saiu pelo stop${exitPrice ? ` a ${exitPrice}` : ''}${at(op.stop_hit_real_time, op.stop_hit_at, op.closed_at_real_time, op.closed_at)}.` });
+    steps.push({ key: 'exit', text: `🛑 Saiu pelo stop${exitPrice ? ` a ${exitPrice}` : ''}${eventWhenText(fmt, [op.stop_hit_real_time, op.closed_at_real_time], [op.stop_hit_at, op.closed_at])}.` });
   } else if (op.status === 'INVALIDATED' || op.status === 'CLOSED') {
     const reason = closedReasonLabel(op) ?? (op.status === 'INVALIDATED' ? 'sinal invalidado' : null);
     steps.push({ key: 'exit', text: `🔒 Encerrada${reason ? `: ${reason}` : ''}${exitPrice ? `, a ${exitPrice}` : ''}${at(op.closed_at_real_time, op.closed_at)}.` });

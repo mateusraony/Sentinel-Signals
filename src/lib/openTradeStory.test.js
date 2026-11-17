@@ -138,13 +138,21 @@ describe('buildOpenTradeStory — a operação aberta em frases, em ordem', () =
     expect(step(story, 'stop')).toBe('Stop aproximado: saiu de $199.40 (inicial) para $205.00 (atual) — contra a posição (alterado à mão).');
   });
 
+  it('REGRESSÃO (item 305): TP1 com horário de vela diz "na vela que fechou em", nunca "em HH:mm" como se fosse o toque', () => {
+    const story = buildOpenTradeStory(qnt({
+      status: 'RUNNER_ACTIVE', tp1_hit: true, tp1_hit_price: 152.3, tp1_hit_at: '2026-11-14T22:30:00.000Z', tp1_hit_real_time: '2026-11-14T23:59:59.999Z',
+      current_stop: 165, decision_snapshot: null,
+    }), { fmt });
+    expect(step(story, 'tp1')).toBe('🎯 Bateu o TP1 ($152.30) na vela que fechou em <2026-11-14T23:59> e realizou 50% da posição, deixando o resto correndo.');
+  });
+
   it('runner: conta o TP1 e data a mudança pela vela', () => {
     const story = buildOpenTradeStory(qnt({
       status: 'RUNNER_ACTIVE', tp1_hit: true, tp1_hit_price: 152.3, tp1_hit_at: '2026-11-13T02:15:00.000Z',
       current_stop: 165, decision_snapshot: null, runner_stop_advanced_candle_time: '2026-11-13T07:59:59.999Z',
     }), { fmt });
     expect(story.map((s) => s.key)).toEqual(['opened', 'plan', 'path', 'tp1', 'stop']);
-    expect(step(story, 'tp1')).toBe('🎯 Bateu o TP1 ($152.30) em <2026-11-13T02:15> e realizou 50% da posição, deixando o resto correndo.');
+    expect(step(story, 'tp1')).toBe('🎯 Bateu o TP1 ($152.30) (percebido pelo painel em <2026-11-13T02:15>) e realizou 50% da posição, deixando o resto correndo.');
     expect(step(story, 'stop')).toBe('🛡️ Stop protegido: saiu de $199.40 (inicial) para $165.00 (atual); a última mudança foi na vela de <2026-11-13T07:59>.');
   });
 
