@@ -25,6 +25,11 @@
        calendário). Era o rosa-choque (325 100% 55%) com texto branco — contraste ~3,7:1, cansativo e difícil de ler (item 305).
        Agora é um cinza-azulado de superfície (contraste com o texto ~12:1) que ainda se destaca do fundo do menu. */
     --accent: 222 28% 20%;
+    /* Dicas (tooltips): superfície "elevada" em cinza-azulado suave, borda fina e texto off-white (~13:1). Sem cor saturada atrás do
+       texto: em fundo escuro, cor viva vibra e cansa (Material Design: tons dessaturados; WCAG AA >= 4,5:1). Item 305. */
+    --surface-raised: 222 22% 15%;
+    --surface-raised-border: 222 18% 30%;
+    --surface-raised-foreground: 210 30% 92%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
