@@ -276,3 +276,55 @@ describe('categoria "resultado"', () => {
     expect(isCategoryEnabled('resultado', 'nenhuma')).toBe(false);
   });
 });
+
+// Fase 4b-4 (addendum 30): a projeção que o usuário registrou.
+describe('com a projeção registrada pelo usuário', () => {
+  const CPI2 = readEvents([{ ...ev('CPI-2026-12-10', 'CPI', '2026-12-10T13:30:00.000Z'), reference: '2026-11', values: { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,2% m/m · +3,1% a/a', source: 'BLS' } }])[0];
+  const AT2 = Date.parse('2026-12-10T14:10:00.000Z');
+  const moves = { 5: -0.1, 30: 0.25, 60: null };
+
+  it('aviso de antes: mostra a projeção como DO USUÁRIO (não do mercado) e troca o "indisponível"', () => {
+    const m = buildPreEventBriefing(CPI2, AT2 - 90 * 60000, { consensus: { projection: '+0,3% m/m · +3,1% a/a', previous: null } });
+    expect(m).toContain('<b>Projeção (informada por você):</b> +0,3% m/m · +3,1% a/a — não é o consenso oficial do mercado.');
+    expect(m).not.toContain('Projeção do mercado (consenso):</b> indisponível');
+    expect(m).not.toMatch(PROIBIDO);
+  });
+  it('aviso de antes sem projeção: continua dizendo "indisponível" e ensina onde registrar', () => {
+    const m = buildPreEventBriefing(CPI2, AT2 - 90 * 60000, { consensus: null });
+    expect(m).toContain('Projeção do mercado (consenso):</b> indisponível');
+    expect(m).toContain('Registrar projeção do Contexto');
+  });
+  it('"Anterior": o do BLS vence; sem ele, o que o usuário registrou (PCE/FOMC); sem nenhum, a explicação', () => {
+    expect(buildPreEventBriefing(CPI2, AT2, { consensus: { previous: '+9,9% m/m' } })).toContain('Anterior (BLS):</b> +0,3% m/m');
+    const pce = { ...CPI2, kind: 'PCE', values: undefined };
+    expect(buildPreEventBriefing(pce, AT2, { consensus: { previous: '+0,3% m/m' } })).toContain('<b>Anterior (informado por você):</b> +0,3% m/m');
+    expect(buildPreEventBriefing(pce, AT2, { consensus: null })).toContain('sem fonte oficial automática');
+  });
+  it('resultado: acima/abaixo/igual à projeção, medida por medida, e o rodapé diz que a projeção é a do usuário', () => {
+    const m = buildResultMessage(CPI2, AT2, { moves, consensus: { projection: '+0,3% m/m · +3,1% a/a' } });
+    expect(m).toContain('No mês: <b>+0,2%</b> (anterior +0,3%) — abaixo do anterior · abaixo da projeção (+0,3%)');
+    expect(m).toContain('Em 12 meses: <b>+3,1%</b> (anterior +3,0%) — acima do anterior · igual à projeção (+3,1%)');
+    expect(m).toContain('A projeção é a que você registrou (não é o consenso oficial do mercado)');
+    expect(m).not.toContain('não dá para dizer se o número foi surpresa');
+    expect(m).not.toMatch(PROIBIDO);
+  });
+  it('resultado: projeção só do mês compara só o mês; sem projeção volta ao texto de antes', () => {
+    const soMes = buildResultMessage(CPI2, AT2, { moves, consensus: { projection: '+0,1% m/m' } });
+    expect(soMes).toContain('acima da projeção (+0,1%)');
+    expect(soMes).not.toContain('igual à projeção');
+    const sem = buildResultMessage(CPI2, AT2, { moves, consensus: null });
+    expect(sem).not.toContain('da projeção');
+    expect(sem).toContain('Sem a projeção do mercado (dado pago) não dá para dizer se o número foi surpresa.');
+  });
+  it('resultado sem número oficial (BLS ainda sem o dado, PCE/FOMC): lembra a projeção do usuário sem inventar comparação', () => {
+    const semBls = buildResultMessage({ ...CPI2, values: undefined }, AT2, { moves, consensus: { projection: '+0,3% m/m' } });
+    expect(semBls).toContain('Sua projeção era: +0,3% m/m.');
+    expect(semBls).not.toContain('acima da projeção');
+    expect(semBls).toContain('Sem a projeção do mercado'); // nada foi comparado: o rodapé antigo continua
+    const fomc = buildResultMessage({ ...CPI2, kind: 'FOMC', values: undefined }, AT2, { moves, consensus: { projection: 'manter' } });
+    expect(fomc).toContain('Sua projeção era: manter — confira o resultado no site do órgão.');
+  });
+  it('o que o usuário digitou é escapado', () => {
+    expect(buildPreEventBriefing(CPI2, AT2, { consensus: { projection: '<b>&x</b>' } })).toContain('&lt;b&gt;&amp;x&lt;/b&gt;');
+  });
+});

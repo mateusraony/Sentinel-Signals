@@ -1,0 +1,116 @@
+name: Registrar projeção do Contexto (Sentinel Signals)
+
+# docs/known-risks.md item 285, addendum 30 — Fase 4b-4. O consenso do mercado é dado pago e raspar terceiros viola os termos; mas a "Projeção" aparece de graça no
+# calendário do TradingView. Este botão deixa o USUÁRIO digitar esse número (e, para PCE/FOMC, o "Anterior"): vira `consensus.json` na branch pública
+# `context-data`, e os avisos do Telegram (1 h antes e o resultado) passam a comparar o resultado com ELE ("acima / abaixo / igual à projeção que você registrou").
+# Não é o consenso oficial e a mensagem diz de quem é o número.
+#
+# Como usar: Actions → "Registrar projeção do Contexto" → Run workflow → escolha o tipo, deixe a data em branco (= o próximo evento do tipo), escreva a projeção:
+#   CPI / PPI / PCE: o do mês e, se quiser, o de 12 meses, com UMA casa decimal (ex.: 0,3 / 3,1)   ·   Payroll: milhares de vagas (ex.: 150)
+#   FOMC: manter, cortar 25, cortar 50, subir 25 ou subir 50   ·   "Anterior" (opcional; PCE/FOMC não têm fonte oficial automática): mesmo jeito; FOMC = faixa de juros (ex.: 3,75-4,00).
+#
+# Segurança: SEM segredos e SEM banco; `contents: write` só para gravar `consensus.json` na branch `context-data` (sem --force). O que o usuário digita entra SÓ por variável de
+# ambiente (nunca dentro do texto de um `run:`) e o script o converte para formatos FECHADOS (números com uma casa, decisão numa lista, faixa de juros) — texto livre nunca vai
+# para a branch pública. Travado por scripts/contextIsolationTripwire.test.js.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tipo:
+        description: "Tipo do evento"
+        type: choice
+        options:
+          - CPI
+          - NFP
+          - PPI
+          - PCE
+          - FOMC
+        default: CPI
+      data:
+        description: "Data do evento (AAAA-MM-DD). Deixe EM BRANCO para o próximo evento do tipo"
+        type: string
+        required: false
+        default: ""
+      projecao:
+        description: "Projeção. CPI/PPI/PCE: mês e, se quiser, 12 meses (ex.: 0,3 / 3,1). Payroll: milhares (ex.: 150). FOMC: manter, cortar 25, cortar 50, subir 25 ou subir 50"
+        type: string
+        required: false
+        default: ""
+      anterior:
+        description: "Anterior (opcional; útil para PCE e FOMC). Mesmo jeito da projeção; FOMC = faixa de juros (ex.: 3,75-4,00)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: context-consensus
+  cancel-in-progress: false
+
+jobs:
+  registrar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Abrir a branch de dados
+        # Precisa existir (o coletor a cria): é de lá que sai a agenda para achar o evento.
+        run: |
+          set -uo pipefail
+          set +e
+          git ls-remote --exit-code --heads origin context-data >/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            git fetch --depth=1 origin context-data
+            git worktree add data FETCH_HEAD
+            git -C data checkout -q -B context-data
+          elif [ "$rc" -eq 2 ]; then
+            echo "::error::A branch context-data ainda não existe (o coletor a cria na 1ª coleta). Nada foi gravado."
+            exit 1
+          else
+            echo "::error::Não consegui consultar o repositório para saber se a branch context-data existe (código $rc). Nada foi alterado."
+            exit 1
+          fi
+
+      - name: Registrar
+        env:
+          TIPO: ${{ inputs.tipo }}
+          DATA: ${{ inputs.data }}
+          PROJECAO: ${{ inputs.projecao }}
+          ANTERIOR: ${{ inputs.anterior }}
+        run: |
+          set -o pipefail
+          node scripts/context-consensus.mjs --dir data --tipo "$TIPO" --data "$DATA" --projecao "$PROJECAO" --anterior "$ANTERIOR" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar na branch context-data
+        run: |
+          set -euo pipefail
+          cd data
+          if [ ! -e consensus.json ]; then
+            echo "Nada a publicar."
+            exit 0
+          fi
+          git add consensus.json
+          if git diff --cached --quiet; then
+            echo "Nada mudou."
+            exit 0
+          fi
+          git -c user.name="sentinel-signals-bot" -c user.email="actions@users.noreply.github.com" commit -q -m "Projeção registrada $(date -u +%Y-%m-%dT%H:%MZ)"
+          # O coletor e o alertador também publicam nesta branch: se o push for recusado, atualiza e tenta de novo (até 3 vezes), sem forçar.
+          for tentativa in 1 2 3; do
+            if git push origin HEAD:refs/heads/context-data; then
+              exit 0
+            fi
+            git fetch -q origin context-data
+            git rebase -q FETCH_HEAD
+          done
+          echo "::error::Não consegui publicar a projeção na branch context-data. Rode de novo."
+          exit 1
