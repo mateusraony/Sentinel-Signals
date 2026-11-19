@@ -34353,6 +34353,29 @@ Pedido do usuário ("onde consulto o resultado depois que sair?" → "dá para d
   - A refatoração `resultNumberBlock` não mudou o aviso de resultado (os 42 testes de mensagens seguem passando).
 - **Não verificado [honesto]:** o 1º resumo real. Ele sai depois das 21h de Brasília do próximo dia com divulgação; hoje (19/11) não houve divulgação monitorada, então o 1º real é o do PCE de 25/11.
 
+**Addendum 36 (2026-11-19) — as datas do FOMC lidas no site do Fed passam a VALER; correções da revisão independente; juros atuais do NY Fed em observação.**
+- **A observação do addendum 34 deu certo [verificado no log real da coleta de 15:01 UTC, execução 44550073491]:** a página do Fed foi lida e 2021 a 2026 saíram com **8 reuniões cada**; 2026 bateu com a lista fixa (09/12); 2027 trouxe 8 datas (27/01, 17/03, 28/04, 09/06, 28/07, 15/09, 27/10, 17/11). As datas de 2021 a 2025 conferem com o calendário real que conheço. As de 2027 vêm só da página e eu **não consigo conferi-las por outra fonte** [não verificado]. **Achado do próprio log:** 07/11/2024 foi uma **quinta-feira** (semana da eleição); por isso a trava de dia da semana é "terça a quinta" e não "sempre quarta" (a 1ª versão que escrevi rejeitaria um calendário correto).
+- **O que entrou [fato]:**
+  - **FOMC nos eventos:** `fomcDatesFromCalendar` entrega as datas dos anos aceitos a partir do ano corrente; `buildEvents` as marca `oficial` (referência = o mês da reunião). Mesma disciplina do FRED:
+    - uma data da lista fixa que o Fed não traz mais, **num ano que ele trouxe completo**, vira `a_confirmar` (não alerta), exceto a que já aconteceu;
+    - o Fed fora do ar, ou um ano que ele não trouxe, **não rebaixa nem apaga nada** (`sourceAnswered` de FOMC virou por ano).
+  - **Travas do leitor:** o ano só entra com 8 reuniões válidas, em ordem, **todas terminando de terça a quinta**; a reunião que cruza o mês só vale com o fim MENOR que o começo, e a de um mês só com o fim ≥ começo; o traço pode vir como entidade HTML.
+  - **Histórico:** `history.json` ganha o tipo `FOMC` com as reuniões JÁ passadas (mesma trava de 8 datas por tipo, só datas). Assim o aviso de 1 h antes do FOMC passa a mostrar o BTC nas últimas 3 reuniões (antes dizia "ainda sem histórico automático para este tipo").
+  - **Modo "janela" não consulta o Fed** nem o NY Fed (só espera um número oficial).
+- **Achados da revisão independente (agente, 19/11) e o que fiz [fato × decisão]:**
+  1. **Data errada do Fed** em reunião que cruza o mês ("April 30-1" virava 01/04): CORRIGIDO e testado (regra do começo/fim).
+  2. **Pressupostos do parser:** a estrutura real foi provada pelo log; entidade de traço tratada; ano repetido na prosa segue descartando o ano (lado seguro).
+  3. **Evento só do FRED ficava sem referência** (sem "Anterior"/"Atual", e o aviso culpava a fonte): agora o PRÓXIMO evento de cada tipo ganha a referência quando DOIS sinais concordam (o mês anterior à data e o mês seguinte ao último publicado pela fonte oficial); se divergirem, fica sem. Nunca um "Anterior" de outro mês escrito como fato. Testado para PCE e CPI.
+  4. **Ano sem dado na BEA** (janeiro e fevereiro): o pedido com o ano corrente pode ser recusado inteiro; agora há uma **2ª tentativa só com os 2 anos anteriores** [o comportamento real da BEA nunca foi observado: hipótese coberta, não confirmada].
+  5. **FOMC com `values` num arquivo adulterado** travava o coletor para sempre: o tipo sem número oficial agora descarta qualquer `values`.
+  6. Item baixo: o modo "janela" buscava o Fed à toa (corrigido). Não corrigi, por decisão: o "em 12 meses" calculado com o índice de 3 casas pode diferir 0,1 ponto da BEA perto do arredondamento (raro) e o e-mail de contato no User-Agent da BEA/Fed (inofensivo).
+- **Juros atuais (o "Anterior" do FOMC) — OBSERVAÇÃO [decisão]:** `scripts/contextRates.mjs` lê a API do NY Fed (`.../rates/unsecured/effr/last/1.json`) e mostra no resumo do coletor "faixa-alvo de X% a Y%". **Nada entra no `events.json` nem no Telegram ainda**, por 2 motivos: o formato do JSON é o pesquisado, não o visto (esta sessão não alcança o NY Fed), e os termos de uso do NY Fed (aviso ao redistribuir) não estão conferidos. O plano é o do calendário: ler o log real e só então decidir (o alertador pode buscar a taxa na hora do envio, sem gravar nada público, e usar o limite superior como o TradingView mostra). Validação: faixa de 0,25 em passos de 0,25, de 0 a 10, data recente, taxa efetiva perto da faixa.
+- **Provas [verificado]:**
+  - Testes: `contextFed.test.js` (reescrito, 22), `contextBea.test.js` (+9), `contextRates.test.js` (novo) e `contextHistory.test.js` (FOMC e o resto).
+  - Mutações plantadas: 28, todas pegas. Cinco sobreviveram na 1ª rodada e viraram teste: o filtro de datas passadas, o rebaixamento só nos anos aceitos, "o próximo" ignora o passado, os passos de 0,25 e o script de mutação, que contava erro de sintaxe como "sobreviveu" (corrigido).
+  - Suíte `scripts/` inteira verde (2115 testes).
+- **Não verificado [honesto]:** (a) as 8 datas de 2027 contra uma 2ª fonte; (b) o formato real do JSON do NY Fed; (c) como a BEA responde a um ano sem dado; (d) o 1º evento de FOMC gerado pelas datas do Fed só aparece depois do merge, na próxima coleta (a das 00:00 UTC de 20/11 ou a de 10:00).
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 > **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista

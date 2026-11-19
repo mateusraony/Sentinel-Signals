@@ -112,10 +112,14 @@ export function beaActualValues(series, reference) {
   return { actual, ...(core ? { core_actual: core } : {}) };
 }
 
-/** Anos pedidos à BEA: os 3 últimos (o "em 12 meses" de janeiro precisa do janeiro de 2 anos antes do ano corrente seguinte). */
-export function beaYears(nowMs) {
+/**
+ * Anos pedidos à BEA: os 3 últimos (o "em 12 meses" de janeiro precisa do janeiro do ano anterior). `withCurrent: false` (2ª tentativa) deixa o ano corrente de fora:
+ * de 1º de janeiro até o fim de fevereiro a BEA ainda não tem nenhum valor do ano novo, e um pedido com um ano sem dado pode ser recusado inteiro (achado da
+ * revisão independente de 19/11; o comportamento real nunca foi observado, por isso a tentativa de reserva).
+ */
+export function beaYears(nowMs, { withCurrent = true } = {}) {
   const y = new Date(nowMs).getUTCFullYear();
-  return `${y - 2},${y - 1},${y}`;
+  return withCurrent ? `${y - 2},${y - 1},${y}` : `${y - 2},${y - 1}`;
 }
 
 async function getTable(table, key, years, fetchImpl, env, timeoutMs) {
@@ -142,9 +146,12 @@ async function getTable(table, key, years, fetchImpl, env, timeoutMs) {
 export async function fetchBeaPce({ fetchImpl = fetch, env = {}, nowMs = Date.now(), timeoutMs = 20000 } = {}) {
   const key = String(env.BEA_API_KEY ?? '').trim();
   if (!key) return { series: null, keyPresent: false, read: 0 };
-  const years = beaYears(nowMs);
-  const mom = await getTable(BEA_TABLES.mom, key, years, fetchImpl, env, timeoutMs);
-  const index = await getTable(BEA_TABLES.index, key, years, fetchImpl, env, timeoutMs);
+  const ask = async (years) => ({
+    mom: await getTable(BEA_TABLES.mom, key, years, fetchImpl, env, timeoutMs),
+    index: await getTable(BEA_TABLES.index, key, years, fetchImpl, env, timeoutMs),
+  });
+  let { mom, index } = await ask(beaYears(nowMs));
+  if (!mom && !index) ({ mom, index } = await ask(beaYears(nowMs, { withCurrent: false }))); // 2ª tentativa sem o ano corrente (ver `beaYears`)
   const read = (mom ? 1 : 0) + (index ? 1 : 0);
   return { series: read ? { mom, index } : null, keyPresent: true, read };
 }

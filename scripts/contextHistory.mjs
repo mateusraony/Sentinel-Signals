@@ -7,12 +7,14 @@
 //
 // Datas suspeitas ficam de fora: o FRED lista, às vezes, DUAS datas do mesmo tipo no mesmo mês (revisão anual, remarcação) e só uma é a divulgação
 // principal — o mesmo problema que `monthsWithTwoDates` aponta na medição de reação. Como não dá para saber qual é a certa, o mês inteiro sai
-// (melhor 2 casos confiáveis do que 3 com um possivelmente errado). FOMC não vem do FRED e não entra.
+// (melhor 2 casos confiáveis do que 3 com um possivelmente errado). FOMC (addendum 36) vem do calendário do site do Fed, não do FRED: as reuniões já passadas entram aqui.
 import { KIND_TIMES } from './contextCalendar.mjs';
 import { nyToUtc } from './contextTime.mjs';
 import { FRED_RELEASES } from './contextCollect.mjs';
 
 export const HISTORY_FILE = 'history.json';
+/** Os tipos com histórico: os 4 do FRED e o FOMC (datas das reuniões lidas no site do Fed). */
+export const HISTORY_KINDS = Object.freeze([...Object.keys(FRED_RELEASES), 'FOMC']);
 export const HISTORY_VERSION = 1;
 /** Quantas datas passadas guardar por tipo (a mensagem usa as 3 mais recentes; o resto é folga para meses descartados). */
 export const HISTORY_PER_KIND = 8;
@@ -40,7 +42,7 @@ export function parseHistory(json) {
   if (!json || typeof json !== 'object' || Array.isArray(json) || json.version !== HISTORY_VERSION) return emptyHistory();
   const src = json.dates && typeof json.dates === 'object' && !Array.isArray(json.dates) ? json.dates : {};
   const dates = {};
-  for (const kind of Object.keys(FRED_RELEASES)) {
+  for (const kind of HISTORY_KINDS) {
     const list = cleanDates(src[kind]);
     if (list.length) dates[kind] = list;
   }
@@ -48,14 +50,14 @@ export function parseHistory(json) {
 }
 
 /**
- * O histórico novo a partir das datas do FRED desta coleta. Tipo que o FRED respondeu: as datas passadas dele (meses com 2 datas saem). Tipo que NÃO
+ * O histórico novo a partir das datas desta coleta (FRED + as reuniões do Fed em `FOMC`). Tipo que o FRED respondeu: as datas passadas dele (meses com 2 datas saem). Tipo que NÃO
  * respondeu (`null`): fica o que já estava publicado — uma falha de rede não apaga o histórico.
  * @param {{ fredDatesByKind?: Record<string, string[]|null>, previous?: unknown, nowMs: number }} p
  */
 export function buildHistory({ fredDatesByKind = {}, previous = null, nowMs }) {
   const before = parseHistory(previous);
   const dates = {};
-  for (const kind of Object.keys(FRED_RELEASES)) {
+  for (const kind of HISTORY_KINDS) {
     const fred = fredDatesByKind?.[kind];
     if (Array.isArray(fred)) {
       const past = [...new Set(fred.filter(isRealDate))].filter((d) => {
@@ -82,7 +84,7 @@ export function assertHistoryShape(history) {
   if (history.version !== HISTORY_VERSION) fail('versão');
   if (!history.dates || typeof history.dates !== 'object' || Array.isArray(history.dates)) fail('dates não é um objeto');
   for (const [kind, list] of Object.entries(history.dates)) {
-    if (!Object.prototype.hasOwnProperty.call(FRED_RELEASES, kind)) fail(`tipo desconhecido (${String(kind).slice(0, 20)})`);
+    if (!HISTORY_KINDS.includes(kind)) fail(`tipo desconhecido (${String(kind).slice(0, 20)})`);
     if (!Array.isArray(list) || !list.length || list.length > HISTORY_PER_KIND) fail(`${kind}: quantidade de datas`);
     for (const d of list) if (!isRealDate(d)) fail(`${kind}: data inválida`);
     if (new Set(list).size !== list.length) fail(`${kind}: data repetida`);

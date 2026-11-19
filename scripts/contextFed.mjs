@@ -4,9 +4,8 @@
 // não há aviso de FOMC em 2027. O usuário pediu tudo automático (opção A, 19/11/2026): o coletor, que roda no GitHub e alcança o site do
 // Fed, lê a página a cada coleta.
 //
-// FASE DE OBSERVAÇÃO (este arquivo, por enquanto): as datas lidas só aparecem no RESUMO do coletor, comparadas com a lista fixa — NÃO
-// entram no `events.json`. A estrutura da página não pôde ser conferida desta sessão (rede bloqueada); o resumo das coletas reais é a
-// conferência. Só depois de bater com a página real um PR separado passa a usá-las.
+// Addendum 34: começou em OBSERVAÇÃO (só no resumo do coletor). A 1ª coleta real (19/11/2026, 15:01 UTC) provou a estrutura: 2021 a 2026 saíram com 8
+// reuniões cada e 2026 bateu com a lista fixa. Addendum 36: as datas dos anos aceitos passaram a entrar no `events.json` (`fomcDatesFromCalendar`).
 //
 // Regras de honestidade:
 //   - só reunião AGENDADA (o Fed se reúne 8 vezes por ano): "15 (unscheduled)", "23 (notation vote)" e afins não passam no formato
@@ -18,6 +17,12 @@ import { buildUserAgent, MAX_BODY_BYTES } from './contextProbe.mjs';
 
 export const FED_FOMC_URL = 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm';
 export const MEETINGS_PER_YEAR = 8;
+/**
+ * Dias da semana (0 = domingo) em que uma reunião pode TERMINAR: terça a quinta. O comunicado costuma sair numa quarta, mas em semana de eleição a reunião vai
+ * de quarta a quinta (o log real de 19/11/2026 mostrou 07/11/2024, uma quinta-feira — uma regra "sempre quarta" rejeitaria um calendário correto).
+ * Sábado, domingo, segunda e sexta só aparecem se a página foi lida errado.
+ */
+export const MEETING_END_WEEKDAYS = Object.freeze([2, 3, 4]);
 
 const MONTHS = Object.freeze({
   january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
@@ -25,7 +30,8 @@ const MONTHS = Object.freeze({
 });
 
 const pad = (n) => String(n).padStart(2, '0');
-const stripTags = (s) => String(s).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
+// O traço entre os dias pode vir como entidade (&ndash;, &#8211;) em vez do caractere: sem isto "27&ndash;28" nunca casaria o formato do dia.
+const stripTags = (s) => String(s).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&(?:ndash|mdash|#8211|#8212|#x2013|#x2014);/gi, '-').replace(/\s+/g, ' ').trim();
 
 /** Dia válido no calendário? (rejeita 31/04, 30/02...) */
 function validDate(y, m, d) {
@@ -42,9 +48,14 @@ export function meetingEndDate(year, monthText, dateText) {
   if (!months.length || months.length > 2) return null;
   const m = /^(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?\s*\*?$/.exec(String(dateText).trim());
   if (!m) return null;
+  const first = Number(m[1]);
   const last = Number(m[2] ?? m[1]);
   const month = months[months.length - 1];
   if (months.length === 2 && !m[2]) return null; // "Apr/May" com um dia só: incoerente
+  // Mesmo mês: o fim não pode vir antes do começo ("April 30-1" não existe: seria 1º de abril, uma data inventada). Reunião que cruza o mês ("Apr/May 30-1"):
+  // o fim É do 2º mês, então tem de ser menor que o começo. Qualquer outra combinação é lixo e vira null (achado da revisão independente de 19/11).
+  if (months.length === 1 && last < first) return null;
+  if (months.length === 2 && last >= first) return null;
   if (!validDate(year, month, last)) return null;
   return `${year}-${pad(month)}-${pad(last)}`;
 }
@@ -52,8 +63,9 @@ export function meetingEndDate(year, monthText, dateText) {
 /**
  * Lê a página do calendário do FOMC. Cada ano vem num bloco cujo título é "AAAA FOMC Meetings"; cada reunião, num par de blocos
  * `fomc-meeting__month` (mês) e `fomc-meeting__date` (dias).
- * @returns {{ years: Record<string, string[]>, rejected: Record<string, number> }|null} `years`: só os anos com exatamente 8 reuniões válidas
- *   (datas AAAA-MM-DD em ordem); `rejected`: ano → quantas reuniões válidas ele tinha (≠ 8). null se a página não tem nenhum ano reconhecível.
+ * @returns {{ years: Record<string, string[]>, rejected: Record<string, number>, odd: Record<string, string[]> }|null} `years`: só os anos com exatamente
+ *   8 reuniões válidas, em ordem, e TODAS terminando de terça a quinta (`MEETING_END_WEEKDAYS`; uma data fora disso é sinal de página lida errado —
+ *   melhor sem a data do que com uma errada); `rejected`: ano → quantas reuniões válidas ele tinha (≠ 8); `odd`: ano → as datas fora desses dias. null se a página não tem nenhum ano reconhecível.
  */
 export function parseFomcCalendar(html) {
   if (typeof html !== 'string' || !html) return null;
@@ -61,9 +73,11 @@ export function parseFomcCalendar(html) {
   if (!heads.length) return null;
   const years = {};
   const rejected = {};
+  const odd = {};
+  const seen = (y) => [years, rejected, odd].some((o) => Object.prototype.hasOwnProperty.call(o, y));
   for (const [i, h] of heads.entries()) {
     const year = Number(h[1]);
-    if (year < 2000 || year > 2100 || Object.prototype.hasOwnProperty.call(years, h[1]) || Object.prototype.hasOwnProperty.call(rejected, h[1])) continue;
+    if (year < 2000 || year > 2100 || seen(h[1])) continue;
     const block = html.slice(h.index + h[0].length, i + 1 < heads.length ? heads[i + 1].index : html.length);
     const months = [...block.matchAll(/class="[^"]*fomc-meeting__month[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)].map((x) => stripTags(x[1]));
     const dates = [...block.matchAll(/class="[^"]*fomc-meeting__date[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)].map((x) => stripTags(x[1]));
@@ -76,10 +90,12 @@ export function parseFomcCalendar(html) {
     }
     const sorted = [...new Set(out)].sort();
     const inOrder = sorted.length === out.length && sorted.every((d, k) => d === out[k]);
-    if (sorted.length === MEETINGS_PER_YEAR && inOrder) years[h[1]] = sorted;
+    const offDay = sorted.filter((d) => !MEETING_END_WEEKDAYS.includes(new Date(`${d}T00:00:00.000Z`).getUTCDay()));
+    if (sorted.length === MEETINGS_PER_YEAR && inOrder && !offDay.length) years[h[1]] = sorted;
+    else if (sorted.length === MEETINGS_PER_YEAR && inOrder) odd[h[1]] = offDay;
     else rejected[h[1]] = sorted.length;
   }
-  return Object.keys(years).length || Object.keys(rejected).length ? { years, rejected } : null;
+  return [years, rejected, odd].some((o) => Object.keys(o).length) ? { years, rejected, odd } : null;
 }
 
 /**
@@ -110,7 +126,7 @@ const ddmm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
  */
 export function describeFomcCalendar(fed, fixedDates = []) {
   if (!fed) return [];
-  const head = 'Fed — calendário do FOMC (só observação: ainda NÃO entra no events.json):';
+  const head = 'Fed — calendário do FOMC (lido da página do Fed; os anos aceitos entram no events.json):';
   if (!fed.calendar) {
     const why = { http: 'a página não respondeu', formato: 'a página não está no formato esperado', rede: 'erro de rede' }[fed.reason] ?? 'falhou';
     return [`${head} ${why}.`];
@@ -126,5 +142,27 @@ export function describeFomcCalendar(fed, fixedDates = []) {
   for (const [year, n] of Object.entries(fed.calendar.rejected).sort()) {
     lines.push(`• ${year}: ano descartado (${n} reunião(ões) válida(s), o esperado é ${MEETINGS_PER_YEAR}).`);
   }
+  for (const [year, list] of Object.entries(fed.calendar.odd ?? {}).sort()) {
+    lines.push(`• ${year}: ano descartado (data(s) que não caem de terça a quinta: ${list.map(ddmm).join(', ')}).`);
+  }
   return lines;
+}
+
+/**
+ * As datas que o coletor USA (addendum 36): do calendário já lido, só os anos aceitos. `upcoming` = do ano corrente em diante (viram eventos);
+ * `past` = todas as datas já passadas dos anos aceitos (alimentam o histórico do BTC nas reuniões); `years` = os anos aceitos a partir do corrente
+ * (só neles a lista fixa pode ser rebaixada). null se o Fed não respondeu ou nenhum ano passou nas travas.
+ * @returns {{ upcoming: string[], past: string[], years: string[] }|null}
+ */
+export function fomcDatesFromCalendar(fed, nowMs) {
+  const years = fed?.calendar?.years;
+  if (!years || !Object.keys(years).length || !Number.isFinite(nowMs)) return null;
+  const currentYear = String(new Date(nowMs).getUTCFullYear());
+  const all = Object.entries(years).sort(([a], [b]) => a.localeCompare(b));
+  const upcomingYears = all.filter(([y]) => y >= currentYear);
+  return {
+    upcoming: upcomingYears.flatMap(([, dates]) => dates),
+    past: all.flatMap(([, dates]) => dates).filter((d) => d < new Date(nowMs).toISOString().slice(0, 10)),
+    years: upcomingYears.map(([y]) => y),
+  };
 }

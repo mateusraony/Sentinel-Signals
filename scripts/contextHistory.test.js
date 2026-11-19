@@ -33,10 +33,18 @@ describe('buildHistory: só datas já passadas, da mais recente à mais antiga',
     expect(h.dates).toEqual({ NFP: ['2026-11-06', '2026-10-03'], CPI: ['2026-10-24'] });
   });
 
-  it('tipo respondido mas SEM datas confiáveis também mantém o anterior; FOMC e tipo desconhecido nunca entram', () => {
+  it('tipo respondido mas SEM datas confiáveis também mantém o anterior; tipo desconhecido nunca entra', () => {
     const previous = { version: 1, dates: { CPI: ['2026-10-24'] } };
-    const h = buildHistory({ fredDatesByKind: { CPI: ['2026-12-10'], FOMC: ['2026-09-16'], XYZ: ['2026-09-16'] }, previous, nowMs: NOW });
+    const h = buildHistory({ fredDatesByKind: { CPI: ['2026-12-10'], XYZ: ['2026-09-16'] }, previous, nowMs: NOW });
     expect(h.dates).toEqual({ CPI: ['2026-10-24'] });
+  });
+
+  it('FOMC (addendum 36): as reuniões JÁ passadas, lidas no site do Fed, entram; a futura e o Fed fora do ar (null) mantêm o que estava', () => {
+    const h = buildHistory({ fredDatesByKind: { FOMC: ['2026-12-09', '2026-10-28', '2026-09-16', '2026-07-29'] }, nowMs: NOW });
+    expect(h.dates.FOMC).toEqual(['2026-10-28', '2026-09-16', '2026-07-29']);
+    const antes = { version: 1, dates: { FOMC: ['2026-10-28'] } };
+    expect(buildHistory({ fredDatesByKind: { FOMC: null }, previous: antes, nowMs: NOW }).dates.FOMC).toEqual(['2026-10-28']);
+    expect(() => serializeHistory(h)).not.toThrow();
   });
 
   it('data mal formada ou inexistente é ignorada; entrada ruim não derruba', () => {
@@ -52,8 +60,8 @@ describe('parseHistory: o arquivo vem da rede/disco e não é confiável', () =>
     for (const x of [null, undefined, 7, 'x', [], {}, { version: 2, dates: {} }, { version: 1, dates: [] }]) {
       expect(parseHistory(x), JSON.stringify(x)).toEqual({ version: 1, dates: {} });
     }
-    const lido = parseHistory({ version: 1, dates: { CPI: ['2026-10-24', '2026-10-24', 'lixo', '2026-09-11'], FOMC: ['2026-09-16'], NFP: 'nao-lista' } });
-    expect(lido.dates).toEqual({ CPI: ['2026-10-24', '2026-09-11'] });
+    const lido = parseHistory({ version: 1, dates: { CPI: ['2026-10-24', '2026-10-24', 'lixo', '2026-09-11'], FOMC: ['2026-09-16'], XYZ: ['2026-09-16'], NFP: 'nao-lista' } });
+    expect(lido.dates).toEqual({ CPI: ['2026-10-24', '2026-09-11'], FOMC: ['2026-09-16'] });
   });
   it('lastDates devolve as N mais recentes e vazio sem histórico', () => {
     const h = { version: 1, dates: { CPI: ['2026-10-24', '2026-09-11', '2026-08-12', '2026-07-15'] } };
@@ -74,7 +82,8 @@ describe('trava do conteúdo público', () => {
       { ...ok, nota: 'texto livre' },
       { version: 2, dates: {} },
       { dates: {} },
-      { version: 1, dates: { FOMC: ['2026-09-16'] } },
+      { version: 1, dates: { XYZ: ['2026-09-16'] } },
+      { version: 1, dates: { FOMC: ['2026-09-16', '2026-09-16'] } },
       { version: 1, dates: { CPI: ['2026-10-24 08:30'] } },
       { version: 1, dates: { CPI: ['2026-02-30'] } },
       { version: 1, dates: { CPI: ['2026-10-24', '2026-10-24'] } },
