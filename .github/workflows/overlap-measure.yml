@@ -1,0 +1,47 @@
+name: Medição — operações × eventos macro (Fase 5)
+
+# Portão da Fase 5 do Contexto de Mercado (docs/known-risks.md item 285): que fração das operações REAIS ficou aberta durante um evento
+# macro (CPI, Payroll, FOMC)? Se for ≤ 30%, o marcador "aberta durante <evento>" no Histórico faz sentido.
+#
+# SÓ LEITURA e sem aviso: lê as operações (prefere a credencial somente-leitura) e as datas públicas da branch `context-data`; imprime só contagens e
+# percentuais no log (o repositório é público). Sem Telegram, sem Firebase, sem escrita, sem agendamento (não acorda o Neon por conta própria).
+# Roda sozinho quando um dos arquivos da medição muda em `main` (assim a medição sai logo depois do merge) e pelo botão manual.
+# Travado por scripts/overlapMeasureTripwire.test.js.
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/overlap-measure.mjs
+      - scripts/overlapMeasure.mjs
+      - src/lib/contextOverlap.js
+      - .github/workflows/overlap-measure.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: overlap-measure
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Medir (somente leitura, só contagens)
+        env:
+          # Preferida: a role Postgres somente-leitura. Sem ela o script usa a normal (só chama `list`) e avisa no relatório.
+          DATABASE_URL_READONLY: ${{ secrets.DATABASE_URL_READONLY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
+        run: node scripts/overlap-measure.mjs

@@ -403,6 +403,11 @@ paths:
   - **O que faz:** `scripts/context-reaction.mjs` lê as DATAS passadas de Payroll/CPI/PPI/PCE no FRED (nunca valor de série), baixa as velas de 1 min do BTC/USDT (`data-api.binance.vision`) e imprime no resumo do job o tamanho do movimento em +5/+30/+60 min contra o mesmo horário em dias úteis sem divulgação. **Medido, não previsto:** sempre com o N, sem texto de direção.
   - **Só leitura:** `contents: read`, nada gravado no repositório (só o JSON de artefato), sem banco, sem Telegram. Segredos só `FRED_API_KEY` (na URL da requisição) e `CONTEXT_CONTACT_EMAIL` (no User-Agent). Travado por `scripts/contextIsolationTripwire.test.js` (`problemasDaMedicao`, com variantes plantadas).
 
+- `overlap-measure.yml` — **medição do portão da Fase 5 do Contexto** (`docs/known-risks.md` item 285, addendum 38): que fração das operações reais ficou aberta durante CPI/Payroll/FOMC (portão ≤ 30%).
+  Roda quando um arquivo da medição muda em `main` (`push` com `paths`) e pelo botão manual; **sem `schedule`** (não acorda o Neon sozinho).
+  - **Só leitura:** `contents: read`; `scripts/overlap-measure.mjs` só chama `TradeOperation.list`. Segredos só `DATABASE_URL_READONLY` (preferida), `DATABASE_URL` (reserva, com aviso no relatório) e `DATABASE_SSL_CA`; nenhum Telegram/Firebase.
+  - **Log público:** só contagens, datas de divulgação e percentuais; falha mostra só um código. Regra pura em `src/lib/contextOverlap.js`; eventos de `history.json`/`events.json` da branch `context-data`. O nome não começa com `context` de propósito (o tripwire do Contexto proíbe banco); tem tripwire próprio (`scripts/overlapMeasureTripwire.test.js`).
+
 - `recovery.yml` — disparo **manual** (`workflow_dispatch` só), com 2 campos ("O que fazer" = `teste-a-seco`/`aplicar`
   e "Só para aplicar: o número do teste a seco…"): **teste a seco** do replay de
   recuperação depois de queda longa do banco (`docs/known-risks.md` item 288).
