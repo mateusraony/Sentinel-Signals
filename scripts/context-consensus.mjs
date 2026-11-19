@@ -4,16 +4,17 @@
 // As regras moram em scripts/contextConsensus.mjs (formatos fechados, testáveis sem rede).
 //
 // Uso (no workflow context-consensus.yml, com a branch `context-data` aberta na pasta `data`):
-//   node scripts/context-consensus.mjs --dir data --tipo CPI [--data AAAA-MM-DD] [--projecao "0,3 / 3,1"] [--anterior "..."]
+//   node scripts/context-consensus.mjs --dir data --tipo CPI [--data AAAA-MM-DD] [--mes 0,3] [--ano 3,1] [--vagas 150] [--juros 3,75] [--anterior 0,3]
 //
-// Sem `--data`, vale o PRÓXIMO evento do tipo. Entrada inválida: explica o que corrigir, não grava nada e sai com 1. Nenhum segredo, nenhum banco, nenhuma rede.
+// Um campo para cada coisa (addendum 31): só os campos do tipo escolhido são usados; os outros são IGNORADOS com aviso. Sem `--data`, vale o PRÓXIMO evento do
+// tipo. Entrada inválida: diz QUAL campo (pelo número da tela) e dá um exemplo, não grava nada e sai com 1. Nenhum segredo, nenhum banco, nenhuma rede.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { readEvents, escapeHtml } from './contextMessages.mjs';
 import { formatEventWhen } from '../src/lib/marketContextBand.js';
 import {
-  CONSENSUS_FILE, parseConsensus, setEntry, serializeConsensus, resolveTarget, parseProjection, parsePrevious,
+  CONSENSUS_FILE, parseConsensus, setEntry, serializeConsensus, resolveTarget, buildFields, describeFomc,
 } from './contextConsensus.mjs';
 
 function parseArgs(argv) {
@@ -32,14 +33,17 @@ const str = (v) => (typeof v === 'string' ? v.trim() : '');
 export function main(argv = process.argv.slice(2), _env = process.env, { now = Date.now } = {}) {
   const args = parseArgs(argv);
   const out = ['## Registrar projeção do Contexto', ''];
-  const fail = (msg) => { out.push(`**Não gravei nada:** ${msg}`); console.log(out.join('\n')); return 1; };
+  const fail = (msg, notes = []) => {
+    out.push(`**Não gravei nada:** ${msg}`);
+    if (notes.length) out.push('', ...notes.map((n) => `- ${n}`));
+    out.push('', 'Como preencher: escolha o **Tipo** (campo 1), deixe a **Data** (campo 2) em branco e preencha SÓ o campo do seu tipo — CPI/PPI/PCE: campo 3 (e o 4, se quiser) · Payroll: campo 5 · FOMC: campo 6. O campo 7 (anterior) é opcional, para PCE ou FOMC.');
+    console.log(out.join('\n'));
+    return 1;
+  };
 
   const dir = str(args.dir);
   if (!dir) return fail('falta --dir (pasta da branch context-data).');
   const kind = str(args.tipo).toUpperCase();
-  const projecao = str(args.projecao);
-  const anterior = str(args.anterior);
-  if (!projecao && !anterior) return fail('preencha a projeção e/ou o anterior.');
 
   let events;
   try {
@@ -48,39 +52,33 @@ export function main(argv = process.argv.slice(2), _env = process.env, { now = D
     return fail('não consegui ler a agenda (events.json da branch context-data).');
   }
   const nowMs = now();
+  const built = buildFields(kind, { mes: str(args.mes), ano: str(args.ano), vagas: str(args.vagas), juros: str(args.juros), anterior: str(args.anterior) });
+  if (!built.ok) return fail(`${built.error}.`, built.notes);
   const target = resolveTarget(events, kind, str(args.data), nowMs);
-  if (!target.ok) return fail(`${target.error}.`);
-
-  const fields = {};
-  if (projecao) {
-    const p = parseProjection(kind, projecao);
-    if (!p.ok) return fail(`projeção — ${p.error}.`);
-    fields.projection = p.text;
-  }
-  if (anterior) {
-    const a = parsePrevious(kind, anterior);
-    if (!a.ok) return fail(`anterior — ${a.error}.`);
-    fields.previous = a.text;
-  }
+  if (!target.ok) return fail(`${target.error}.`, built.notes);
 
   let current = parseConsensus(null, nowMs);
   try { current = parseConsensus(JSON.parse(fs.readFileSync(path.join(dir, CONSENSUS_FILE), 'utf8')), nowMs); } catch { /* arquivo ausente ou ilegível: começa vazio */ }
-  const next = setEntry(current, target.event.id, fields, nowMs);
+  const next = setEntry(current, target.event.id, built.fields, nowMs);
   let texto;
   try {
     texto = serializeConsensus(next);
   } catch (err) {
-    return fail(`${err.message}.`);
+    return fail(`${err.message}.`, built.notes);
   }
   const file = path.join(dir, CONSENSUS_FILE);
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, texto);
   fs.renameSync(tmp, file);
 
+  const saved = next.items[target.event.id];
   out.push(`**Registrado** para \`${target.event.id}\` (${escapeHtml(formatEventWhen(target.event.startsAtUtc))}):`, '');
-  if (fields.projection) out.push(`- Projeção: **${fields.projection}**`);
-  if (fields.previous) out.push(`- Anterior: **${fields.previous}**`);
-  out.push('', 'Os avisos do Telegram (1 h antes e o resultado) passam a usar estes números e a dizer que a projeção foi informada por você.');
+  if (saved.projection) out.push(`- Projeção: **${saved.projection}**`);
+  if (saved.previous) out.push(`- Anterior: **${saved.previous}**`);
+  const fomc = kind === 'FOMC' ? describeFomc(saved.projection, saved.previous) : null;
+  if (fomc) out.push(`- Isso significa: ${fomc}`);
+  if (built.notes.length) out.push('', ...built.notes.map((n) => `- ${n}`));
+  out.push('', 'Os avisos do Telegram (1 h antes e o resultado) passam a usar estes números e a dizer que a projeção foi informada por você. Rodar de novo atualiza.');
   console.log(out.join('\n'));
   return 0;
 }

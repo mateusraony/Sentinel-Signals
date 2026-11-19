@@ -814,9 +814,10 @@ describe('tripwire: o aviso automático de 1 h antes só grava o registro, só f
 
 // Fase 4b-4 (addendum 30): o botão "Registrar projeção do Contexto". Terceiro workflow de contexto com `contents: write` — e só para gravar `consensus.json` na branch pública
 // `context-data`. NENHUM segredo (nem o do Telegram), nenhuma variável, nenhum banco; só gatilho manual; o que o usuário digita entra SÓ por `env:`.
-const LINHA_COM_EXPRESSAO_DO_CONSENSO = /^(TIPO|DATA|PROJECAO|ANTERIOR):\s*\$\{\{ inputs\.(tipo|data|projecao|anterior) \}\}$/;
+const LINHA_COM_EXPRESSAO_DO_CONSENSO = /^(TIPO|DATA|MES|ANO|VAGAS|JUROS|ANTERIOR):\s*\$\{\{ inputs\.(tipo|data|mes|ano|vagas|juros|anterior) \}\}$/;
 const PUSH_DO_CONSENSO = /^\s*if git push origin HEAD:refs\/heads\/context-data; then\s*$/;
 const ADD_DO_CONSENSO = /^\s*git add consensus\.json\s*$/;
+const RODAR_CONSENSO = 'node scripts/context-consensus.mjs --dir data --tipo "$TIPO" --data "$DATA" --mes "$MES" --ano "$ANO" --vagas "$VAGAS" --juros "$JUROS" --anterior "$ANTERIOR"';
 
 function problemasDoConsenso(yml) {
   const codigo = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
@@ -842,7 +843,11 @@ function problemasDoConsenso(yml) {
   // Entrada só por `env:` — nunca dentro do texto de um `run:` (injeção de comando: o usuário digita texto livre).
   for (const l of linhas.filter((x) => /\$\{\{/.test(x))) if (!LINHA_COM_EXPRESSAO_DO_CONSENSO.test(l.trim())) p.push(`expressão fora de um env: ${l.trim()}`);
   for (const l of linhas.filter((x) => /\binputs\./.test(x))) if (!LINHA_COM_EXPRESSAO_DO_CONSENSO.test(l.trim())) p.push(`entrada fora de um env: ${l.trim()}`);
-  if (!/node scripts\/context-consensus\.mjs --dir data --tipo "\$TIPO" --data "\$DATA" --projecao "\$PROJECAO" --anterior "\$ANTERIOR"/.test(codigo)) p.push('o script precisa receber a entrada só pelas variáveis entre aspas');
+  if (!codigo.includes(RODAR_CONSENSO)) p.push('o script precisa receber a entrada só pelas variáveis entre aspas');
+  // Cada variável de ambiente precisa casar com a SUA entrada (TIPO com inputs.tipo...): trocar uma pela outra gravaria o número no campo errado.
+  for (const [, nome, entrada] of codigo.matchAll(/^\s*(TIPO|DATA|MES|ANO|VAGAS|JUROS|ANTERIOR):\s*\$\{\{ inputs\.([a-z]+) \}\}\s*$/gm)) {
+    if (nome.toLowerCase() !== entrada) p.push(`variável ${nome} recebendo a entrada errada (${entrada})`);
+  }
   if (!/timeout-minutes:\s*\d+/.test(codigo)) p.push('sem timeout-minutes');
   return p;
 }
@@ -870,7 +875,7 @@ describe('tripwire: o "Registrar projeção" só grava o consensus.json, sem seg
     expect(real).toContain(push);
     const outra = ['refs/heads', 'outra'].join('/'); // (o nome da branch é montado por partes: o hook de proteção do repositório lê o texto dos comandos)
     const adicionar = 'git add consensus.json';
-    const rodar = 'node scripts/context-consensus.mjs --dir data --tipo "$TIPO" --data "$DATA" --projecao "$PROJECAO" --anterior "$ANTERIOR"';
+    const rodar = RODAR_CONSENSO;
     expect(real).toContain(rodar);
     const plantados = [
       real.replace('on:\n  workflow_dispatch:', "on:\n  schedule:\n    - cron: '0 * * * *'\n  workflow_dispatch:"),
@@ -887,8 +892,9 @@ describe('tripwire: o "Registrar projeção" só grava o consensus.json, sem seg
       real.replace(adicionar, 'git add .'),
       real.replace(adicionar, `${adicionar} events.json`),
       real.replace(adicionar, `${adicionar}\n          git -C . add -A`),
-      real.replace(rodar, 'node scripts/context-consensus.mjs --dir data --tipo "${{ inputs.tipo }}" --projecao "${{ inputs.projecao }}"'),
-      real.replace(rodar, 'node scripts/context-consensus.mjs --dir data --tipo $TIPO --data $DATA --projecao $PROJECAO --anterior $ANTERIOR'),
+      real.replace(rodar, 'node scripts/context-consensus.mjs --dir data --tipo "${{ inputs.tipo }}" --mes "${{ inputs.mes }}"'),
+      real.replace(rodar, 'node scripts/context-consensus.mjs --dir data --tipo $TIPO --data $DATA --mes $MES --ano $ANO --vagas $VAGAS --juros $JUROS --anterior $ANTERIOR'),
+      real.replace('MES: ${{ inputs.mes }}', 'MES: ${{ inputs.juros }}'),
       real.replace('node scripts/context-consensus.mjs', 'echo sem registro'),
       real.replace('timeout-minutes: 5', ''),
     ];

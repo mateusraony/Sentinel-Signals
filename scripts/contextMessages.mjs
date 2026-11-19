@@ -6,6 +6,7 @@ import {
   parseEvents, upcomingEvents, formatCountdown, formatEventWhen, resultRows, splitValueText, compareValues, EVENT_LABELS, EVENT_HINTS, EVENT_META, STATUS_LABELS, CONTEXT_EMOJI,
 } from '../src/lib/marketContextBand.js';
 import { summarizeReactions } from './contextBtcHistory.mjs';
+import { describeFomc } from './contextConsensus.mjs';
 
 /** Categorias de aviso. `teste` é sempre permitida (é o botão manual); as outras só se estiverem na variável do repositório. */
 export const CATEGORIES = Object.freeze(['teste', 'agenda', 'pre-evento']);
@@ -142,7 +143,9 @@ export function buildPreEventBriefing(event, nowMs, { reactions = null, consensu
   else if (HAS_BLS_PREVIOUS.has(event.kind)) lines.push('<b>Anterior:</b> indisponível agora (o BLS não respondeu na última coleta).');
   else lines.push('<b>Anterior:</b> sem fonte oficial automática para este tipo (você pode registrar no botão "Registrar projeção do Contexto").');
   if (consensus?.projection) {
-    lines.push(`<b>Projeção (informada por você):</b> ${escapeHtml(consensus.projection)} — não é o consenso oficial do mercado.`, '');
+    // FOMC: a projeção é a TAXA (como o TradingView mostra); com o "Anterior" registrado, diz o que ela implica (fato aritmético sobre os dois números do usuário).
+    const fomc = event.kind === 'FOMC' ? describeFomc(consensus.projection, consensus.previous) : null;
+    lines.push(`<b>Projeção (informada por você):</b> ${escapeHtml(consensus.projection)}${fomc ? ` — ${escapeHtml(fomc)}` : ''} — não é o consenso oficial do mercado.`, '');
   } else {
     lines.push('<b>Projeção do mercado (consenso):</b> indisponível — é dado pago; o sistema não inventa um número. Você pode registrar a sua no botão "Registrar projeção do Contexto" (Actions).', '');
   }
