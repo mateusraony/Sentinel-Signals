@@ -519,11 +519,100 @@ describe('MarketContextBand — resultado', () => {
     expect(screen.queryByRole('article', { name: 'Resultado' })).toBeNull();
   });
 
-  it('PCE e FOMC nunca viram cartão de resultado (o painel não tem número deles)', async () => {
-    dados([saiu('PCE-x', 'PCE', 10 * 60000, { previous: '+0,3% m/m', source: 'BLS' }), ev('FOMC-x', 'FOMC', iso(NOW - 5 * 60000), 'confirmada')]);
+  it('o FOMC nunca vira cartão de resultado (o painel não tem número dele)', async () => {
+    dados([ev('FOMC-x', 'FOMC', iso(NOW - 5 * 60000), 'confirmada')]);
     renderPage(<MarketContextBand />);
     await screen.findByRole('article', { name: 'Próximo evento' });
     expect(screen.queryByRole('article', { name: 'Resultado' })).toBeNull();
+  });
+
+  // PCE (addendum 38 do item 285): a BEA publica, e o cartão mostra o PCE cheio e o núcleo lado a lado. Números de EXEMPLO.
+  describe('PCE (BEA): cheio e núcleo', () => {
+    const PCE_ANTES = { previous: '+0,3% m/m · +2,8% a/a', core_previous: '+0,2% m/m · +3,0% a/a', source: 'BEA' };
+    const PCE_DEPOIS = { ...PCE_ANTES, actual: '+0,5% m/m · +2,9% a/a', core_actual: '+0,2% m/m · +3,1% a/a' };
+
+    it('antes do número: 4 fichas com o nome da medida, "aguardando", e o órgão certo (a BEA, nunca o BLS)', async () => {
+      dados([saiu('PCE-x', 'PCE', 12 * 60000, PCE_ANTES)]);
+      const { container } = renderPage(<MarketContextBand />);
+      const card = await screen.findByRole('article', { name: 'Resultado' });
+      for (const nome of ['PCE cheio · no mês', 'PCE cheio · em 12 meses', 'Núcleo · no mês', 'Núcleo · em 12 meses']) {
+        expect(within(card).getByRole('region', { name: nome })).toBeTruthy();
+      }
+      expect(within(within(card).getByRole('region', { name: 'Núcleo · em 12 meses' })).getByText('+3,0%')).toBeTruthy();
+      expect(within(card).getByText(/A BEA ainda não publicou o número deste mês/)).toBeTruthy();
+      expect(card.textContent).not.toMatch(/BLS/);
+      expect(within(card).getByText('Fonte: BEA (1 casa decimal; o "em 12 meses" é calculado do índice de preços)')).toBeTruthy();
+      expect(container.textContent).not.toMatch(/proje/i);
+    });
+
+    it('depois do número: cada medida compara com o SEU anterior, em palavras neutras', async () => {
+      dados([saiu('PCE-x', 'PCE', 20 * 60000, PCE_DEPOIS)]);
+      renderPage(<MarketContextBand />);
+      const card = await screen.findByRole('article', { name: 'Resultado' });
+      const resumo = within(card).getByRole('group', { name: 'Resumo do resultado' }).textContent;
+      expect(resumo).toContain('PCE cheio · no mês: +0,5%, acima dos +0,3% da divulgação anterior');
+      expect(resumo).toContain('Núcleo · no mês: +0,2%, igual ao da divulgação anterior (+0,2%)');
+      expect(resumo).toContain('Núcleo · em 12 meses: +3,1%, acima dos +3,0% da divulgação anterior');
+      expect(card.textContent).not.toMatch(/bom|ruim|surpresa|vai subir|vai cair/i);
+    });
+
+    it('sem o núcleo (só o cheio) não aparece ficha de núcleo', async () => {
+      dados([saiu('PCE-x', 'PCE', 20 * 60000, { previous: '+0,3% m/m', actual: '+0,5% m/m', source: 'BEA' })]);
+      renderPage(<MarketContextBand />);
+      const card = await screen.findByRole('article', { name: 'Resultado' });
+      expect(within(card).getByRole('region', { name: 'PCE cheio · no mês' })).toBeTruthy();
+      expect(within(card).queryByRole('region', { name: /Núcleo/ })).toBeNull();
+    });
+
+    it('no cartão, o núcleo que saiu sem número diz "da BEA" na frase e no rodapé', async () => {
+      dados([saiu('PCE-x', 'PCE', 20 * 60000, { previous: '+0,3% m/m', core_previous: '+0,2% m/m', actual: '+0,5% m/m', source: 'BEA' })]);
+      renderPage(<MarketContextBand />);
+      const card = await screen.findByRole('article', { name: 'Resultado' });
+      expect(within(card).getByRole('group', { name: 'Resumo do resultado' }).textContent).toContain('Núcleo · no mês: indisponível desta vez, não deu para calcular com os dados da BEA.');
+      expect(within(card).getByText(/Indisponível: não deu para calcular com os dados da BEA\./)).toBeTruthy();
+      expect(card.textContent).not.toMatch(/BLS/);
+    });
+
+    it('antes do evento, a faixa mostra o Anterior do cheio e do núcleo, cada um dizendo qual é', async () => {
+      dados([{ ...ev('PCE-x', 'PCE', '2026-11-25T13:30:00.000Z'), values: PCE_ANTES }]);
+      renderPage(<MarketContextBand />);
+      const card = await screen.findByRole('article', { name: 'Próximo evento' });
+      expect(within(card).getByText('Anterior · PCE cheio')).toBeTruthy();
+      expect(within(card).getByText('Anterior · núcleo')).toBeTruthy();
+      expect(within(card).getByText('aguardando')).toBeTruthy();
+      expect(within(card).getByText('Fonte: BEA')).toBeTruthy();
+    });
+
+    it('"Últimas divulgações": o PCE entra e a nota de fonte cita a BEA; com o CPI na mesma lista cita os dois órgãos', async () => {
+      dados([saiu('PCE-a', 'PCE', 3 * 24 * HORA, PCE_DEPOIS)]);
+      const { unmount } = renderPage(<MarketContextBand />);
+      const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
+      expect(within(lista).getByText('Gastos e inflação do consumo')).toBeTruthy();
+      expect(within(lista).getByText(/Fonte: BEA \(1 casa decimal; o "em 12 meses" é calculado do índice de preços\)\. Compara com o mês anterior/)).toBeTruthy();
+      expect(lista.textContent).not.toMatch(/BLS/);
+      unmount();
+      dados([saiu('PCE-a', 'PCE', 3 * 24 * HORA, PCE_DEPOIS), saiu('CPI-a', 'CPI', 4 * 24 * HORA, CPI_V)]);
+      renderPage(<MarketContextBand />);
+      const lista2 = await screen.findByRole('region', { name: 'Últimas divulgações' });
+      expect(within(lista2).getByText(/Fonte: BLS \(1 casa decimal, como divulgado\) · BEA \(1 casa decimal; o "em 12 meses" é calculado do índice de preços\)\./)).toBeTruthy();
+    });
+
+    it('na lista, uma medida que saiu sem número diz "da BEA" (não "do BLS")', async () => {
+      dados([saiu('PCE-a', 'PCE', 3 * 24 * HORA, { previous: '+0,3% m/m', core_previous: '+0,2% m/m', actual: '+0,5% m/m', source: 'BEA' })]);
+      renderPage(<MarketContextBand />);
+      const lista = await screen.findByRole('region', { name: 'Últimas divulgações' });
+      const frase = within(lista).getByRole('group', { name: 'O que aconteceu' }).textContent;
+      expect(frase).toContain('Núcleo · no mês: indisponível desta vez, não deu para calcular com os dados da BEA.');
+      expect(frase).not.toMatch(/BLS/);
+    });
+
+    it('o CPI continua falando do BLS (nada mudou para ele)', async () => {
+      dados([saiu('CPI-x', 'CPI', 12 * 60000, { previous: '+0,3% m/m · +3,0% a/a', source: 'BLS' })]);
+      renderPage(<MarketContextBand />);
+      const card = await screen.findByRole('article', { name: 'Resultado' });
+      expect(within(card).getByText(/O BLS ainda não publicou o número deste mês/)).toBeTruthy();
+      expect(card.textContent).not.toMatch(/BEA/);
+    });
   });
 });
 

@@ -8,7 +8,7 @@ import { useNow } from '@/hooks/useNow';
 import {
   BAND_STATES, CATEGORY_META, CATEGORY_ACCENTS, EVENT_META, IMPACT_LABELS, MAX_EVENTS_SHOWN, HISTORY_SHOWN,
   bandState, upcomingEvents, splitFeatured, groupEventsByDay, eventUrgency, approachFraction, eventValueSlots,
-  splitValueText, resultEvents, releaseHistory,
+  splitValueText, resultEvents, releaseHistory, agencyOf,
   formatCountdown, formatCountdownBare, formatEventWhen, formatEventClock, formatAge, isBandEnabled, setBandEnabled,
 } from '@/lib/marketContextBand';
 import { ResultCard, ReactionPanel, HistoryCard } from '@/components/dashboard/MarketResultCard';
@@ -161,6 +161,15 @@ function ValueSlots({ e, compact = false }) {
   );
 }
 
+/** A nota de fonte da lista: o(s) órgão(s) dos eventos mostrados (BLS, BEA ou os dois) e as casas decimais de cada um. */
+function historySourceNote(shown) {
+  const withBea = shown.some((e) => agencyOf(e.kind) === 'BEA');
+  const parts = [];
+  if (shown.some((e) => agencyOf(e.kind) === 'BLS')) parts.push(sourceLine({ source: 'BLS', percent: shown.some((e) => agencyOf(e.kind) === 'BLS' && hasPercentValues(e.values)) }));
+  if (withBea) parts.push(sourceLine({ source: 'BEA', percent: shown.some((e) => agencyOf(e.kind) === 'BEA' && hasPercentValues(e.values)) }));
+  return `Fonte: ${parts.join(' · ')}. Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).`;
+}
+
 /** "Últimas divulgações": só eventos com o "Atual" oficial (de mais de 24 h atrás). Some inteira enquanto não há nenhuma. */
 function ReleaseHistory({ items, now, reactions }) {
   const [open, setOpen] = useState(false);
@@ -176,7 +185,7 @@ function ReleaseHistory({ items, now, reactions }) {
         {shown.map((e) => <HistoryCard key={e.id} e={e} now={now} moves={reactions?.get(e.id)?.moves} />)}
       </ul>
       <p className="text-10px font-mono text-muted-foreground">
-        {`Fonte: ${sourceLine({ source: 'BLS', percent: shown.some((e) => hasPercentValues(e.values)) })}. Compara com o mês anterior, não com a expectativa do mercado (que este painel não tem).`}
+        {historySourceNote(shown)}
       </p>
       {shown.some((e) => lastMove(reactions?.get(e.id)?.moves)) && (
         <p className="text-10px font-mono text-muted-foreground">O BTC (2 casas) vem das velas de 1 minuto da Binance e só mostra o que aconteceu depois; não prova que a divulgação causou o movimento.</p>

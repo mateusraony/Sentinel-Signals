@@ -58,14 +58,16 @@ export function deltaText(previousText, actualText) {
  *  - { kind: 'alone', label, actual, revised }               — saiu, mas não há anterior para comparar;
  *  - { kind: 'unavailable', label }                          — saiu o resultado, mas esta medida não deu para calcular;
  *  - { kind: 'gap', label, reason, month }                   — sem número oficial porque o BLS nunca publicou o mês-base (lacuna oficial).
+ * `agency` = quem publica o número (BLS, ou BEA para o PCE): só entra nas frases de espera e de indisponível.
  * @param {{ key: string, label: string, previous: string|null, actual: string|null, revised: string|null, direction: string|null, gap?: string, gapMonth?: string|null, alt?: object|null }[]} rows
  */
-export function resultSummary(rows, official) {
-  if (!official) return [{ key: 'wait', kind: 'wait' }];
+export function resultSummary(rows, official, agency = 'BLS') {
+  const who = agency === 'BLS' ? {} : { agency }; // o BLS é o padrão: o item fica como sempre foi
+  if (!official) return [{ key: 'wait', kind: 'wait', ...who }];
   return (Array.isArray(rows) ? rows : []).map((r) => {
     // Lacuna OFICIAL (o BLS nunca publicou o mês-base do "em 12 meses"): a frase diz POR QUÊ, em vez de "indisponível".
-    if (r.actual === null && r.gap) return { key: r.key, kind: 'gap', label: r.label, reason: r.gap, month: monthLabel(r.gapMonth) };
-    if (r.actual === null) return { key: r.key, kind: 'unavailable', label: r.label };
+    if (r.actual === null && r.gap) return { key: r.key, kind: 'gap', label: r.label, reason: r.gap, month: monthLabel(r.gapMonth), ...who };
+    if (r.actual === null) return { key: r.key, kind: 'unavailable', label: r.label, ...who };
     if (r.previous !== null && r.direction) {
       return { key: r.key, kind: 'compare', label: r.label, actual: r.actual, previous: r.previous, word: r.direction, revised: r.revised };
     }
@@ -116,11 +118,15 @@ export function gapExplanation(r) {
   return lines;
 }
 
+/** "O BLS" / "A BEA" e "do BLS" / "da BEA": o artigo concorda com o órgão (BLS é masculino, BEA é feminino). */
+export const waitOf = (agency = 'BLS') => (agency === 'BEA' ? 'A BEA' : 'O BLS');
+export const dataOf = (agency = 'BLS') => (agency === 'BEA' ? 'da BEA' : 'do BLS');
+
 /** A mesma frase como TEXTO (leitor de tela, título, teste de vocabulário). */
 export function summaryText(item) {
-  if (item.kind === 'wait') return 'O BLS ainda não publicou o número deste mês. Quando sair, ele aparece aqui.';
+  if (item.kind === 'wait') return `${waitOf(item.agency)} ainda não publicou o número deste mês. Quando sair, ele aparece aqui.`;
   if (item.kind === 'gap') return `${item.label}: sem número oficial neste mês. O BLS não divulgou o índice ${item.month ? `de ${item.month}` : 'do mês usado na comparação'}${gapCause(item.reason)}.`;
-  if (item.kind === 'unavailable') return `${item.label}: indisponível desta vez, não deu para calcular com os dados do BLS.`;
+  if (item.kind === 'unavailable') return `${item.label}: indisponível desta vez, não deu para calcular com os dados ${dataOf(item.agency)}.`;
   const rev = item.revised ? ` O anterior foi revisado para ${item.revised}.` : '';
   if (item.kind === 'alone') return `${item.label}: ${item.actual}.${rev}`;
   if (item.word === 'igual') return `${item.label}: ${item.actual}, igual ao da divulgação anterior (${item.previous}).${rev}`;
@@ -193,7 +199,7 @@ export function moveColor(pct) {
 
 /** Algum dos números oficiais do evento é uma porcentagem (CPI, PPI)? O Payroll é em "mil", sem casa decimal. */
 export function hasPercentValues(values) {
-  return [values?.previous, values?.actual, values?.revised].some((t) => typeof t === 'string' && t.includes('%'));
+  return [values?.previous, values?.actual, values?.revised, values?.core_previous, values?.core_actual].some((t) => typeof t === 'string' && t.includes('%'));
 }
 
 /**
@@ -203,7 +209,8 @@ export function hasPercentValues(values) {
  */
 export function sourceLine({ source, percent = false, btc = false } = {}) {
   const parts = [];
-  if (source) parts.push(percent ? `${source} (1 casa decimal, como divulgado)` : source);
+  // A BEA divulga o PCE no mês; o "em 12 meses" é calculado do índice de preços dela (a tela diz isso em vez de chamar de "como divulgado").
+  if (source) parts.push(percent ? (source === 'BEA' ? 'BEA (1 casa decimal; o "em 12 meses" é calculado do índice de preços)' : `${source} (1 casa decimal, como divulgado)`) : source);
   if (btc) parts.push('BTC: Binance (2 casas)');
   return parts.join(' · ');
 }

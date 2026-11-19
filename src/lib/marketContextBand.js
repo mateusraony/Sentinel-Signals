@@ -13,8 +13,14 @@ export const STALE_AFTER_MS = 36 * 60 * 60 * 1000;
 export const JUST_RELEASED_MS = 30 * 60 * 1000;
 /** Evento do BLS com números que saiu há até isto vira cartão de RESULTADO (Anterior × Atual); depois passa para "Últimas divulgações". */
 export const RESULT_CARD_MS = 24 * 60 * 60 * 1000;
-/** Tipos que o BLS publica (têm "Anterior"/"Atual"); PCE e FOMC não têm número neste painel. */
-export const RESULT_KINDS = Object.freeze(['CPI', 'PPI', 'NFP']);
+/** Tipos com "Anterior"/"Atual" oficiais na tela: CPI, PPI e Payroll (BLS) e o PCE (BEA, addendum 33); o FOMC não tem número neste painel. */
+export const RESULT_KINDS = Object.freeze(['CPI', 'PPI', 'NFP', 'PCE']);
+/** Quem publica o número oficial de cada tipo (a tela diz "o BLS ainda não publicou…" / "o BEA…"; o texto de cada tipo vem daqui). */
+export const AGENCY_BY_KIND = Object.freeze({ CPI: 'BLS', PPI: 'BLS', NFP: 'BLS', PCE: 'BEA' });
+/** O órgão do tipo (BLS por padrão: o comportamento de sempre). */
+export const agencyOf = (kind) => AGENCY_BY_KIND[kind] ?? 'BLS';
+/** O evento traz algum número oficial de "Anterior"/"Atual" (o PCE também tem o núcleo, em campos próprios)? */
+export const hasResultValues = (e) => Boolean(e?.values?.previous || e?.values?.actual || (e?.kind === 'PCE' && e?.values?.core_previous));
 /** Quantas divulgações a lista "Últimas divulgações" mostra de início. */
 export const HISTORY_SHOWN = 5;
 /** Quantos eventos a faixa mostra de início (1 em destaque + a linha do tempo); "Ver todos" mostra o resto. */
@@ -170,7 +176,7 @@ export function parseEventValues(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const previous = cleanValueText(raw.previous);
   const actual = cleanValueText(raw.actual);
-  // O NÚCLEO do PCE (números da BEA, addendum 33): só o Telegram usa; a tela continua sem números do PCE (`eventValueSlots`/`releaseHistory`).
+  // O NÚCLEO do PCE (números da BEA, addendum 33): campos próprios (`core_*`); a tela os mostra em linhas "Núcleo" (`eventResultRows`).
   const corePrevious = cleanValueText(raw.core_previous);
   const coreActual = actual ? cleanValueText(raw.core_actual) : null;
   const core = {
@@ -190,11 +196,19 @@ export function parseEventValues(raw) {
  * "Atual", o Atual aparece como "aguardando" (`text: null`) — o número só entra quando a fonte oficial publicar.
  */
 export function eventValueSlots(e) {
-  // Só os tipos do BLS têm espaço de número na tela; o PCE (BEA, addendum 33) por enquanto só aparece no Telegram.
   if (!RESULT_KINDS.includes(e?.kind)) return [];
   const v = e?.values;
-  if (!v || (!v.previous && !v.actual)) return [];
+  if (!v || (!v.previous && !v.actual && !v.core_previous)) return [];
   const slots = [];
+  if (e.kind === 'PCE') {
+    // O PCE tem duas medidas lado a lado (cheio e núcleo): cada número diz de qual é.
+    if (v.previous) slots.push({ key: 'previous', label: 'Anterior · PCE cheio', text: v.previous });
+    if (v.core_previous) slots.push({ key: 'core_previous', label: 'Anterior · núcleo', text: v.core_previous });
+    if (v.actual) slots.push({ key: 'actual', label: 'Atual · PCE cheio', text: v.actual });
+    if (v.core_actual) slots.push({ key: 'core_actual', label: 'Atual · núcleo', text: v.core_actual });
+    if (!v.actual) slots.push({ key: 'actual', label: 'Atual', text: null });
+    return slots;
+  }
   if (v.previous) slots.push({ key: 'previous', label: 'Anterior', text: v.previous });
   slots.push({ key: 'actual', label: 'Atual', text: v.actual ?? null });
   return slots;
@@ -273,13 +287,28 @@ export function resultRows(values, reference = null) {
 }
 
 /**
+ * As linhas do cartão de resultado de UM evento. CPI, PPI e Payroll: as de sempre (`resultRows`). PCE: as duas medidas lado a lado, cada linha dizendo de qual é
+ * ("PCE cheio · no mês", "Núcleo · em 12 meses"); o núcleo só aparece se a BEA trouxe algum número dele. Nada é estimado.
+ */
+export function eventResultRows(e) {
+  if (!e?.values) return [];
+  if (e.kind !== 'PCE') return resultRows(e.values, e.reference ?? null);
+  const v = e.values;
+  const tag = (rows, prefix, key) => rows.map((r) => ({ ...r, key: `${key}-${r.key}`, label: `${prefix} · ${r.label.toLowerCase()}` }));
+  return [
+    ...tag(resultRows({ previous: v.previous, actual: v.actual, revised: v.revised }, e.reference ?? null), 'PCE cheio', 'headline'),
+    ...tag(resultRows({ previous: v.core_previous, actual: v.core_actual, revised: v.core_revised }, e.reference ?? null), 'Núcleo', 'core'),
+  ];
+}
+
+/**
  * Eventos do BLS que JÁ saíram (há até 24 h) e trazem números: viram o cartão de RESULTADO (mais recente primeiro). Evento sem número fica
  * no fluxo antigo ("acabou de sair" por 30 min); data "a confirmar" nunca entra.
  */
 export function resultEvents(events, nowMs) {
   return (Array.isArray(events) ? events : [])
     .filter((e) => RESULT_KINDS.includes(e?.kind) && e.status !== 'a_confirmar' && Number.isFinite(e.startMs)
-      && e.startMs <= nowMs && nowMs - e.startMs <= RESULT_CARD_MS && (e.values?.previous || e.values?.actual))
+      && e.startMs <= nowMs && nowMs - e.startMs <= RESULT_CARD_MS && hasResultValues(e))
     .sort((a, b) => (a.startMs === b.startMs ? String(a.id).localeCompare(String(b.id)) : b.startMs - a.startMs));
 }
 

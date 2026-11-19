@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { formatMove } from './btcAfterRelease';
 import { MOVE_COLORS } from './marketContextBand';
 import {
-  compareBars, deltaText, resultSummary, summaryText, monthLabel, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes, nearestPoint, hasPercentValues, sourceLine, moveColor,
+  compareBars, deltaText, resultSummary, summaryText, monthLabel, altWindowText, gapExplanation, sparkGeometry, markerAt, horizonStatus, sizeFraction, maxAbsMove, gaugeBars, seriesExtremes, nearestPoint, hasPercentValues, sourceLine, moveColor, waitOf, dataOf,
 } from './resultVisual';
 
 const MIN = 60 * 1000;
@@ -397,5 +397,39 @@ describe('moveColor — a cor segue o sinal que está escrito na tela', () => {
     expect(moveColor(null)).toBe(MOVE_COLORS.flat);
     expect(moveColor(undefined)).toBe(MOVE_COLORS.flat);
     expect(moveColor('abc')).toBe(MOVE_COLORS.flat);
+  });
+});
+
+// PCE (BEA, addendum 38 do item 285): o órgão entra nas frases; o BLS continua exatamente como era.
+describe('órgão que publica o número (BLS ou BEA)', () => {
+  it('o artigo concorda com o órgão: "O BLS", "A BEA"', () => {
+    expect([waitOf(), waitOf('BLS'), waitOf('BEA')]).toEqual(['O BLS', 'O BLS', 'A BEA']);
+    expect([dataOf(), dataOf('BLS'), dataOf('BEA')]).toEqual(['do BLS', 'do BLS', 'da BEA']);
+  });
+
+  it('o item de espera e o de indisponível só levam o órgão quando NÃO é o BLS (o item do BLS fica como sempre foi)', () => {
+    expect(resultSummary([], false)).toEqual([{ key: 'wait', kind: 'wait' }]);
+    expect(resultSummary([], false, 'BEA')).toEqual([{ key: 'wait', kind: 'wait', agency: 'BEA' }]);
+    const row = { key: 'a', label: 'Núcleo · no mês', previous: '+0,3%', actual: null, revised: null, direction: null };
+    expect(resultSummary([row], true)).toEqual([{ key: 'a', kind: 'unavailable', label: 'Núcleo · no mês' }]);
+    expect(resultSummary([row], true, 'BEA')[0]).toMatchObject({ kind: 'unavailable', agency: 'BEA' });
+  });
+
+  it('as frases de espera e de indisponível citam o órgão certo', () => {
+    expect(summaryText({ kind: 'wait' })).toBe('O BLS ainda não publicou o número deste mês. Quando sair, ele aparece aqui.');
+    expect(summaryText({ kind: 'wait', agency: 'BEA' })).toBe('A BEA ainda não publicou o número deste mês. Quando sair, ele aparece aqui.');
+    expect(summaryText({ kind: 'unavailable', label: 'X' })).toBe('X: indisponível desta vez, não deu para calcular com os dados do BLS.');
+    expect(summaryText({ kind: 'unavailable', label: 'X', agency: 'BEA' })).toBe('X: indisponível desta vez, não deu para calcular com os dados da BEA.');
+  });
+
+  it('a nota de fonte da BEA diz que o "em 12 meses" é calculado; a do BLS segue "como divulgado"', () => {
+    expect(sourceLine({ source: 'BEA', percent: true })).toBe('BEA (1 casa decimal; o "em 12 meses" é calculado do índice de preços)');
+    expect(sourceLine({ source: 'BEA' })).toBe('BEA');
+    expect(sourceLine({ source: 'BLS', percent: true })).toBe('BLS (1 casa decimal, como divulgado)');
+  });
+
+  it('hasPercentValues olha também o núcleo do PCE', () => {
+    expect(hasPercentValues({ core_previous: '+0,3% m/m' })).toBe(true);
+    expect(hasPercentValues({ previous: '+119 mil' })).toBe(false);
   });
 });
