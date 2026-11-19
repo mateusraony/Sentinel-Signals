@@ -34280,6 +34280,18 @@ Pedido do usuário ("onde consulto o resultado depois que sair?" → "dá para d
 - **Provas [verificado]:** `contextProbe.test.js` +2 testes (PULADO sem chave; URL exata com os 2 anos; chave nunca no resultado nem no Markdown; erro da BEA nos 2 formatos; lista filtra a tabela de GASTO 2.8.5 e a de renda; tabela errada, sem a linha 1 e período anual falham). Mutações plantadas (sem a leitura do erro, só o ano atual, período não-mensal, ordem invertida, sem o filtro de preço, sem o 2º formato de erro): todas pegas.
 - **Não verificado [honesto]:** a resposta real da BEA. **Próximo passo do usuário:** rodar "Sondar as fontes" uma vez e me mandar as 3 linhas "BEA — API". Depois disso: o leitor automático do PCE no coletor.
 - **Achado do Codex no PR #588 [corrigido no PR seguinte]:** as tabelas mensais trazem também o "Market-based PCE excluding food and energy" (série separada, BEA FAQ 83), e o filtro do núcleo casava os dois — no mesmo mês a sonda podia mostrar o market-based como núcleo e induzir a escolha da série errada para o leitor. Agora a linha `market-based` é excluída; teste com as duas linhas em qualquer ordem (e sem o núcleo comum: "não achada", nunca o market-based); remover a exclusão faz o teste falhar.
+- **Resultado real da sonda (19/11, 13:59 UTC, rodada pelo usuário; portão APROVADO) [verificado]:**
+  - **Chave:** a `BEA_API_KEY` funciona: as 3 linhas OK, de 21 a 583 ms, até 169 KB.
+  - **Tabelas:** são 252 tabelas NIPA; 3 delas são mensais de preços do PCE: **T20804** (índice), **T20807** (variação no mês) e T20808 (contribuições).
+  - **T20807** traz a variação em `Percent change`, com 1 casa. Linha 1 é o PCE cheio (2026M09 = 0.5); **linha 25** é o núcleo "PCE excluding food and energy" (2026M09 = 0.3). São 651 valores (2 anos).
+  - **T20804** traz o índice (`Level`, 3 casas), com o mesmo número de linha: linha 1 = 132.257, linha 25 = 130.902. Daí sai o "em 12 meses", índice do mês ÷ mesmo mês do ano anterior − 1; os 2 anos pedidos cobrem isso.
+  - **Último mês:** é setembro (a divulgação de 29/10). A de 25/11 traz outubro e pode revisar setembro.
+- **Achado [fato × hipótese]:** o "Anterior" que o usuário registrou para o PCE de 25/11 (`+0,3% m/m`) é igual ao **núcleo** de setembro (0,3), não ao PCE **cheio** (0,5). Hipótese: ele copiou a linha "Core PCE" do TradingView. Pergunta feita ao usuário; o leitor vai mostrar as duas medidas, e a comparação com a projeção dele usa a medida que ele confirmar.
+- **Outros pontos da mesma execução [fato]:**
+  - "FRED — datas do Payroll" deu HTTP 502: erro do servidor do FRED, opcional, numa execução só. O coletor mantém as datas publicadas quando o FRED falha (regra 4 de `buildEvents`).
+  - O financecalendar devolveu 1 evento de hoje para CPI e Payroll, ou seja, o filtro de série parou de funcionar. É fonte de terceiros e só aparece na sonda; não alimenta nada.
+  - **A lista fixa só cobre até 23/12** ("ATENÇÃO: só 33 dias"). CPI/Payroll/PPI/PCE continuam vindo do FRED (as datas de 2027 entram quando o FRED as publicar); o **FOMC depende só da lista**, que hoje termina na reunião de 09/12. Atualizar com o calendário 2027 do Fed (página oficial) **antes de 23/12**: senão a sonda reprova e não há aviso de FOMC em 2027.
+- **Próximo passo [plano]:** um leitor da BEA no coletor que grava o "Anterior" e o "Atual" oficiais do PCE (cheio e núcleo, no mês e em 12 meses) do mesmo jeito que o BLS. Usa o segredo `BEA_API_KEY` (precisa ser repassado em `context-collect.yml`).
 
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
