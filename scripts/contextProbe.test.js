@@ -8,7 +8,7 @@ import {
   validateIcs, validateFearGreed, validateRss, validateBinanceTicker, validateRawGithubCors,
   validateDefillamaChains, validateHtmlContains, extractRateLimit, contactEmail, buildUserAgent,
   collectIsoDates, validateFinanceCalendar, validateFredRelease, validateFredDates,
-  parseFredTimestamp, fredReleaseInstants, validateFredSeriesMeta, validateDeribitDvol, validateBlsApi, eventFieldNames,
+  parseFredTimestamp, fredReleaseInstants, validateFredSeriesMeta, validateDeribitDvol, validateBlsApi, validateBeaPceTables, validateBeaPceData, eventFieldNames,
 } from './contextProbe.mjs';
 
 const src = (id) => SOURCES.find((s) => s.id === id);
@@ -262,7 +262,7 @@ describe('lista de fontes', () => {
       expect(typeof s.validate).toBe('function');
       // Única exceção: o molde `<NOME>` de uma fonte que declara `secretInUrl` (FRED: api_key=, BLS:
       // registrationkey=). Valor literal, nunca.
-      const semMolde = (u) => (s.secretInUrl ? u.replace(new RegExp(`(api_key|registrationkey)=<${s.secretInUrl}>`), '') : u);
+      const semMolde = (u) => (s.secretInUrl ? u.replace(new RegExp(`(api_key|registrationkey|UserID)=<${s.secretInUrl}>`), '') : u);
       const visible = semMolde(s.url);
       expect(/key|token|secret/i.test(visible), s.id).toBe(false);
       if (s.secretInUrl) {
@@ -282,6 +282,7 @@ describe('lista de fontes', () => {
   it('as fontes novas (financecalendar, FRED, Deribit, BEA, BLS API) são opcionais: não mudam o portão da fase', () => {
     const novas = SOURCES.filter((s) => /^(financecalendar|fred|deribit|bea|bls-api)-/.test(s.id));
     expect(novas.map((s) => s.id).sort()).toEqual([
+      'bea-api-pce-t20804', 'bea-api-pce-t20807', 'bea-api-pce-tables',
       'bea-schedule-page', 'bls-api-v1-cpi', 'bls-api-v2-cpi', 'bls-api-v2-nfp', 'bls-api-v2-ppi',
       'deribit-dvol-btc', 'deribit-dvol-eth',
       'financecalendar-cpi', 'financecalendar-nfp',
@@ -549,6 +550,67 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     expect(JSON.stringify(erro)).not.toContain(KEY);
     // As 3 séries: CPI, Payroll e PPI (as 3 divulgações que o BLS faz e que o aviso precisa medir).
     expect(['bls-api-v2-cpi', 'bls-api-v2-nfp', 'bls-api-v2-ppi'].map((id) => src(id).url.split('/').pop().split('?')[0])).toEqual(['CUSR0000SA0', 'CES0000000001', 'WPSFD4']);
+  });
+
+  it('BEA: sem a chave fica PULADO; com a chave, ela vai só na URL, o ano vem da data e o eco do UserID nunca é lido', async () => {
+    let called = false;
+    const pulado = await probeSource(src('bea-api-pce-t20807'), { fetchImpl: async () => { called = true; return new Response('{}'); }, env: {} });
+    expect(pulado.status).toBe('PULADO');
+    expect(called).toBe(false);
+
+    const KEY = 'ABCDEF01-2345-6789-ABCD-EF0123456789';
+    const linha = (n, d, t, v) => ({ TableName: 'T20807', SeriesCode: 'X', LineNumber: String(n), LineDescription: d, TimePeriod: t, CL_UNIT: 'Percent change', DataValue: v });
+    // A BEA ecoa o UserID em BEAAPI.Request: o validador não pode imprimir nada de lá.
+    const corpo = JSON.stringify({ BEAAPI: { Request: { RequestParam: [{ ParameterName: 'USERID', ParameterValue: KEY }] }, Results: { Data: [
+      linha(1, 'Personal consumption expenditures (PCE)', '2026M08', '0.2'),
+      linha(1, 'Personal consumption expenditures (PCE)', '2026M09', '0.3'),
+      linha(25, 'PCE excluding food and energy', '2026M09', '0.2'),
+      linha(25, 'PCE excluding food and energy', '2026M08', '0.2'),
+    ] } } });
+    let seenUrl;
+    const now = Date.parse('2026-11-19T12:00:00Z');
+    const r = await probeSource(src('bea-api-pce-t20807'), { fetchImpl: async (url) => { seenUrl = url; return new Response(corpo, { status: 200 }); }, env: { BEA_API_KEY: KEY }, now: () => now });
+    expect(r.status).toBe('OK');
+    expect(r.detail).toBe('T20807 (unidade: Percent change) — linha 1 "Personal consumption expenditures (PCE)": 2026M09 = 0.3 · núcleo: linha 25 "PCE excluding food and energy": 2026M09 = 0.2 · 4 valor(es)');
+    expect(seenUrl).toBe(`https://apps.bea.gov/api/data?UserID=${KEY}&method=GetData&DataSetName=NIPA&TableName=T20807&Frequency=M&Year=2025,2026&ResultFormat=JSON`);
+    expect(r.url).toContain('UserID=<BEA_API_KEY>');
+    expect(JSON.stringify(r)).not.toContain(KEY);
+    expect(formatProbeMarkdown([r], { startedAt: 'x', runner: 'y' })).not.toContain(KEY);
+
+    // Erro da BEA (nos dois lugares que a doc mostra) e erro de rede citando a URL: nunca vaza a chave.
+    for (const erroBea of [{ BEAAPI: { Results: { Error: { APIErrorCode: '3', APIErrorDescription: `UserID ${KEY} is not active` } } } }, { BEAAPI: { Error: { APIErrorCode: '3', APIErrorDescription: 'Invalid UserID' } } }]) {
+      const e = await probeSource(src('bea-api-pce-t20807'), { fetchImpl: async () => new Response(JSON.stringify(erroBea), { status: 200 }), env: { BEA_API_KEY: KEY } });
+      expect(e.status).toBe('FALHOU');
+      expect(e.detail).toMatch(/BEA respondeu:/);
+      expect(JSON.stringify(e)).not.toContain(KEY);
+    }
+    const rede = await probeSource(src('bea-api-pce-tables'), { fetchImpl: async (url) => { throw new Error(`falha ao abrir ${url}`); }, env: { BEA_API_KEY: KEY } });
+    expect(rede.status).toBe('FALHOU');
+    expect(JSON.stringify(rede)).not.toContain(KEY);
+  });
+
+  it('BEA: a lista de tabelas mostra só as mensais de PREÇOS do PCE; a tabela errada ou sem a linha 1 falha', () => {
+    const tabelas = JSON.stringify({ BEAAPI: { Results: { ParamValue: [
+      { TableName: 'T10101', Description: 'Table 1.1.1. Percent Change From Preceding Period in Real Gross Domestic Product (A) (Q)' },
+      { TableName: 'T20807', Description: 'Table 2.8.7. Percent Change From Preceding Period in Prices for Personal Consumption Expenditures by Major Type of Product, Monthly (M)' },
+      { TableName: 'T20600', Description: 'Table 2.6. Personal Income and Its Disposition, Monthly (M)' },
+      // Mesma família, mas de GASTO em dólares (não de preço): não pode entrar.
+      { TableName: 'T20805', Description: 'Table 2.8.5. Personal Consumption Expenditures by Major Type of Product, Monthly (M)' },
+    ] } } });
+    const v = validateBeaPceTables({ body: tabelas });
+    expect(v.ok).toBe(true);
+    expect(v.detail).toMatch(/^4 tabelas; 1 mensal\(is\) de preços do PCE — T20807: Table 2\.8\.7\./);
+    expect(validateBeaPceTables({ body: JSON.stringify({ BEAAPI: { Results: { ParamValue: [{ TableName: 'T10101', Description: 'GDP' }] } } }) }).ok).toBe(false);
+    expect(validateBeaPceTables({ body: 'nada' }).ok).toBe(false);
+    expect(validateBeaPceTables({ body: JSON.stringify({ BEAAPI: { Results: { Error: { APIErrorCode: '3', APIErrorDescription: 'Invalid UserID' } } } }) }).detail).toBe('BEA respondeu: Invalid UserID');
+
+    const outra = JSON.stringify({ BEAAPI: { Results: { Data: [{ TableName: 'T20804', LineNumber: '1', LineDescription: 'PCE', TimePeriod: '2026M09', DataValue: '127.1' }] } } });
+    expect(validateBeaPceData('T20807')({ body: outra }).ok).toBe(false);
+    const semLinha1 = JSON.stringify({ BEAAPI: { Results: { Data: [{ TableName: 'T20807', LineNumber: '2', LineDescription: 'Goods', TimePeriod: '2026M09', DataValue: '0.1' }] } } });
+    expect(validateBeaPceData('T20807')({ body: semLinha1 }).detail).toMatch(/sem a linha 1/);
+    // Período anual/trimestral não conta como mensal.
+    const anual = JSON.stringify({ BEAAPI: { Results: { Data: [{ TableName: 'T20807', LineNumber: '1', LineDescription: 'PCE', TimePeriod: '2026', DataValue: '2.8' }] } } });
+    expect(validateBeaPceData('T20807')({ body: anual }).ok).toBe(false);
   });
 
   it('Deribit DVOL: confere formato, plausibilidade e idade — e NUNCA imprime o valor (termos da Deribit)', () => {

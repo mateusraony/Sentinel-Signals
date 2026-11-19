@@ -307,6 +307,58 @@ export function validateBlsApi(seriesId) {
   };
 }
 
+/** Erro da API da BEA: vem em BEAAPI.Results.Error ou em BEAAPI.Error (a doc mostra os dois). Nunca lê BEAAPI.Request (ecoa o UserID). */
+function beaError(j) {
+  const e = j?.BEAAPI?.Results?.Error ?? j?.BEAAPI?.Error;
+  if (!e) return null;
+  const desc = Array.isArray(e) ? e[0] : e;
+  return String(desc?.APIErrorDescription ?? desc?.ErrorDetail?.Description ?? desc?.APIErrorCode ?? 'erro sem descrição').slice(0, 160);
+}
+
+/**
+ * BEA — lista de tabelas NIPA (item 285, addendum 32). Procura as tabelas MENSAIS de PREÇOS do PCE e imprime o
+ * código e o nome de cada uma — é o que decide qual tabela o leitor automático do PCE vai usar.
+ * Formato esperado: { BEAAPI: { Results: { ParamValue: [{ TableName, Description }] } } }.
+ */
+export function validateBeaPceTables({ body }) {
+  const j = tryJson(body);
+  if (j.error) return fail('resposta não é JSON');
+  const err = beaError(j.value);
+  if (err) return fail(`BEA respondeu: ${err}`);
+  const list = j.value?.BEAAPI?.Results?.ParamValue;
+  if (!Array.isArray(list) || !list.length) return fail('sem BEAAPI.Results.ParamValue');
+  const pce = list.filter((t) => /personal consumption expenditures/i.test(t?.Description ?? '') && /price/i.test(t?.Description ?? '') && /monthly/i.test(t?.Description ?? ''));
+  if (!pce.length) return fail(`${list.length} tabelas, nenhuma mensal de preços do PCE`);
+  const shown = pce.slice(0, 6).map((t) => `${t.TableName}: ${String(t.Description).slice(0, 110)}`).join(' | ');
+  return pass(`${list.length} tabelas; ${pce.length} mensal(is) de preços do PCE — ${shown}`);
+}
+
+/**
+ * BEA — dados de UMA tabela mensal do PCE (ano anterior e atual). Dado do governo dos EUA (domínio público, como o BLS):
+ * pode aparecer no log. Mostra a linha 1 (PCE cheio) e a do núcleo (sem alimentos e energia): o último mês e o valor,
+ * além da unidade — é o que confirma se a tabela traz a variação no mês (para o "Atual"/"Anterior") ou o índice.
+ * Formato esperado: { BEAAPI: { Results: { Data: [{ TableName, LineNumber, LineDescription, TimePeriod: 'AAAAMmm', DataValue, CL_UNIT }] } } }.
+ */
+export function validateBeaPceData(tableName) {
+  return ({ body }) => {
+    const j = tryJson(body);
+    if (j.error) return fail('resposta não é JSON');
+    const err = beaError(j.value);
+    if (err) return fail(`BEA respondeu: ${err}`);
+    const rows = j.value?.BEAAPI?.Results?.Data;
+    if (!Array.isArray(rows) || !rows.length) return fail('sem BEAAPI.Results.Data');
+    const mine = rows.filter((r) => r?.TableName === tableName && /^\d{4}M\d{2}$/.test(r?.TimePeriod ?? ''));
+    if (!mine.length) return fail(`nenhuma linha mensal da tabela ${tableName}`);
+    const latestOf = (pred) => mine.filter(pred).sort((a, b) => (a.TimePeriod < b.TimePeriod ? 1 : -1))[0];
+    const fmt = (r) => (r ? `linha ${r.LineNumber} "${String(r.LineDescription).slice(0, 60)}": ${r.TimePeriod} = ${String(r.DataValue).slice(0, 12)}` : 'não achada');
+    const head = latestOf((r) => String(r.LineNumber) === '1');
+    if (!head) return fail(`tabela ${tableName} sem a linha 1`);
+    const core = latestOf((r) => /excluding food and energy/i.test(r.LineDescription ?? ''));
+    const unit = String(head.CL_UNIT ?? head.METRIC_NAME ?? '?').slice(0, 40);
+    return pass(`${tableName} (unidade: ${unit}) — ${fmt(head)} · núcleo: ${fmt(core)} · ${mine.length} valor(es)`);
+  };
+}
+
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
@@ -338,6 +390,11 @@ const FRED_KEY_PLACEHOLDER = '<FRED_API_KEY>';
 const DERIBIT_DVOL = 'https://www.deribit.com/api/v2/public/get_volatility_index_data';
 const BLS_V2 = 'https://api.bls.gov/publicAPI/v2/timeseries/data';
 const BLS_KEY_PLACEHOLDER = '<BLS_API_KEY>';
+const BEA_API = 'https://apps.bea.gov/api/data';
+const BEA_KEY_PLACEHOLDER = '<BEA_API_KEY>';
+// A janela do GetData depende da data: ano anterior + atual (em janeiro o último mês publicado é de outro ano).
+const beaYears = (nowMs) => { const y = new Date(nowMs).getUTCFullYear(); return `${y - 1},${y}`; };
+const beaDataUrl = (table, years) => `${BEA_API}?UserID=${BEA_KEY_PLACEHOLDER}&method=GetData&DataSetName=NIPA&TableName=${table}&Frequency=M&Year=${years}&ResultFormat=JSON`;
 const dvolUrl = (currency) => (nowMs) => `${DERIBIT_DVOL}?currency=${currency}&resolution=3600&start_timestamp=${nowMs - 6 * HOUR_MS}&end_timestamp=${nowMs}`;
 
 const BLS_HINT = 'a política do BLS pede um contato do robô (segredo CONTEXT_CONTACT_EMAIL)';
@@ -405,6 +462,12 @@ export const SOURCES = Object.freeze([
   { id: 'bls-api-v2-cpi', name: 'BLS — API v2 com chave (CPI, só o período mais recente)', url: `${BLS_V2}/CUSR0000SA0?registrationkey=${BLS_KEY_PLACEHOLDER}`, required: false, needsEnv: 'BLS_API_KEY', secretInUrl: 'BLS_API_KEY', blockHint: BLS_HINT, validate: validateBlsApi('CUSR0000SA0') },
   { id: 'bls-api-v2-nfp', name: 'BLS — API v2 com chave (Payroll, só o período mais recente)', url: `${BLS_V2}/CES0000000001?registrationkey=${BLS_KEY_PLACEHOLDER}`, required: false, needsEnv: 'BLS_API_KEY', secretInUrl: 'BLS_API_KEY', blockHint: BLS_HINT, validate: validateBlsApi('CES0000000001') },
   { id: 'bls-api-v2-ppi', name: 'BLS — API v2 com chave (PPI, só o período mais recente)', url: `${BLS_V2}/WPSFD4?registrationkey=${BLS_KEY_PLACEHOLDER}`, required: false, needsEnv: 'BLS_API_KEY', secretInUrl: 'BLS_API_KEY', blockHint: BLS_HINT, validate: validateBlsApi('WPSFD4') },
+  // API da BEA com a chave grátis (segredo BEA_API_KEY; sem ela, PULADO). A chave (UserID) vai só na requisição;
+  // a resposta ecoa o UserID em BEAAPI.Request, que os validadores NUNCA leem. Item 285, addendum 32: confirmar
+  // qual tabela mensal traz a variação de preços do PCE antes de escrever o leitor do "Anterior"/"Atual".
+  { id: 'bea-api-pce-tables', name: 'BEA — API com chave: tabelas mensais de preços do PCE', url: `${BEA_API}?UserID=${BEA_KEY_PLACEHOLDER}&method=GetParameterValues&DataSetName=NIPA&ParameterName=TableName&ResultFormat=JSON`, required: false, needsEnv: 'BEA_API_KEY', secretInUrl: 'BEA_API_KEY', validate: validateBeaPceTables },
+  { id: 'bea-api-pce-t20807', name: 'BEA — API com chave: PCE, variação no mês (T20807)', url: beaDataUrl('T20807', '<ano-anterior>,<ano>'), urlAt: (nowMs) => beaDataUrl('T20807', beaYears(nowMs)), required: false, needsEnv: 'BEA_API_KEY', secretInUrl: 'BEA_API_KEY', validate: validateBeaPceData('T20807') },
+  { id: 'bea-api-pce-t20804', name: 'BEA — API com chave: PCE, índice de preços (T20804)', url: beaDataUrl('T20804', '<ano-anterior>,<ano>'), urlAt: (nowMs) => beaDataUrl('T20804', beaYears(nowMs)), required: false, needsEnv: 'BEA_API_KEY', secretInUrl: 'BEA_API_KEY', validate: validateBeaPceData('T20804') },
   { id: 'bea-schedule-page', name: 'BEA — página do calendário de divulgações', url: 'https://www.bea.gov/news/schedule', required: false, validate: validateHtmlContains('Personal Income and Outlays') },
   { id: 'binance-announcements', name: 'Binance — anúncios (delisting; esperado bloqueio)', url: 'https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&catalogId=161&pageNo=1&pageSize=5', required: false, validate: validateBinanceAnnouncements },
 ]);

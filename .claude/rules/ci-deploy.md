@@ -351,6 +351,8 @@ paths:
     Addendum 7: segredo opcional `BLS_API_KEY` (chave grátis do BLS) para CPI/Payroll/PPI na API v2 (só o período,
     a chave só na URL, sem ela "PULADO"); a DVOL não tem mais o valor impresso (termos da Deribit, logs públicos);
     o financecalendar mostra só os nomes dos campos de um evento.
+    Addendum 32 do item 285: segredo opcional `BEA_API_KEY` (UserID grátis da BEA) para 3 linhas "BEA — API" (tabelas mensais
+    de preços do PCE, T20807 e T20804); a chave só na URL, sem ela "PULADO"; o eco do UserID em `BEAAPI.Request` nunca é lido.
     Addendum 8: a lista fixa (`scripts/contextCalendar.mjs`) cobre CPI, Payroll, PPI, PCE e FOMC; a hora de cada
     tipo é fixa em `KIND_TIMES` (08:30 de Nova York; FOMC 14:00) e a lista é reprovada se uma linha fugir dela.
 
