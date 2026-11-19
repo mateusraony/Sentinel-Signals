@@ -1,10 +1,14 @@
-// Contexto de Mercado — Fase 4b-4 (docs/known-risks.md item 285, addendum 30): a PROJEÇÃO que o USUÁRIO registra (e o "Anterior" quando não há fonte oficial).
+// Contexto de Mercado — Fase 4b-4 (docs/known-risks.md item 285, addenda 30 e 31): a PROJEÇÃO que o USUÁRIO registra (e o "Anterior" quando não há fonte oficial).
 // O consenso do mercado é dado pago e raspar de terceiros viola os termos (addendum 5); mas o usuário vê a "Projeção" de graça no calendário do TradingView e pode
-// digitar 4 ou 5 números por mês. O que ele digita vira `consensus.json` na branch pública `context-data`, e os avisos passam a comparar o resultado com ESSE número
+// digitar os números. O que ele digita vira `consensus.json` na branch pública `context-data`, e os avisos passam a comparar o resultado com ESSE número
 // ("acima / abaixo / igual à projeção que você registrou"). Não é o consenso oficial do mercado e a mensagem diz de quem é o número.
 //
-// Parte PURA (sem rede, sem relógio global, sem arquivo). O arquivo é PÚBLICO: só formatos fechados (os mesmos textos do BLS — "+0,3% m/m · +3,1% a/a", "+150 mil" —,
-// a decisão do FOMC numa lista fechada e a faixa de juros), travados por `assertPublicConsensus`. Texto livre nunca entra.
+// Addendum 31 (19/11): a 1ª versão tinha UM campo de texto para tudo e o usuário, confuso, colou os exemplos de todos os tipos juntos ("0,3 / 3,1. 150. manter").
+// Agora cada coisa tem o SEU campo numerado (no mês, em 12 meses, vagas, juros, anterior), no mesmo jeito que o TradingView mostra, e o que não é do tipo escolhido
+// é IGNORADO com aviso (não derruba o registro). O FOMC passou a ser a TAXA de juros ("3,75"), como o TradingView mostra, em vez de "manter/cortar".
+//
+// Parte PURA (sem rede, sem relógio global, sem arquivo). O arquivo é PÚBLICO: só formatos fechados (os mesmos textos do BLS — "+0,3% m/m · +3,1% a/a", "+150 mil" —
+// e a taxa de juros "3,75%"), travados por `assertPublicConsensus`. Texto livre nunca entra.
 import { PREVIOUS_TEXT_RE } from './contextBls.mjs';
 
 export const CONSENSUS_FILE = 'consensus.json';
@@ -16,81 +20,157 @@ const ID_RE = /^([A-Z]+)-(\d{4}-\d{2}-\d{2})$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 export const KINDS = Object.freeze(['CPI', 'NFP', 'PPI', 'PCE', 'FOMC']);
 const PERCENT_KINDS = new Set(['CPI', 'PPI', 'PCE']);
-/** A decisão esperada do FOMC: lista FECHADA. */
-export const FOMC_DECISIONS = Object.freeze(['manter', 'cortar 25 pb', 'cortar 50 pb', 'subir 25 pb', 'subir 50 pb']);
-const FOMC_RANGE_RE = /^(\d{1,2}),(\d{2})%–(\d{1,2}),(\d{2})%$/;
+/** A taxa de juros do FOMC (topo da faixa, como o TradingView mostra): "3,75%". */
+const RATE_RE = /^\d{1,2},\d{2}%$/;
+const MAX_RATE = 25;
+
+/** Os campos do formulário, na ordem e com o número que o usuário vê na tela (o texto do erro cita "campo 3", "campo 5"...). */
+export const FIELDS = Object.freeze({
+  mes: { n: 3, label: 'projeção NO MÊS em % (CPI, PPI ou PCE)', example: '0,3' },
+  ano: { n: 4, label: 'projeção EM 12 MESES em % (CPI, PPI ou PCE, opcional)', example: '3,1' },
+  vagas: { n: 5, label: 'projeção de VAGAS em milhares (Payroll)', example: '150' },
+  juros: { n: 6, label: 'juros ESPERADO em % (FOMC)', example: '3,75' },
+  anterior: { n: 7, label: 'ANTERIOR (opcional, PCE ou FOMC)', example: 'PCE 0,3 · FOMC 4,00' },
+});
+/** Quais campos cada tipo usa (o resto é ignorado com aviso). */
+const FIELDS_OF = Object.freeze({ CPI: ['mes', 'ano', 'anterior'], PPI: ['mes', 'ano', 'anterior'], PCE: ['mes', 'ano', 'anterior'], NFP: ['vagas', 'anterior'], FOMC: ['juros', 'anterior'] });
+const MAIN_FIELD = Object.freeze({ CPI: 'mes', PPI: 'mes', PCE: 'mes', NFP: 'vagas', FOMC: 'juros' });
 
 const emptyState = () => ({ version: CONSENSUS_VERSION, items: {} });
 
-/** Um número com UMA casa decimal ("0,3", "+0.3", "-0,2") → "+0,3" / "-0,2"; null se não for. */
-function oneDecimal(token) {
-  const m = /^([+-]?)(\d{1,2})[.,](\d)$/.exec(token);
-  if (!m) return null;
-  return `${m[1] === '-' ? '-' : '+'}${m[2]},${m[3]}`;
+/** Tira o que a pessoa costuma escrever junto do número: "%", "k", "mil", "m/m", "a/a", espaços. Vírgula ou ponto como decimal. */
+function cleanNumber(raw) {
+  return String(raw ?? '').trim().toLowerCase()
+    .replace(/m\/m|a\/a|mom|yoy|%|mil|k\b/g, '')
+    .replace(/\s+/g, '')
+    .replace(',', '.');
 }
+
+/** Percentual com UMA casa (o que o BLS e o BEA publicam). Duas casas são ARREDONDADAS (e o aviso diz). → { text: "+0,3", rounded } | null */
+function percentOneDecimal(raw) {
+  const t = cleanNumber(raw);
+  if (!/^[+-]?\d{1,2}(\.\d{1,2})?$/.test(t)) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || Math.abs(n) >= 100) return null;
+  const r = Math.round(Math.abs(n) * 10) / 10;
+  const rounded = Math.abs(Math.abs(n) - r) > 1e-9;
+  const sign = n < 0 && r > 0 ? '-' : '+';
+  return { text: `${sign}${r.toFixed(1).replace('.', ',')}`, rounded };
+}
+
+/** Vagas em milhares (inteiro). "150", "150k", "150 mil", "-92" → "+150 mil" | null */
+function jobs(raw) {
+  const t = cleanNumber(raw);
+  if (!/^[+-]?\d{1,3}$/.test(t)) return null;
+  return `${t.startsWith('-') ? '-' : '+'}${t.replace(/^[+-]/, '')} mil`;
+}
+
+/** Taxa de juros com DUAS casas. "3,75", "3.75%", "4" → "3,75%" / "4,00%" | null */
+function rate(raw) {
+  const t = cleanNumber(raw);
+  if (!/^\d{1,2}(\.\d{1,2})?$/.test(t)) return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0 || n > MAX_RATE) return null;
+  return `${n.toFixed(2).replace('.', ',')}%`;
+}
+
+const has = (v) => typeof v === 'string' && v.trim() !== '';
 
 /**
- * Converte o que o usuário digitou no texto CANÔNICO do tipo (ou explica o que corrigir). Tolerante com o jeito de escrever (vírgula ou ponto, "/" ";" "·" ou espaço
- * entre os números, maiúsculas, "pb" opcional), rígido no resultado.
- *  - CPI/PPI/PCE: 1 número = no mês ("+0,3% m/m"); 2 números = no mês e em 12 meses ("+0,3% m/m · +3,1% a/a"). UMA casa decimal (é o que o BLS e o BEA publicam).
- *  - NFP (Payroll): um inteiro em milhares ("150" → "+150 mil").
- *  - FOMC: `manter` | `cortar 25` | `cortar 50` | `subir 25` | `subir 50`.
- * @returns {{ ok: true, text: string } | { ok: false, error: string }}
+ * Monta a projeção e o "Anterior" a partir dos campos do formulário. Só usa os campos do tipo escolhido; o resto é IGNORADO (e vira um aviso), para que um campo
+ * preenchido a mais não impeça o registro. Erro só quando o que é DO tipo está faltando ou mal escrito — e o texto diz qual campo (pelo número da tela) e um exemplo.
+ * @param {string} kind
+ * @param {{ mes?: string, ano?: string, vagas?: string, juros?: string, anterior?: string }} inputs
+ * @returns {{ ok: true, fields: { projection?: string, previous?: string }, notes: string[] } | { ok: false, error: string, notes: string[] }}
  */
-export function parseProjection(kind, raw) {
-  const t = String(raw ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
-  if (!t) return { ok: false, error: 'o valor está vazio' };
-  if (PERCENT_KINDS.has(kind)) {
-    const tokens = t.split(/[\s/;·|]+/).filter(Boolean);
-    const nums = tokens.map(oneDecimal);
-    if (tokens.length < 1 || tokens.length > 2 || nums.some((n) => n === null)) {
-      return { ok: false, error: `${kind}: escreva 1 ou 2 números com UMA casa decimal — o do mês e, se quiser, o de 12 meses (ex.: 0,3 / 3,1)` };
-    }
-    const text = nums.length === 1 ? `${nums[0]}% m/m` : `${nums[0]}% m/m · ${nums[1]}% a/a`;
-    return PREVIOUS_TEXT_RE.test(text) ? { ok: true, text } : { ok: false, error: `${kind}: número fora da faixa aceita` };
+export function buildFields(kind, inputs = {}) {
+  const notes = [];
+  if (!KINDS.includes(kind)) return { ok: false, error: `tipo desconhecido (${String(kind).slice(0, 12)})`, notes };
+  const own = FIELDS_OF[kind];
+  for (const name of Object.keys(FIELDS)) {
+    if (!own.includes(name) && has(inputs[name])) notes.push(`O campo ${FIELDS[name].n} (${FIELDS[name].label}) não é do ${kind} e foi ignorado.`);
   }
-  if (kind === 'NFP') {
-    const m = /^([+-]?)(\d{1,3})(?:\s*mil)?$/.exec(t);
-    if (!m) return { ok: false, error: 'NFP: escreva um número inteiro em milhares de vagas (ex.: 150)' };
-    const text = `${m[1] === '-' ? '-' : '+'}${m[2]} mil`;
-    return PREVIOUS_TEXT_RE.test(text) ? { ok: true, text } : { ok: false, error: 'NFP: número fora da faixa aceita' };
-  }
-  if (kind === 'FOMC') {
-    const m = /^(manter|cortar|subir)(?: (25|50))?(?: pb)?$/.exec(t);
-    if (!m || (m[1] !== 'manter' && !m[2]) || (m[1] === 'manter' && m[2])) {
-      return { ok: false, error: `FOMC: escreva uma destas — ${FOMC_DECISIONS.join(', ')}` };
-    }
-    const text = m[1] === 'manter' ? 'manter' : `${m[1]} ${m[2]} pb`;
-    return FOMC_DECISIONS.includes(text) ? { ok: true, text } : { ok: false, error: 'FOMC: decisão fora da lista' };
-  }
-  return { ok: false, error: `tipo desconhecido (${String(kind).slice(0, 12)})` };
-}
+  const main = MAIN_FIELD[kind];
+  const fields = {};
+  const bad = (name, what) => ({ ok: false, error: `campo ${FIELDS[name].n} (${FIELDS[name].label}): ${what}. Exemplo: ${FIELDS[name].example}`, notes });
 
-/** O "Anterior" digitado: igual à projeção para CPI/PPI/PCE/NFP; para o FOMC é a faixa de juros ("3,75-4,00" → "3,75%–4,00%"). */
-export function parsePrevious(kind, raw) {
-  if (kind !== 'FOMC') return parseProjection(kind, raw);
-  const m = /^(\d{1,2})[.,](\d{2})\s*%?\s*[-–—a]\s*(\d{1,2})[.,](\d{2})\s*%?$/.exec(String(raw ?? '').trim().toLowerCase());
-  if (!m) return { ok: false, error: 'FOMC: escreva a faixa de juros anterior, ex.: 3,75-4,00' };
-  const text = `${m[1]},${m[2]}%–${m[3]},${m[4]}%`;
-  const lo = Number(`${m[1]}.${m[2]}`);
-  const hi = Number(`${m[3]}.${m[4]}`);
-  return hi > lo && FOMC_RANGE_RE.test(text) ? { ok: true, text } : { ok: false, error: 'FOMC: a faixa precisa ter o limite de cima maior que o de baixo' };
+  if (PERCENT_KINDS.has(kind)) {
+    if (has(inputs.mes)) {
+      const m = percentOneDecimal(inputs.mes);
+      if (!m) return bad('mes', `"${String(inputs.mes).trim().slice(0, 20)}" não é um número em %`);
+      let text = `${m.text}% m/m`;
+      if (m.rounded) notes.push(`O campo 3 foi arredondado para ${m.text}% (o ${kind} é publicado com uma casa decimal).`);
+      if (has(inputs.ano)) {
+        const a = percentOneDecimal(inputs.ano);
+        if (!a) return bad('ano', `"${String(inputs.ano).trim().slice(0, 20)}" não é um número em %`);
+        if (a.rounded) notes.push(`O campo 4 foi arredondado para ${a.text}%.`);
+        text += ` · ${a.text}% a/a`;
+      }
+      if (!PREVIOUS_TEXT_RE.test(text)) return bad('mes', 'número fora da faixa aceita');
+      fields.projection = text;
+    } else if (has(inputs.ano)) {
+      return bad('mes', 'preencha também a projeção no mês (o campo 4, de 12 meses, é complemento)');
+    }
+  } else if (kind === 'NFP') {
+    if (has(inputs.vagas)) {
+      const j = jobs(inputs.vagas);
+      if (!j || !PREVIOUS_TEXT_RE.test(j)) return bad('vagas', `"${String(inputs.vagas).trim().slice(0, 20)}" não é um número inteiro de milhares`);
+      fields.projection = j;
+    }
+  } else if (kind === 'FOMC') {
+    if (has(inputs.juros)) {
+      const r = rate(inputs.juros);
+      if (!r) return bad('juros', `"${String(inputs.juros).trim().slice(0, 20)}" não é uma taxa em %`);
+      fields.projection = r;
+    }
+  }
+
+  if (has(inputs.anterior)) {
+    let prev = null;
+    if (PERCENT_KINDS.has(kind)) {
+      const p = percentOneDecimal(inputs.anterior);
+      if (p) {
+        prev = `${p.text}% m/m`;
+        if (p.rounded) notes.push(`O campo 7 foi arredondado para ${p.text}%.`);
+      }
+    } else if (kind === 'NFP') prev = jobs(inputs.anterior);
+    else if (kind === 'FOMC') prev = rate(inputs.anterior);
+    if (!prev || !isValidText(kind, 'previous', prev)) {
+      return bad('anterior', `"${String(inputs.anterior).trim().slice(0, 20)}" não está no formato do ${kind} (${kind === 'FOMC' ? 'juros atual em %, ex.: 4,00' : kind === 'NFP' ? 'milhares, ex.: 119' : '% no mês, ex.: 0,3'})`);
+    }
+    fields.previous = prev;
+  }
+
+  if (!fields.projection && !fields.previous) {
+    return { ok: false, error: `para ${kind}, preencha o campo ${FIELDS[main].n} (${FIELDS[main].label}). Exemplo: ${FIELDS[main].example}`, notes };
+  }
+  return { ok: true, fields, notes };
 }
 
 /** O texto já canônico (vem do arquivo público): é o que o formato fechado do tipo aceita? */
 export function isValidText(kind, field, text) {
   if (typeof text !== 'string') return false;
-  if (kind === 'FOMC') {
-    if (field === 'projection') return FOMC_DECISIONS.includes(text);
-    const m = FOMC_RANGE_RE.exec(text);
-    return Boolean(m) && Number(`${m[3]}.${m[4]}`) > Number(`${m[1]}.${m[2]}`);
-  }
+  if (kind === 'FOMC') return RATE_RE.test(text) && Number(text.replace('%', '').replace(',', '.')) <= MAX_RATE;
   if (kind === 'NFP' || PERCENT_KINDS.has(kind)) return PREVIOUS_TEXT_RE.test(text);
   return false;
 }
 
+/**
+ * FOMC: a decisão que a projeção do usuário implica, contra o "Anterior" (juros atual). Fato aritmético sobre os DOIS números que ele registrou — não é previsão do
+ * sistema. "manter em 4,00%" | "corte de 0,25 p.p. (de 4,00% para 3,75%)" | "alta de 0,25 p.p. (...)"; null se faltar um dos dois.
+ */
+export function describeFomc(projection, previous) {
+  if (!isValidText('FOMC', 'projection', projection) || !isValidText('FOMC', 'previous', previous)) return null;
+  const p = Number(projection.replace('%', '').replace(',', '.'));
+  const a = Number(previous.replace('%', '').replace(',', '.'));
+  const diff = Math.round((p - a) * 100) / 100;
+  if (diff === 0) return `manter em ${projection}`;
+  const pp = Math.abs(diff).toFixed(2).replace('.', ',');
+  return `${diff < 0 ? 'corte' : 'alta'} de ${pp} p.p. (de ${previous} para ${projection})`;
+}
+
 /** O registro lido do arquivo (disco/rede: não é confiável): só entradas bem formadas e recentes. Lixo vira registro vazio. Nunca lança. */
-export function parseConsensus(json, nowMs = Date.now()) {
+export function parseConsensus(json, nowMs) {
   if (!json || typeof json !== 'object' || Array.isArray(json) || json.version !== CONSENSUS_VERSION) return emptyState();
   const src = json.items && typeof json.items === 'object' && !Array.isArray(json.items) ? json.items : {};
   const items = {};
@@ -158,9 +238,9 @@ export function resolveTarget(events, kind, date, nowMs) {
   if (!KINDS.includes(kind)) return { ok: false, error: `tipo desconhecido (${String(kind).slice(0, 12)})` };
   if (date && String(date).trim()) {
     const d = String(date).trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false, error: 'a data precisa ser AAAA-MM-DD (ou deixe em branco para o próximo evento)' };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { ok: false, error: 'a data (campo 2) precisa ser AAAA-MM-DD, ou fique em branco para o próximo evento' };
     const e = list.find((x) => x?.id === `${kind}-${d}`);
-    return e ? { ok: true, event: e } : { ok: false, error: `não achei o evento ${kind}-${d} na agenda` };
+    return e ? { ok: true, event: e } : { ok: false, error: `não achei o evento ${kind} de ${d} na agenda (deixe a data em branco para o próximo)` };
   }
   const next = list
     .filter((x) => x?.kind === kind && Number.isFinite(x.startMs) && x.startMs > nowMs)

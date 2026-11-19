@@ -321,9 +321,19 @@ describe('com a projeção registrada pelo usuário', () => {
     expect(semBls).toContain('Sua projeção era: +0,3% m/m.');
     expect(semBls).not.toContain('acima da projeção');
     expect(semBls).toContain('Sem a projeção do mercado'); // nada foi comparado: o rodapé antigo continua
-    const fomc = buildResultMessage({ ...CPI2, kind: 'FOMC', values: undefined }, AT2, { moves, consensus: { projection: 'manter' } });
-    expect(fomc).toContain('Sua projeção era: manter — confira o resultado no site do órgão.');
+    const fomc = buildResultMessage({ ...CPI2, kind: 'FOMC', values: undefined }, AT2, { moves, consensus: { projection: '3,75%' } });
+    expect(fomc).toContain('Sua projeção era: 3,75% — confira o resultado no site do órgão.');
   });
+  it('FOMC: a projeção é a taxa; com o anterior registrado, diz o que ela implica (corte/alta/manter) como conta sobre os dois números', () => {
+    const fomc = { ...CPI2, kind: 'FOMC', values: undefined };
+    expect(buildPreEventBriefing(fomc, AT2, { consensus: { projection: '3,75%', previous: '4,00%' } }))
+      .toContain('<b>Projeção (informada por você):</b> 3,75% — corte de 0,25 p.p. (de 4,00% para 3,75%) — não é o consenso oficial do mercado.');
+    expect(buildPreEventBriefing(fomc, AT2, { consensus: { projection: '4,00%', previous: '4,00%' } })).toContain('3,75%'.replace('3,75%', '4,00% — manter em 4,00%'));
+    const semAnterior = buildPreEventBriefing(fomc, AT2, { consensus: { projection: '3,75%' } });
+    expect(semAnterior).toContain('<b>Projeção (informada por você):</b> 3,75% — não é o consenso oficial do mercado.');
+    expect(semAnterior).not.toMatch(PROIBIDO);
+  });
+
   it('o que o usuário digitou é escapado', () => {
     expect(buildPreEventBriefing(CPI2, AT2, { consensus: { projection: '<b>&x</b>' } })).toContain('&lt;b&gt;&amp;x&lt;/b&gt;');
   });

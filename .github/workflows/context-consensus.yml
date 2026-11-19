@@ -5,9 +5,9 @@ name: Registrar projeção do Contexto (Sentinel Signals)
 # `context-data`, e os avisos do Telegram (1 h antes e o resultado) passam a comparar o resultado com ELE ("acima / abaixo / igual à projeção que você registrou").
 # Não é o consenso oficial e a mensagem diz de quem é o número.
 #
-# Como usar: Actions → "Registrar projeção do Contexto" → Run workflow → escolha o tipo, deixe a data em branco (= o próximo evento do tipo), escreva a projeção:
-#   CPI / PPI / PCE: o do mês e, se quiser, o de 12 meses, com UMA casa decimal (ex.: 0,3 / 3,1)   ·   Payroll: milhares de vagas (ex.: 150)
-#   FOMC: manter, cortar 25, cortar 50, subir 25 ou subir 50   ·   "Anterior" (opcional; PCE/FOMC não têm fonte oficial automática): mesmo jeito; FOMC = faixa de juros (ex.: 3,75-4,00).
+# Como usar (addendum 31: UM campo por coisa, numerados na tela): Actions → "Registrar projeção do Contexto" → Run workflow → 1) tipo; 2) data em branco
+# (= o próximo evento do tipo); depois SÓ o campo do seu tipo — 3) e 4) CPI/PPI/PCE no mês e em 12 meses (%); 5) Payroll em milhares; 6) FOMC: juros esperado (%);
+# 7) opcional, PCE/FOMC: o anterior. Campos de outro tipo são ignorados com aviso. Números com vírgula ou ponto, com ou sem "%"/"k".
 #
 # Segurança: SEM segredos e SEM banco; `contents: write` só para gravar `consensus.json` na branch `context-data` (sem --force). O que o usuário digita entra SÓ por variável de
 # ambiente (nunca dentro do texto de um `run:`) e o script o converte para formatos FECHADOS (números com uma casa, decisão numa lista, faixa de juros) — texto livre nunca vai
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       tipo:
-        description: "Tipo do evento"
+        description: "1) Tipo do evento"
         type: choice
         options:
           - CPI
@@ -25,19 +25,34 @@ on:
           - PPI
           - PCE
           - FOMC
-        default: CPI
+        default: PCE
       data:
-        description: "Data do evento (AAAA-MM-DD). Deixe EM BRANCO para o próximo evento do tipo"
+        description: "2) Data do evento (AAAA-MM-DD). Deixe EM BRANCO = o próximo evento do tipo"
         type: string
         required: false
         default: ""
-      projecao:
-        description: "Projeção. CPI/PPI/PCE: mês e, se quiser, 12 meses (ex.: 0,3 / 3,1). Payroll: milhares (ex.: 150). FOMC: manter, cortar 25, cortar 50, subir 25 ou subir 50"
+      mes:
+        description: "3) Só CPI, PPI ou PCE: projeção NO MÊS em % (ex.: 0,3)"
+        type: string
+        required: false
+        default: ""
+      ano:
+        description: "4) Só CPI, PPI ou PCE (opcional): projeção EM 12 MESES em % (ex.: 3,1)"
+        type: string
+        required: false
+        default: ""
+      vagas:
+        description: "5) Só Payroll (NFP): projeção de VAGAS em milhares (ex.: 150)"
+        type: string
+        required: false
+        default: ""
+      juros:
+        description: "6) Só FOMC: juros ESPERADO em % (ex.: 3,75)"
         type: string
         required: false
         default: ""
       anterior:
-        description: "Anterior (opcional; útil para PCE e FOMC). Mesmo jeito da projeção; FOMC = faixa de juros (ex.: 3,75-4,00)"
+        description: "7) Opcional, para PCE ou FOMC: o ANTERIOR do TradingView (PCE: % no mês, ex.: 0,3 · FOMC: juros atual, ex.: 4,00)"
         type: string
         required: false
         default: ""
@@ -84,11 +99,14 @@ jobs:
         env:
           TIPO: ${{ inputs.tipo }}
           DATA: ${{ inputs.data }}
-          PROJECAO: ${{ inputs.projecao }}
+          MES: ${{ inputs.mes }}
+          ANO: ${{ inputs.ano }}
+          VAGAS: ${{ inputs.vagas }}
+          JUROS: ${{ inputs.juros }}
           ANTERIOR: ${{ inputs.anterior }}
         run: |
           set -o pipefail
-          node scripts/context-consensus.mjs --dir data --tipo "$TIPO" --data "$DATA" --projecao "$PROJECAO" --anterior "$ANTERIOR" | tee -a "$GITHUB_STEP_SUMMARY"
+          node scripts/context-consensus.mjs --dir data --tipo "$TIPO" --data "$DATA" --mes "$MES" --ano "$ANO" --vagas "$VAGAS" --juros "$JUROS" --anterior "$ANTERIOR" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Publicar na branch context-data
         run: |
