@@ -34293,6 +34293,33 @@ Pedido do usuário ("onde consulto o resultado depois que sair?" → "dá para d
   - **A lista fixa só cobre até 23/12** ("ATENÇÃO: só 33 dias"). CPI/Payroll/PPI/PCE continuam vindo do FRED (as datas de 2027 entram quando o FRED as publicar); o **FOMC depende só da lista**, que hoje termina na reunião de 09/12. Atualizar com o calendário 2027 do Fed (página oficial) **antes de 23/12**: senão a sonda reprova e não há aviso de FOMC em 2027.
 - **Próximo passo [plano]:** um leitor da BEA no coletor que grava o "Anterior" e o "Atual" oficiais do PCE (cheio e núcleo, no mês e em 12 meses) do mesmo jeito que o BLS. Usa o segredo `BEA_API_KEY` (precisa ser repassado em `context-collect.yml`).
 
+**Addendum 33 (2026-11-19) — o PCE ganha "Anterior" e "Atual" OFICIAIS automáticos (BEA), com o núcleo ao lado, e a projeção digitada deixa de ser comparada no PCE.** Pedido do usuário depois da pergunta "Core PCE ou PCE?": *"não entendi o seu pedido, não sei como consultar, se você puder fazer toda a consulta sempre e deixar isso no modo automático e ver se está tudo certo eu prefiro assim"*.
+- **Decisão [decisão, com o porquê]:** em vez de pedir ao usuário qual linha do TradingView ele copia, o sistema mostra **as duas medidas sempre lado a lado**: o PCE cheio e o núcleo (sem alimentos e energia). Os números vêm da BEA, que é a fonte oficial. A projeção digitada (addendum 30) **não é comparada** no PCE, porque não dá para saber de qual linha ela veio; ela aparece com o aviso "o TradingView mostra duas linhas (PCE e Core PCE): ela vale para a linha que você copiou". Nos outros tipos nada mudou.
+- **O que entrou [fato]:**
+  - `scripts/contextBea.mjs` (puro + `fetch` injetável) lê T20807 (no mês) e T20804 (índice → "em 12 meses") dos **3 últimos anos**: em janeiro, o "em 12 meses" precisa de dados de 2 anos atrás. As linhas são achadas pelo **NOME**, nunca pelo número (a BEA pode renumerar), e nunca a série "market-based". Um nome que aparece em 2 séries é ambíguo e fica de fora. O "Atual" só vale quando as **duas** tabelas já trazem o mês do PCE cheio, então nunca há "Atual" falso antes da divulgação e nunca um número congelado pela metade.
+  - O coletor (`context-collect.mjs`/`contextCollect.mjs`) grava em `values` do evento PCE `{ previous, actual?, revised?, core_previous, core_actual?, core_revised?, source: 'BEA' }`, no MESMO formato fechado do BLS e com o mesmo ciclo do BLS:
+    - antes da divulgação, o "Anterior" é recalculado a cada coleta;
+    - na 1ª coleta em que a BEA traz o mês, entram o "Atual" e, se a BEA corrigiu o mês anterior, o "Revisado";
+    - depois disso, tudo fica congelado.
+  - A trava pública (`assertPublicShape`/`sanitizeValues`) passou a exigir:
+    - a fonte do TIPO: BLS para CPI/PPI/Payroll, BEA para o PCE, e nenhum número no FOMC;
+    - o núcleo só junto da fonte BEA;
+    - o "Atual" do núcleo só junto do "Atual" do PCE cheio;
+    - a lacuna do BLS (`gap`/`alt`) nunca nos números da BEA.
+  - Número de outra fonte que aparecer no arquivo anterior nunca é aproveitado.
+  - O modo "janela" do coletor espera o número do PCE como espera os do BLS (`needsResultCheck`).
+  - O aviso de RESULTADO do PCE segue a regra do BLS: com o "Atual", sai a partir de 5 min depois da divulgação; sem ele, espera até 2 h (antes saía aos 35 min, sem número). O FOMC continua avisando aos 35 min.
+  - Os avisos do Telegram mostram "Anterior (BEA): PCE cheio … · núcleo (sem alimentos e energia) …" antes da divulgação. Depois, mostram uma linha por medida: "PCE cheio — no mês/em 12 meses" e "Núcleo — no mês/em 12 meses", com "Fonte dos números: BEA."
+  - O segredo `BEA_API_KEY` foi repassado em `context-collect.yml`, só no passo do coletor; o tripwire foi atualizado.
+- **A tela do painel NÃO muda [decisão]:** `eventValueSlots` e `releaseHistory` só mostram números dos tipos do BLS, e o PCE com números fica só no Telegram. Mostrá-lo no Dashboard é mudança visual e exige imagens e aprovação do usuário; fica como proposta. `parseEventValues` guarda o núcleo, porque o aviso do Telegram lê os eventos por ele.
+- **Provas [verificado]:**
+  - `scripts/contextBea.test.js` (18 testes) cobre a leitura pelo nome, o market-based excluído, a ambiguidade, o formato dos números ("1,234.5" vale; "1,5" não), o "Anterior"/"Atual" do PCE de 25/11 com dados no formato da sonda real, a meia publicação, a chave só na URL (nunca no resultado) e o ciclo completo no coletor (Anterior → Atual + Revisado → congelado; BEA fora do ar mantém o publicado). Também cobre a trava pública e o `main` do coletor de ponta a ponta.
+  - `contextMessages.test.js` ganhou +4 testes do PCE; `contextAlert.test.js`, `contextResult.test.js` e `marketContextBand.test.js` foram atualizados, este último com a prova de que a tela não muda.
+  - 18 mutações plantadas, todas pegas.
+- **Não verificado [honesto]:**
+  - a hora exata em que a API da BEA passa a trazer o mês novo no dia da divulgação. O FRED atualizou o PCEPI 14 min depois, em 29/10. O modo "janela" (a cada ~15 min) e a espera de até 2 h cobrem um atraso.
+  - os dados de 2026M10 em diante, porque a 1ª divulgação real com o leitor é a de 25/11. O "Anterior" real (setembro: cheio +0,5% no mês, núcleo +0,3%) aparece no `events.json` na 1ª coleta depois do merge.
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 > **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista

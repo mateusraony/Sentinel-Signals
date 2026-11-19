@@ -413,6 +413,8 @@ describe('valor "Anterior" do BLS (addendum 14)', () => {
     const plantados = [
       { ...cpi, values: { previous: '+0,3% m/m', source: 'BLS', note: 'x' } },
       { ...cpi, values: { previous: '+0,3% m/m', source: 'FRED' } },
+      { ...cpi, values: { previous: '+0,3% m/m', source: 'BEA' } }, // fonte de outro tipo (BEA é do PCE)
+      { ...cpi, values: { previous: '+0,3% m/m', core_previous: '+0,2% m/m', source: 'BLS' } }, // núcleo só existe nos números da BEA
       { ...cpi, values: { previous: 'o CPI veio quente', source: 'BLS' } },
       { ...cpi, values: { previous: 'https://api.bls.gov/publicAPI/v2/timeseries/data/X?registrationkey=abc', source: 'BLS' } },
       { ...cpi, values: { previous: 0.3, source: 'BLS' } },
@@ -424,7 +426,7 @@ describe('valor "Anterior" do BLS (addendum 14)', () => {
       (({ values: _v, ...resto }) => resto)(cpi), // o campo some
     ];
     for (const e of plantados) expect(() => assertPublicShape([e], st), JSON.stringify(e.values)).toThrow(/conteúdo público recusado/);
-    expect(VALUES_KEYS).toEqual(['previous', 'actual', 'revised', 'gap', 'alt', 'source']); // addendum 15 (actual/revised) e 22 (gap/alt) — contextResult.test.js e contextGapNote.test.js
+    expect(VALUES_KEYS).toEqual(['previous', 'actual', 'revised', 'core_previous', 'core_actual', 'core_revised', 'gap', 'alt', 'source']); // addendum 15 (actual/revised), 22 (gap/alt) e 33 (núcleo do PCE, BEA) — contextResult.test.js, contextGapNote.test.js e contextBea.test.js
   });
 
   describe('coleta ponta a ponta (main)', () => {
@@ -468,8 +470,8 @@ describe('valor "Anterior" do BLS (addendum 14)', () => {
         expect(m['CPI-2026-11-10'].values).toEqual(CPI);
         expect(m['NFP-2026-11-06'].values).toEqual({ previous: '+119 mil', source: 'BLS' });
         expect(r.logs).toMatch(/BLS \(valor "Anterior"\): 5 de 5 séries lidas \(v2 com chave: 5 · v1 sem chave: 0 · sem resposta: 0\)/);
-        expect(r.logs).toContain('| Evento | Hora (UTC) | Situação | Anterior (BLS) | Atual (BLS) | Revisado (BLS) |');
-        expect(r.logs).toContain('| CPI-2026-11-10 | 2026-11-10 13:30 | oficial | +0,3% m/m · +3,0% a/a | — | — |');
+        expect(r.logs).toContain('| Evento | Hora (UTC) | Situação | Fonte | Anterior | Atual | Revisado | Núcleo: anterior → atual |');
+        expect(r.logs).toContain('| CPI-2026-11-10 | 2026-11-10 13:30 | oficial | BLS | +0,3% m/m · +3,0% a/a | — | — | — |');
         expect(r.logs).toContain('| FOMC-2026-12-09 | 2026-12-09 19:00 | oficial | — | — | — |');
         for (const texto of [r.raw, r.status, r.logs]) {
           expect(texto).not.toContain(BKEY);

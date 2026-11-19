@@ -430,14 +430,14 @@ describe('números oficiais do evento (Anterior / Atual) — o arquivo vem da re
   });
   it('eventValueSlots: Anterior e Atual; "Atual" sem número = aguardando (text null); nunca Projeção', () => {
     expect(eventValueSlots({})).toEqual([]);
-    expect(eventValueSlots({ values: { previous: null, actual: null, source: 'BLS' } })).toEqual([]);
-    expect(eventValueSlots({ values: { previous: '151 mil', actual: null } })).toEqual([
+    expect(eventValueSlots({ kind: 'NFP', values: { previous: null, actual: null, source: 'BLS' } })).toEqual([]);
+    expect(eventValueSlots({ kind: 'NFP', values: { previous: '151 mil', actual: null } })).toEqual([
       { key: 'previous', label: 'Anterior', text: '151 mil' },
       { key: 'actual', label: 'Atual', text: null },
     ]);
-    expect(eventValueSlots({ values: { previous: '151 mil', actual: '175 mil' } }).map((x) => x.text)).toEqual(['151 mil', '175 mil']);
-    expect(eventValueSlots({ values: { previous: null, actual: '175 mil' } }).map((x) => x.key)).toEqual(['actual']);
-    const todos = ['', '151 mil'].flatMap((t) => eventValueSlots({ values: { previous: t || null, actual: '1' } }).map((x) => x.label));
+    expect(eventValueSlots({ kind: 'NFP', values: { previous: '151 mil', actual: '175 mil' } }).map((x) => x.text)).toEqual(['151 mil', '175 mil']);
+    expect(eventValueSlots({ kind: 'NFP', values: { previous: null, actual: '175 mil' } }).map((x) => x.key)).toEqual(['actual']);
+    const todos = ['', '151 mil'].flatMap((t) => eventValueSlots({ kind: 'NFP', values: { previous: t || null, actual: '1' } }).map((x) => x.label));
     expect(todos.join(' ')).not.toMatch(/proje/i);
   });
 });
@@ -660,5 +660,30 @@ describe('MOVE_COLORS — verde (subiu), vermelho (caiu) e neutro (sem variaçã
       expect(contraste(MOVE_COLORS[k], '#0f1522'), `${k} no cartão`).toBeGreaterThanOrEqual(4.5);
       expect(contraste(MOVE_COLORS[k], '#12212b'), `${k} na caixa do BTC`).toBeGreaterThanOrEqual(4.5);
     }
+  });
+});
+
+// Addendum 33: o PCE ganhou números oficiais (BEA), mas por enquanto só o Telegram os mostra — a tela fica exatamente como era.
+describe('PCE com números da BEA: o leitor guarda o núcleo, a tela não muda', () => {
+  const NOW = Date.parse('2026-12-27T12:00:00Z');
+  const pce = {
+    id: 'PCE-2026-11-25', kind: 'PCE', status: 'oficial', startsAtUtc: '2026-11-25T13:30:00.000Z', startMs: Date.parse('2026-11-25T13:30:00.000Z'),
+    values: { previous: '+0,5% m/m', actual: '+0,3% m/m', core_previous: '+0,3% m/m', core_actual: '+0,2% m/m', source: 'BEA' },
+  };
+  it('parseEventValues guarda o núcleo (o aviso precisa dele); "Atual"/"Revisado" do núcleo só junto do "Atual"', () => {
+    expect(parseEventValues(pce.values)).toMatchObject({ core_previous: '+0,3% m/m', core_actual: '+0,2% m/m', source: 'BEA' });
+    const semAtual = parseEventValues({ previous: '+0,5% m/m', core_previous: '+0,3% m/m', core_actual: '+0,2% m/m', core_revised: '+0,1% m/m', source: 'BEA' });
+    expect(semAtual.core_actual).toBeUndefined();
+    expect(semAtual.core_revised).toBeUndefined();
+    expect(parseEventValues({ core_previous: '+0,3% m/m', source: 'BEA' })).toMatchObject({ core_previous: '+0,3% m/m' });
+  });
+  it('a faixa não ganha espaço de número para o PCE e a lista "Últimas divulgações" não o inclui (tela igual à de antes)', () => {
+    expect(eventValueSlots(pce)).toEqual([]);
+    expect(releaseHistory([pce], NOW)).toEqual([]);
+    expect(resultEvents([pce], Date.parse('2026-11-25T14:00:00Z'))).toEqual([]);
+    // Os do BLS continuam iguais.
+    const nfp = { ...pce, id: 'NFP-2026-11-06', kind: 'NFP', values: { previous: '+119 mil', actual: '+50 mil', source: 'BLS' } };
+    expect(eventValueSlots(nfp).length).toBe(2);
+    expect(releaseHistory([nfp], NOW).length).toBe(1);
   });
 });

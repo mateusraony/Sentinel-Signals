@@ -94,15 +94,15 @@ export const serializeSent = (state) => `${JSON.stringify(assertPublicSent(state
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Fase 4b-3 (addendum 28): o aviso de DEPOIS — o resultado e o que o BTC fez desde a divulgação.
-/** Com o "Atual" do BLS no arquivo, avisa assim que passaram 5 min da divulgação (já existe o movimento de +5 min). */
+/** Com o "Atual" oficial no arquivo (BLS; BEA para o PCE), avisa assim que passaram 5 min da divulgação (já existe o movimento de +5 min). */
 export const RESULT_AFTER_ACTUAL_MS = 5 * MIN_MS;
-/** BLS sem o "Atual" ainda: espera até 2 h; passado isso avisa só com o BTC e diz que o número oficial não chegou. */
+/** BLS/BEA sem o "Atual" ainda: espera até 2 h; passado isso avisa só com o BTC e diz que o número oficial não chegou. */
 export const RESULT_BLS_WAIT_MS = 120 * MIN_MS;
-/** PCE e FOMC não têm número oficial coletado: avisa depois de 35 min (já existe o movimento de +30 min). */
+/** FOMC não tem número oficial coletado: avisa depois de 35 min (já existe o movimento de +30 min). O PCE tem desde o addendum 33 (BEA). */
 export const RESULT_NO_NUMBER_AFTER_MS = 35 * MIN_MS;
 /** Depois disto o aviso de resultado já não faz sentido (o resumo do dia cobre). */
 export const RESULT_MAX_AFTER_MS = 6 * 60 * MIN_MS;
-const HAS_OFFICIAL_NUMBER = new Set(['CPI', 'PPI', 'NFP']);
+const HAS_OFFICIAL_NUMBER = new Set(['CPI', 'PPI', 'NFP', 'PCE']);
 
 /** Eventos que pedem o aviso de RESULTADO agora: data firme, já começou, dentro da janela de cada caso e sem registro `post`. Do mais antigo ao mais novo. */
 export function pickDueResults(events, nowMs, sent = emptyState()) {

@@ -8,9 +8,10 @@
 // Lê `<dir>/events.json` (a coleta anterior, se existir), busca as datas no FRED, monta os
 // eventos e grava `<dir>/events.json` e `<dir>/status.json`. Se a trava do conteúdo público
 // recusar, NÃO grava nada e sai com 1. Imprime um resumo em markdown (sem chave, sem URL).
-// Variáveis de ambiente lidas: FRED_API_KEY e BLS_API_KEY (as duas vão só na URL da requisição),
+// Variáveis de ambiente lidas: FRED_API_KEY, BLS_API_KEY e BEA_API_KEY (as três vão só na URL da requisição),
 // CONTEXT_CONTACT_EMAIL (só no cabeçalho User-Agent) e COLLECT_MODE (só o valor exato "janela" muda algo). Nenhum banco, nenhum Telegram.
-// Os números do BLS (addenda 14 e 15) são opcionais: sem a chave ou sem resposta, o evento sai sem `values`, e a coleta das datas segue.
+// Os números do BLS (addenda 14 e 15) e os do PCE pela BEA (addendum 33) são opcionais: sem a chave ou sem resposta, o evento sai sem `values`
+// (ou mantém o que já estava publicado), e a coleta das datas segue.
 // Base própria do BLS (addendum 21): `<dir>/bls-base.json` guarda os índices crus já lidos e as lacunas oficiais ("-" do BLS); a resposta da API só ACRESCENTA
 // (uma queda ou resposta parcial nunca apaga nada) e os números dos eventos saem de base + API. O arquivo só é criado quando há ao menos 1 valor.
 // Modo "janela" (addendum 15): disparado a cada ~10 min nas horas das divulgações; só trabalha se algum evento do BLS saiu há ≤ 4 h e
@@ -20,6 +21,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildEvents, buildStatus, assertPublicShape, fetchFredDates, sanitizePrevious, needsResultCheck, FRED_RELEASES } from './contextCollect.mjs';
 import { fetchBlsSeries, allSeriesIds } from './contextBls.mjs';
+import { fetchBeaPce, describeBea } from './contextBea.mjs';
 import { mergeBase, baseToSeries, baseToGaps, assertBaseShape, sanitizeBase, serializeBase, describeBase } from './contextBlsBase.mjs';
 import { HISTORY_FILE, buildHistory, serializeHistory } from './contextHistory.mjs';
 
@@ -120,7 +122,7 @@ export function resolveMode(env) {
   return env?.COLLECT_MODE === 'janela' ? 'janela' : 'normal';
 }
 
-export function formatCollectMarkdown(status, events, fredDatesByKind, bls = null, baseLine = null) {
+export function formatCollectMarkdown(status, events, fredDatesByKind, bls = null, baseLine = null, bea = null) {
   const lines = ['## Coletor de contexto — datas dos eventos', ''];
   lines.push(`Checado em ${status.checkedAt} (UTC). FRED: **${status.fred}**${status.fred === 'ok' ? '' : ' — os tipos sem resposta usam a lista fixa'}.`);
   const porTipo = Object.keys(FRED_RELEASES).map((k) => `${k} ${Array.isArray(fredDatesByKind[k]) ? 'ok' : 'sem resposta'}`).join(' · ');
@@ -128,12 +130,16 @@ export function formatCollectMarkdown(status, events, fredDatesByKind, bls = nul
   const blsLine = describeBls(bls);
   if (blsLine) lines.push(blsLine);
   if (baseLine) lines.push(baseLine);
+  const beaLine = describeBea(bea);
+  if (beaLine) lines.push(beaLine);
   lines.push(`Eventos publicados: ${status.eventsCount}. Cobertura confirmada até: ${status.coverageUntil ?? '—'}.`);
   lines.push('');
-  lines.push('| Evento | Hora (UTC) | Situação | Anterior (BLS) | Atual (BLS) | Revisado (BLS) |');
-  lines.push('|---|---|---|---|---|---|');
+  lines.push('| Evento | Hora (UTC) | Situação | Fonte | Anterior | Atual | Revisado | Núcleo: anterior → atual |');
+  lines.push('|---|---|---|---|---|---|---|---|');
   for (const e of events) {
-    lines.push(`| ${e.id} | ${e.startsAtUtc.slice(0, 16).replace('T', ' ')} | ${e.status} | ${e.values?.previous ?? '—'} | ${e.values?.actual ?? '—'} | ${e.values?.revised ?? '—'} |`);
+    const v = e.values;
+    const core = v?.core_previous || v?.core_actual ? `${v.core_previous ?? '—'} → ${v.core_actual ?? '—'}${v.core_revised ? ` (revisado ${v.core_revised})` : ''}` : '—';
+    lines.push(`| ${e.id} | ${e.startsAtUtc.slice(0, 16).replace('T', ' ')} | ${e.status} | ${v?.source ?? '—'} | ${v?.previous ?? '—'} | ${v?.actual ?? '—'} | ${v?.revised ?? '—'} | ${core} |`);
   }
   return lines.join('\n');
 }
@@ -149,7 +155,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   const previous = readPrevious(eventsFile);
   const nowMs = now();
   if (resolveMode(env) === 'janela' && !needsResultCheck(sanitizePrevious(previous), nowMs)) {
-    console.log('## Coletor de contexto — janela de divulgação\n\nNenhum evento do BLS está esperando o número oficial agora. Nada a fazer.');
+    console.log('## Coletor de contexto — janela de divulgação\n\nNenhum evento do BLS ou da BEA está esperando o número oficial agora. Nada a fazer.');
     return 0;
   }
   const fredDatesByKind = await fetchFredDates({ fetchImpl, env });
@@ -160,7 +166,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   // (por isso não se mistura a resposta crua da API por cima: foi o achado do Codex no PR #558).
   const baseFile = path.join(args.dir, 'bls-base.json');
   const merged = mergeBase(readBase(baseFile), { series: bls.series, gaps: bls.gaps });
-  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: baseToSeries(merged.base), blsGaps: baseToGaps(merged.base) });
+  // A BEA (PCE, addendum 33) também é opcional: sem a chave ou sem resposta, o PCE mantém o que já estava publicado. Nunca lança.
+  const bea = await fetchBeaPce({ fetchImpl, env, nowMs });
+  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: baseToSeries(merged.base), blsGaps: baseToGaps(merged.base), beaSeries: bea.series });
   const status = buildStatus({ events, fredDatesByKind, nowMs });
   try {
     assertPublicShape(events, status);
@@ -175,7 +183,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   const baseState = writeBase(baseFile, merged.base);
   // As datas passadas (addendum 27): aditivo como a base — se a trava recusar, os eventos já gravados seguem e só o histórico fica de fora.
   const historyState = writeHistory(path.join(args.dir, HISTORY_FILE), fredDatesByKind, nowMs);
-  console.log(formatCollectMarkdown(status, events, fredDatesByKind, bls, describeBase(merged.base, merged.stats, baseState)));
+  console.log(formatCollectMarkdown(status, events, fredDatesByKind, bls, describeBase(merged.base, merged.stats, baseState), bea));
   console.log(`\nHistórico de datas passadas (history.json): ${historyState}.`);
   return 0;
 }

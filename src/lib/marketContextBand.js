@@ -170,11 +170,19 @@ export function parseEventValues(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const previous = cleanValueText(raw.previous);
   const actual = cleanValueText(raw.actual);
-  if (!previous && !actual) return null;
+  // O NÚCLEO do PCE (números da BEA, addendum 33): só o Telegram usa; a tela continua sem números do PCE (`eventValueSlots`/`releaseHistory`).
+  const corePrevious = cleanValueText(raw.core_previous);
+  const coreActual = actual ? cleanValueText(raw.core_actual) : null;
+  const core = {
+    ...(corePrevious ? { core_previous: corePrevious } : {}),
+    ...(coreActual ? { core_actual: coreActual } : {}),
+    ...(coreActual && cleanValueText(raw.core_revised) ? { core_revised: cleanValueText(raw.core_revised) } : {}),
+  };
+  if (!previous && !actual && !corePrevious) return null;
   // Lacuna oficial (addendum 22): `gap` (motivo da lista fechada) e `alt` (janela alternativa, já interpretada) só existem junto do "Atual"; `alt` só junto do `gap`.
   const gap = actual && GAP_REASONS.includes(raw.gap) ? raw.gap : null;
   const alt = gap ? parseAlt(raw.alt) : null;
-  return { previous, actual, revised: actual ? cleanValueText(raw.revised) : null, ...(gap ? { gap } : {}), ...(alt ? { alt } : {}), source: cleanValueText(raw.source) };
+  return { previous, actual, revised: actual ? cleanValueText(raw.revised) : null, ...(gap ? { gap } : {}), ...(alt ? { alt } : {}), ...core, source: cleanValueText(raw.source) };
 }
 
 /**
@@ -182,6 +190,8 @@ export function parseEventValues(raw) {
  * "Atual", o Atual aparece como "aguardando" (`text: null`) — o número só entra quando a fonte oficial publicar.
  */
 export function eventValueSlots(e) {
+  // Só os tipos do BLS têm espaço de número na tela; o PCE (BEA, addendum 33) por enquanto só aparece no Telegram.
+  if (!RESULT_KINDS.includes(e?.kind)) return [];
   const v = e?.values;
   if (!v || (!v.previous && !v.actual)) return [];
   const slots = [];
@@ -279,7 +289,7 @@ export function resultEvents(events, nowMs) {
  */
 export function releaseHistory(events, nowMs) {
   return (Array.isArray(events) ? events : [])
-    .filter((e) => e?.status !== 'a_confirmar' && Number.isFinite(e?.startMs) && e.startMs < nowMs - RESULT_CARD_MS && e.values?.actual)
+    .filter((e) => RESULT_KINDS.includes(e?.kind) && e.status !== 'a_confirmar' && Number.isFinite(e?.startMs) && e.startMs < nowMs - RESULT_CARD_MS && e.values?.actual)
     .sort((a, b) => (a.startMs === b.startMs ? String(a.id).localeCompare(String(b.id)) : b.startMs - a.startMs));
 }
 
