@@ -608,6 +608,16 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     expect(validateBeaPceData('T20807')({ body: outra }).ok).toBe(false);
     const semLinha1 = JSON.stringify({ BEAAPI: { Results: { Data: [{ TableName: 'T20807', LineNumber: '2', LineDescription: 'Goods', TimePeriod: '2026M09', DataValue: '0.1' }] } } });
     expect(validateBeaPceData('T20807')({ body: semLinha1 }).detail).toMatch(/sem a linha 1/);
+    // Achado do Codex (PR #588): as tabelas têm também o "Market-based PCE excluding food and energy" (série separada).
+    // Mesmo mês, as duas linhas, em qualquer ordem: o núcleo é sempre o comum.
+    const L = (n, d, v) => ({ TableName: 'T20807', LineNumber: String(n), LineDescription: d, TimePeriod: '2026M09', DataValue: v });
+    const linhas = [L(1, 'Personal consumption expenditures (PCE)', '0.3'), L(25, 'PCE excluding food and energy', '0.2'), L(29, 'Market-based PCE excluding food and energy', '0.4')];
+    for (const ordem of [linhas, [...linhas].reverse()]) {
+      const d = validateBeaPceData('T20807')({ body: JSON.stringify({ BEAAPI: { Results: { Data: ordem } } }) }).detail;
+      expect(d).toContain('núcleo: linha 25 "PCE excluding food and energy": 2026M09 = 0.2');
+    }
+    // Sem o núcleo comum, não cai no "market-based".
+    expect(validateBeaPceData('T20807')({ body: JSON.stringify({ BEAAPI: { Results: { Data: [linhas[0], linhas[2]] } } }) }).detail).toContain('núcleo: não achada');
     // Período anual/trimestral não conta como mensal.
     const anual = JSON.stringify({ BEAAPI: { Results: { Data: [{ TableName: 'T20807', LineNumber: '1', LineDescription: 'PCE', TimePeriod: '2026', DataValue: '2.8' }] } } });
     expect(validateBeaPceData('T20807')({ body: anual }).ok).toBe(false);
