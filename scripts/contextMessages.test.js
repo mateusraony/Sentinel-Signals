@@ -170,7 +170,7 @@ describe('buildPreEventBriefing: completo, mas só fatos e medições', () => {
   it('FOMC: "Anterior" diz que não há fonte oficial automática; CPI/PPI/Payroll sem número dizem que o BLS não respondeu; PCE, que a BEA não respondeu', () => {
     expect(buildPreEventBriefing({ ...CPI, kind: 'FOMC', values: undefined }, AT)).toContain('sem fonte oficial automática');
     for (const kind of ['CPI', 'PPI', 'NFP']) expect(buildPreEventBriefing({ ...CPI, kind, values: undefined }, AT)).toContain('indisponível agora (o BLS não respondeu');
-    expect(buildPreEventBriefing({ ...CPI, kind: 'PCE', values: undefined }, AT)).toContain('indisponível agora (o BEA não respondeu');
+    expect(buildPreEventBriefing({ ...CPI, kind: 'PCE', values: undefined }, AT)).toContain('indisponível agora (a BEA não respondeu');
   });
 
   it('importância: alta para CPI, Payroll e FOMC; média para PPI e PCE', () => {
@@ -300,7 +300,7 @@ describe('com a projeção registrada pelo usuário', () => {
     expect(buildPreEventBriefing(CPI2, AT2, { consensus: { previous: '+9,9% m/m' } })).toContain('Anterior (BLS):</b> +0,3% m/m');
     const pce = { ...CPI2, kind: 'PCE', values: undefined };
     expect(buildPreEventBriefing(pce, AT2, { consensus: { previous: '+0,3% m/m' } })).toContain('<b>Anterior (informado por você):</b> +0,3% m/m');
-    expect(buildPreEventBriefing(pce, AT2, { consensus: null })).toContain('indisponível agora (o BEA não respondeu');
+    expect(buildPreEventBriefing(pce, AT2, { consensus: null })).toContain('indisponível agora (a BEA não respondeu');
     // Com os números da BEA (addendum 33), o oficial vence o digitado.
     const pceBea = { ...pce, values: { previous: '+0,5% m/m · +2,8% a/a', core_previous: '+0,3% m/m · +2,9% a/a', source: 'BEA' } };
     const m = buildPreEventBriefing(pceBea, AT2, { consensus: { previous: '+0,3% m/m' } });

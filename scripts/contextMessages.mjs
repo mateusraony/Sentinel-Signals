@@ -148,7 +148,7 @@ export function buildPreEventBriefing(event, nowMs, { reactions = null, consensu
     lines.push(`<b>Anterior (${source}):</b> PCE cheio ${escapeHtml(v.previous ?? 'indisponível')} · ${CORE_LABEL} ${escapeHtml(v.core_previous ?? 'indisponível')}`);
   } else if (v?.previous) lines.push(`<b>Anterior (${source ?? 'BLS'}):</b> ${escapeHtml(v.previous)}`);
   else if (consensus?.previous) lines.push(`<b>Anterior (informado por você):</b> ${escapeHtml(consensus.previous)}`);
-  else if (source) lines.push(`<b>Anterior:</b> indisponível agora (o ${source} não respondeu na última coleta).`);
+  else if (source) lines.push(`<b>Anterior:</b> indisponível agora (${source === 'BEA' ? 'a BEA' : `o ${source}`} não respondeu na última coleta).`);
   else lines.push('<b>Anterior:</b> sem fonte oficial automática para este tipo (você pode registrar no botão "Registrar projeção do Contexto").');
   if (consensus?.projection) {
     // FOMC: a projeção é a TAXA (como o TradingView mostra); com o "Anterior" registrado, diz o que ela implica (fato aritmético sobre os dois números do usuário).
