@@ -353,7 +353,9 @@ export function validateBeaPceData(tableName) {
     const fmt = (r) => (r ? `linha ${r.LineNumber} "${String(r.LineDescription).slice(0, 60)}": ${r.TimePeriod} = ${String(r.DataValue).slice(0, 12)}` : 'não achada');
     const head = latestOf((r) => String(r.LineNumber) === '1');
     if (!head) return fail(`tabela ${tableName} sem a linha 1`);
-    const core = latestOf((r) => /excluding food and energy/i.test(r.LineDescription ?? ''));
+    // O núcleo comum, NÃO o "Market-based PCE excluding food and energy" (série separada nas mesmas tabelas, BEA FAQ 83;
+    // achado do Codex no PR #588).
+    const core = latestOf((r) => /excluding food and energy/i.test(r.LineDescription ?? '') && !/market-based/i.test(r.LineDescription ?? ''));
     const unit = String(head.CL_UNIT ?? head.METRIC_NAME ?? '?').slice(0, 40);
     return pass(`${tableName} (unidade: ${unit}) — ${fmt(head)} · núcleo: ${fmt(core)} · ${mine.length} valor(es)`);
   };
