@@ -138,12 +138,20 @@ describe('pickDueResults: o resultado, depois da divulgação', () => {
     for (const kind of ['PPI', 'NFP']) expect(pickDueResults([after(130, { kind, id: `${kind}-2026-11-10` })], NOW).length).toBe(1);
   });
 
-  it('PCE e FOMC (sem número oficial coletado): avisa depois de 35 min', () => {
-    for (const kind of ['PCE', 'FOMC']) {
-      expect(pickDueResults([after(34, { kind, id: `${kind}-2026-11-10` })], NOW).length, `${kind} 34`).toBe(0);
-      expect(pickDueResults([after(35, { kind, id: `${kind}-2026-11-10` })], NOW).length, `${kind} 35`).toBe(1);
-    }
+  it('FOMC (sem número oficial coletado): avisa depois de 35 min', () => {
+    expect(pickDueResults([after(34, { kind: 'FOMC', id: 'FOMC-2026-11-10' })], NOW).length).toBe(0);
+    expect(pickDueResults([after(35, { kind: 'FOMC', id: 'FOMC-2026-11-10' })], NOW).length).toBe(1);
     expect(RESULT_NO_NUMBER_AFTER_MS).toBe(35 * MIN);
+  });
+
+  it('PCE (addendum 33, números da BEA): espera o número como o BLS — com ele avisa em 5 min; sem ele espera até 2 h', () => {
+    const pce = (min, over = {}) => after(min, { kind: 'PCE', id: 'PCE-2026-11-10', ...over });
+    const BEA = { values: { previous: '+0,5% m/m', actual: '+0,3% m/m', source: 'BEA' } };
+    expect(pickDueResults([pce(35)], NOW).length).toBe(0);
+    expect(pickDueResults([pce(119)], NOW).length).toBe(0);
+    expect(pickDueResults([pce(120)], NOW).length).toBe(1);
+    expect(pickDueResults([pce(4, BEA)], NOW).length).toBe(0);
+    expect(pickDueResults([pce(5, BEA)], NOW).length).toBe(1);
   });
 
   it('só data firme; a_confirmar nunca', () => {

@@ -94,9 +94,11 @@ jobs:
       - name: Coletar as datas
         # FRED_API_KEY e BLS_API_KEY vão só na URL da requisição; CONTEXT_CONTACT_EMAIL só no User-Agent.
         # BLS_API_KEY (opcional) alimenta o "Anterior" dos números oficiais; sem ela, ou se o BLS a recusar, a coleta usa a versão sem chave.
+        # BEA_API_KEY (opcional, addendum 33) alimenta o "Anterior"/"Atual" oficiais do PCE (cheio e núcleo); vai só na URL; sem ela o PCE fica sem números.
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+          BEA_API_KEY: ${{ secrets.BEA_API_KEY }}
           CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}
           # Fim do scan num dos 3 horários do dia = coleta normal (vazio); fim do scan em qualquer outra hora que o `if:` deixou passar = "janela".
           # Na dúvida cai em "janela", que é o modo que não faz nada sem um evento do BLS pendente.

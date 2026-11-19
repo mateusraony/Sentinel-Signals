@@ -167,10 +167,10 @@ describe('buildPreEventBriefing: completo, mas só fatos e medições', () => {
     }
   });
 
-  it('PCE e FOMC: "Anterior" diz que não há fonte oficial automática; CPI/PPI/Payroll sem número dizem "indisponível agora"', () => {
-    expect(buildPreEventBriefing({ ...CPI, kind: 'PCE', values: undefined }, AT)).toContain('sem fonte oficial automática');
+  it('FOMC: "Anterior" diz que não há fonte oficial automática; CPI/PPI/Payroll sem número dizem que o BLS não respondeu; PCE, que a BEA não respondeu', () => {
     expect(buildPreEventBriefing({ ...CPI, kind: 'FOMC', values: undefined }, AT)).toContain('sem fonte oficial automática');
     for (const kind of ['CPI', 'PPI', 'NFP']) expect(buildPreEventBriefing({ ...CPI, kind, values: undefined }, AT)).toContain('indisponível agora (o BLS não respondeu');
+    expect(buildPreEventBriefing({ ...CPI, kind: 'PCE', values: undefined }, AT)).toContain('indisponível agora (o BEA não respondeu');
   });
 
   it('importância: alta para CPI, Payroll e FOMC; média para PPI e PCE', () => {
@@ -237,7 +237,9 @@ describe('buildResultMessage: o resultado e o BTC desde a divulgação', () => {
     expect(semNumero).not.toContain('Fonte dos números');
     expect(semNumero).not.toContain('Nas últimas');
     const pce = buildResultMessage({ ...COM, kind: 'PCE', values: undefined }, AFTER, { moves, typical: null });
-    expect(pce).toContain('Este tipo não tem número oficial coletado automaticamente');
+    expect(pce).toContain('O número oficial da BEA ainda não chegou ao sistema.');
+    const fomc = buildResultMessage({ ...COM, kind: 'FOMC', values: undefined }, AFTER, { moves, typical: null });
+    expect(fomc).toContain('Este tipo não tem número oficial coletado automaticamente');
     const semPreco = buildResultMessage(COM, AFTER, { moves: null, typical: null });
     expect(semPreco).toContain('BTC desde a divulgação:</b> indisponível agora');
   });
@@ -298,7 +300,14 @@ describe('com a projeção registrada pelo usuário', () => {
     expect(buildPreEventBriefing(CPI2, AT2, { consensus: { previous: '+9,9% m/m' } })).toContain('Anterior (BLS):</b> +0,3% m/m');
     const pce = { ...CPI2, kind: 'PCE', values: undefined };
     expect(buildPreEventBriefing(pce, AT2, { consensus: { previous: '+0,3% m/m' } })).toContain('<b>Anterior (informado por você):</b> +0,3% m/m');
-    expect(buildPreEventBriefing(pce, AT2, { consensus: null })).toContain('sem fonte oficial automática');
+    expect(buildPreEventBriefing(pce, AT2, { consensus: null })).toContain('indisponível agora (o BEA não respondeu');
+    // Com os números da BEA (addendum 33), o oficial vence o digitado.
+    const pceBea = { ...pce, values: { previous: '+0,5% m/m · +2,8% a/a', core_previous: '+0,3% m/m · +2,9% a/a', source: 'BEA' } };
+    const m = buildPreEventBriefing(pceBea, AT2, { consensus: { previous: '+0,3% m/m' } });
+    expect(m).toContain('<b>Anterior (BEA):</b> PCE cheio +0,5% m/m · +2,8% a/a · núcleo (sem alimentos e energia) +0,3% m/m · +2,9% a/a');
+    expect(m).not.toContain('informado por você):</b> +0,3% m/m');
+    const fomc = { ...CPI2, kind: 'FOMC', values: undefined };
+    expect(buildPreEventBriefing(fomc, AT2, { consensus: null })).toContain('sem fonte oficial automática');
   });
   it('resultado: acima/abaixo/igual à projeção, medida por medida, e o rodapé diz que a projeção é a do usuário', () => {
     const m = buildResultMessage(CPI2, AT2, { moves, consensus: { projection: '+0,3% m/m · +3,1% a/a' } });
@@ -336,5 +345,49 @@ describe('com a projeção registrada pelo usuário', () => {
 
   it('o que o usuário digitou é escapado', () => {
     expect(buildPreEventBriefing(CPI2, AT2, { consensus: { projection: '<b>&x</b>' } })).toContain('&lt;b&gt;&amp;x&lt;/b&gt;');
+  });
+});
+
+// Addendum 33: o PCE com os números oficiais da BEA — o cheio e o núcleo lado a lado, sem comparar com a projeção (o TradingView tem duas linhas).
+describe('PCE com os números da BEA (cheio e núcleo)', () => {
+  const PCE = readEvents([{ ...ev('PCE-2026-11-25', 'PCE', '2026-11-25T13:30:00.000Z'), reference: '2026-10', values: {
+    previous: '+0,5% m/m · +2,8% a/a', actual: '+0,3% m/m · +2,8% a/a', revised: '+0,4% m/m · +2,8% a/a',
+    core_previous: '+0,3% m/m · +2,9% a/a', core_actual: '+0,2% m/m · +2,8% a/a', source: 'BEA',
+  } }])[0];
+  const DEPOIS = Date.parse('2026-11-25T14:10:00.000Z');
+  const moves = { 5: 0.1, 30: -0.2, 60: null };
+
+  it('o arquivo público chega ao aviso com o núcleo (o leitor da tela não o descarta)', () => {
+    expect(PCE.values.core_previous).toBe('+0,3% m/m · +2,9% a/a');
+    expect(PCE.values.core_actual).toBe('+0,2% m/m · +2,8% a/a');
+    expect(PCE.values.source).toBe('BEA');
+  });
+
+  it('resultado: uma linha por medida do PCE cheio e do núcleo, com o anterior, a revisão e a fonte BEA', () => {
+    const m = buildResultMessage(PCE, DEPOIS, { moves });
+    expect(m).toContain('PCE cheio — no mês: <b>+0,3%</b> (anterior +0,5%) — abaixo do anterior; mês anterior revisado para +0,4%');
+    expect(m).toContain('PCE cheio — em 12 meses: <b>+2,8%</b> (anterior +2,8%) — igual ao anterior');
+    expect(m).toContain('Núcleo — no mês: <b>+0,2%</b> (anterior +0,3%) — abaixo do anterior');
+    expect(m).toContain('Núcleo — em 12 meses: <b>+2,8%</b> (anterior +2,9%) — abaixo do anterior');
+    expect(m).toContain('Fonte dos números: BEA.');
+    expect(m).not.toMatch(PROIBIDO);
+  });
+
+  it('a projeção digitada NÃO é comparada no PCE (não se sabe de qual linha veio): aparece com o aviso das duas linhas', () => {
+    const m = buildResultMessage(PCE, DEPOIS, { moves, consensus: { projection: '+0,3% m/m · +3,1% a/a' } });
+    expect(m).not.toContain('da projeção');
+    expect(m).toContain('Sua projeção era: +0,3% m/m · +3,1% a/a — o TradingView mostra duas linhas (PCE e Core PCE): ela vale para a linha que você copiou.');
+    expect(m).toContain('Sem a projeção do mercado (dado pago) não dá para dizer se o número foi surpresa.');
+    const antes = buildPreEventBriefing({ ...PCE, values: { previous: PCE.values.previous, core_previous: PCE.values.core_previous, source: 'BEA' } }, DEPOIS - 2 * 3600000, { consensus: { projection: '+0,3% m/m' } });
+    expect(antes).toContain('<b>Projeção (informada por você):</b> +0,3% m/m (o TradingView mostra duas linhas (PCE e Core PCE): ela vale para a linha que você copiou) — não é o consenso oficial do mercado.');
+  });
+
+  it('só o PCE cheio (núcleo não veio): a mensagem não inventa o núcleo', () => {
+    const so = { ...PCE, values: { previous: '+0,5% m/m', actual: '+0,3% m/m', source: 'BEA' } };
+    const m = buildResultMessage(so, DEPOIS, { moves });
+    expect(m).toContain('PCE cheio — no mês: <b>+0,3%</b>');
+    expect(m).not.toContain('Núcleo');
+    const antes = buildPreEventBriefing({ ...so, values: { previous: '+0,5% m/m', source: 'BEA' } }, DEPOIS - 2 * 3600000);
+    expect(antes).toContain('PCE cheio +0,5% m/m · núcleo (sem alimentos e energia) indisponível');
   });
 });

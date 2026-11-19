@@ -174,7 +174,7 @@ describe('tripwire: a faixa de eventos do painel só lê a branch pública (item
 // Fase 2 (addendum 9): o coletor é o ÚNICO workflow de contexto que escreve no repositório, e só na
 // branch pública `context-data`. Sem push forçado, sem outra branch, sem segredo além do FRED, do BLS (addendum 14: o "Anterior") e do contato.
 const COLETOR = '.github/workflows/context-collect.yml';
-const SEGREDOS_DO_COLETOR = new Set(['FRED_API_KEY', 'BLS_API_KEY', 'CONTEXT_CONTACT_EMAIL']);
+const SEGREDOS_DO_COLETOR = new Set(['FRED_API_KEY', 'BLS_API_KEY', 'BEA_API_KEY', 'CONTEXT_CONTACT_EMAIL']);
 /**
  * Os 3 horários da coleta normal (addendum 25): o scan que termina nos minutos 00 a 09 das 10h, 15h e 00h UTC (07h, 12h e 21h de Brasília).
  * `T10:0` casa só com a HORA 10 e a dezena de minuto 0 (o "T" só existe antes da hora no carimbo ISO).
@@ -425,9 +425,10 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
     expect(linhasComSegredo).toEqual([
       'FRED_API_KEY: ${{ secrets.FRED_API_KEY }}',
       'BLS_API_KEY: ${{ secrets.BLS_API_KEY }}',
+      'BEA_API_KEY: ${{ secrets.BEA_API_KEY }}', // addendum 33: números do PCE
       'CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}',
     ]);
-    // Os três vêm do mesmo bloco `env:` do passo "Coletar as datas" (que roda o coletor), nunca de outro passo.
+    // Os quatro vêm do mesmo bloco `env:` do passo "Coletar as datas" (que roda o coletor), nunca de outro passo.
     const passo = real.slice(real.indexOf('- name: Coletar as datas'), real.indexOf('- name: Publicar na branch context-data'));
     for (const l of linhasComSegredo) expect(passo, l).toContain(l);
   });

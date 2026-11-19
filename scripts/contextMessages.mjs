@@ -89,8 +89,11 @@ export function buildPreEventMessage(event, nowMs) {
 
 /** Importância de REFERÊNCIA (rótulo editorial do projeto, `EVENT_META.impact`); não é previsão de tamanho de movimento. */
 const IMPACT_WORDS = Object.freeze({ 3: 'alta', 2: 'média' });
-/** Tipos cujo "Anterior" vem do BLS (CPI, PPI, Payroll). PCE e FOMC não têm fonte oficial automática hoje. */
-const HAS_BLS_PREVIOUS = new Set(['CPI', 'PPI', 'NFP']);
+/** Tipo → órgão que publica o número oficial coletado: BLS (CPI, PPI, Payroll) e BEA (PCE, addendum 33). FOMC não tem número automático. */
+const OFFICIAL_SOURCE = Object.freeze({ CPI: 'BLS', PPI: 'BLS', NFP: 'BLS', PCE: 'BEA' });
+/** O PCE tem duas linhas no calendário do TradingView (PCE e Core PCE): a projeção digitada vale só para a que o usuário copiou. */
+const PCE_PROJECTION_NOTE = 'o TradingView mostra duas linhas (PCE e Core PCE): ela vale para a linha que você copiou';
+const CORE_LABEL = 'núcleo (sem alimentos e energia)';
 
 /** "+0,40%" / "−1,20%" / "0,00%" (duas casas, vírgula, sinal escrito; o menos é o verdadeiro "−"). */
 export function formatPct(x) {
@@ -138,14 +141,20 @@ export function buildPreEventBriefing(event, nowMs, { reactions = null, consensu
     `${escapeHtml(formatEventWhen(event.startsAtUtc))} · data ${escapeHtml(STATUS_LABELS[event.status])}`,
     '',
   ];
-  if (event.values?.previous) lines.push(`<b>Anterior (BLS):</b> ${escapeHtml(event.values.previous)}`);
+  const v = event.values;
+  const source = OFFICIAL_SOURCE[event.kind];
+  if (event.kind === 'PCE' && (v?.previous || v?.core_previous)) {
+    // As duas medidas, sempre lado a lado (addendum 33): o usuário não precisa saber qual linha do calendário é qual.
+    lines.push(`<b>Anterior (${source}):</b> PCE cheio ${escapeHtml(v.previous ?? 'indisponível')} · ${CORE_LABEL} ${escapeHtml(v.core_previous ?? 'indisponível')}`);
+  } else if (v?.previous) lines.push(`<b>Anterior (${source ?? 'BLS'}):</b> ${escapeHtml(v.previous)}`);
   else if (consensus?.previous) lines.push(`<b>Anterior (informado por você):</b> ${escapeHtml(consensus.previous)}`);
-  else if (HAS_BLS_PREVIOUS.has(event.kind)) lines.push('<b>Anterior:</b> indisponível agora (o BLS não respondeu na última coleta).');
+  else if (source) lines.push(`<b>Anterior:</b> indisponível agora (o ${source} não respondeu na última coleta).`);
   else lines.push('<b>Anterior:</b> sem fonte oficial automática para este tipo (você pode registrar no botão "Registrar projeção do Contexto").');
   if (consensus?.projection) {
     // FOMC: a projeção é a TAXA (como o TradingView mostra); com o "Anterior" registrado, diz o que ela implica (fato aritmético sobre os dois números do usuário).
     const fomc = event.kind === 'FOMC' ? describeFomc(consensus.projection, consensus.previous) : null;
-    lines.push(`<b>Projeção (informada por você):</b> ${escapeHtml(consensus.projection)}${fomc ? ` — ${escapeHtml(fomc)}` : ''} — não é o consenso oficial do mercado.`, '');
+    const pce = event.kind === 'PCE' ? ` (${PCE_PROJECTION_NOTE})` : '';
+    lines.push(`<b>Projeção (informada por você):</b> ${escapeHtml(consensus.projection)}${fomc ? ` — ${escapeHtml(fomc)}` : ''}${pce} — não é o consenso oficial do mercado.`, '');
   } else {
     lines.push('<b>Projeção do mercado (consenso):</b> indisponível — é dado pago; o sistema não inventa um número. Você pode registrar a sua no botão "Registrar projeção do Contexto" (Actions).', '');
   }
@@ -175,11 +184,19 @@ export function buildResultMessage(event, nowMs, { moves = null, typical = null,
     `${escapeHtml(EVENT_META[event.kind]?.title ?? EVENT_HINTS[event.kind])} · ${escapeHtml(formatEventWhen(event.startsAtUtc))}`,
     '',
   ];
-  const rows = event.values?.actual ? resultRows(event.values, event.reference ?? null) : [];
+  const v = event.values;
+  const isPce = event.kind === 'PCE';
+  const rows = v?.actual ? resultRows(v, event.reference ?? null) : [];
+  // PCE (addendum 33): o PCE cheio e o NÚCLEO, cada um com as suas linhas (no mês / em 12 meses).
+  if (isPce) for (const r of rows) r.label = `PCE cheio — ${r.label.toLowerCase()}`;
+  if (isPce && v?.core_actual) {
+    for (const r of resultRows({ previous: v.core_previous ?? null, actual: v.core_actual, revised: v.core_revised ?? null })) rows.push({ ...r, label: `Núcleo — ${r.label.toLowerCase()}` });
+  }
   const withNumber = rows.filter((r) => r.actual !== null);
-  // A projeção que o USUÁRIO registrou (addendum 30), medida por medida ("mom"/"yoy"/"jobs"), para dizer acima/abaixo/igual a ELA.
+  // A projeção que o USUÁRIO registrou (addendum 30), medida por medida ("mom"/"yoy"/"jobs"), para dizer acima/abaixo/igual a ELA. No PCE não compara:
+  // o calendário tem duas linhas (PCE e Core PCE) e não dá para saber de qual ela veio — comparar com a errada seria afirmar o que não se sabe.
   const projection = consensus?.projection ?? null;
-  const projectionByKey = new Map(projection ? splitValueText(projection).map((x) => [x.key, x.value]) : []);
+  const projectionByKey = new Map(projection && !isPce ? splitValueText(projection).map((x) => [x.key, x.value]) : []);
   let comparedToProjection = false;
   if (withNumber.length) {
     for (const r of withNumber) {
@@ -192,10 +209,13 @@ export function buildResultMessage(event, nowMs, { moves = null, typical = null,
       const rev = r.revised !== null ? `; mês anterior revisado para ${escapeHtml(r.revised)}` : '';
       lines.push(`${CONTEXT_EMOJI.compare} ${escapeHtml(r.label)}: <b>${escapeHtml(r.actual)}</b>${prev}${dir}${proj}${rev}`);
     }
-    lines.push('Fonte dos números: BLS.');
-  } else if (['CPI', 'PPI', 'NFP'].includes(event.kind)) {
-    lines.push('O número oficial do BLS ainda não chegou ao sistema; assim que chegar ele aparece no painel.');
-    if (projection) lines.push(`Sua projeção era: ${escapeHtml(projection)}.`);
+    if (isPce && projection) lines.push(`Sua projeção era: ${escapeHtml(projection)} — ${PCE_PROJECTION_NOTE}.`);
+    lines.push(`Fonte dos números: ${OFFICIAL_SOURCE[event.kind] ?? 'BLS'}.`);
+  } else if (OFFICIAL_SOURCE[event.kind]) {
+    lines.push(isPce
+      ? 'O número oficial da BEA ainda não chegou ao sistema.'
+      : 'O número oficial do BLS ainda não chegou ao sistema; assim que chegar ele aparece no painel.');
+    if (projection) lines.push(`Sua projeção era: ${escapeHtml(projection)}${isPce ? ` — ${PCE_PROJECTION_NOTE}` : ''}.`);
   } else {
     lines.push('Este tipo não tem número oficial coletado automaticamente: o aviso traz só o movimento do BTC.');
     if (projection) lines.push(`Sua projeção era: ${escapeHtml(projection)} — confira o resultado no site do órgão.`);

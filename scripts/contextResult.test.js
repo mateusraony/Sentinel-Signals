@@ -279,8 +279,8 @@ describe('data ADIADA pelo FRED nunca vira divulgação (achado do Codex no PR #
 describe('trava pública com "Atual" e "Revisado"', () => {
   const OK = { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', revised: '+0,4% m/m · +3,0% a/a', source: 'BLS' };
 
-  it('VALUES_KEYS é a lista fechada dos 6 campos (addendum 22 acrescenta `gap` e `alt`, a lacuna oficial)', () => {
-    expect(VALUES_KEYS).toEqual(['previous', 'actual', 'revised', 'gap', 'alt', 'source']);
+  it('VALUES_KEYS é a lista fechada dos 9 campos (addendum 22 acrescenta `gap` e `alt`; addendum 33, o núcleo do PCE)', () => {
+    expect(VALUES_KEYS).toEqual(['previous', 'actual', 'revised', 'core_previous', 'core_actual', 'core_revised', 'gap', 'alt', 'source']);
   });
 
   it('sanitizeValues aceita as combinações válidas e devolve SEMPRE na mesma ordem de chaves', () => {
@@ -337,15 +337,23 @@ describe('needsResultCheck — há resultado esperando?', () => {
     expect(needsResultCheck([cpi], CPI_AT + RESULT_WATCH_MS)).toBe(true); // no limite
   });
 
-  it('não: ainda futuro, depois de 4 h, já com "Atual", sem referência, PCE/FOMC ou lista vazia/ruim', () => {
+  it('não: ainda futuro, depois de 4 h, já com "Atual", sem referência, FOMC ou lista vazia/ruim', () => {
     expect(needsResultCheck([cpi], CPI_AT - 1)).toBe(false);
     expect(needsResultCheck([cpi], CPI_AT + RESULT_WATCH_MS + 1)).toBe(false);
     expect(needsResultCheck([{ ...cpi, values: { previous: CPI_ANTERIOR, actual: CPI_ATUAL, source: 'BLS' } }], CPI_AT + 60000)).toBe(false);
     expect(needsResultCheck([{ ...cpi, reference: null }], CPI_AT + 60000)).toBe(false);
-    expect(needsResultCheck([ev('PCE-2026-11-10', 'PCE', cpi.startsAtUtc), ev('FOMC-2026-11-10', 'FOMC', cpi.startsAtUtc)], CPI_AT + 60000)).toBe(false);
+    expect(needsResultCheck([ev('FOMC-2026-11-10', 'FOMC', cpi.startsAtUtc)], CPI_AT + 60000)).toBe(false);
+    // PCE sem mês de referência não tem o que esperar (addendum 33).
+    expect(needsResultCheck([{ ...ev('PCE-2026-11-10', 'PCE', cpi.startsAtUtc), reference: null }], CPI_AT + 60000)).toBe(false);
     expect(needsResultCheck([], CPI_AT)).toBe(false);
     expect(needsResultCheck(null, CPI_AT)).toBe(false);
     expect(needsResultCheck([null, 7, { kind: 'CPI' }, { ...cpi, startsAtUtc: 'ontem' }], CPI_AT + 60000)).toBe(false);
+  });
+
+  it('PCE (addendum 33, BEA): saiu há até 4 h sem o "Atual" = esperando; com o "Atual" da BEA, não', () => {
+    const pce = { ...ev('PCE-2026-11-10', 'PCE', cpi.startsAtUtc), reference: '2026-10' };
+    expect(needsResultCheck([pce], CPI_AT + 60000)).toBe(true);
+    expect(needsResultCheck([{ ...pce, values: { previous: '+0,5% m/m', actual: '+0,3% m/m', source: 'BEA' } }], CPI_AT + 60000)).toBe(false);
   });
 
   it('com o "Anterior" mas sem o "Atual" ainda conta como esperando', () => {
@@ -407,8 +415,8 @@ describe('modo "janela" do coletor (main)', () => {
       expect(n.n).toBeGreaterThan(0);
       const cpi = byId(JSON.parse(lido(dir, 'events.json')))['CPI-2026-11-10'];
       expect(cpi.values).toEqual({ previous: CPI_ANTERIOR, actual: CPI_ATUAL, source: 'BLS' });
-      expect(r.logs).toContain('| Evento | Hora (UTC) | Situação | Anterior (BLS) | Atual (BLS) | Revisado (BLS) |');
-      expect(r.logs).toContain(`| CPI-2026-11-10 | 2026-11-10 13:30 | oficial | ${CPI_ANTERIOR} | ${CPI_ATUAL} | — |`);
+      expect(r.logs).toContain('| Evento | Hora (UTC) | Situação | Fonte | Anterior | Atual | Revisado | Núcleo: anterior → atual |');
+      expect(r.logs).toContain(`| CPI-2026-11-10 | 2026-11-10 13:30 | oficial | BLS | ${CPI_ANTERIOR} | ${CPI_ATUAL} | — | — |`);
       for (const t of [lido(dir, 'events.json'), lido(dir, 'status.json'), r.logs]) {
         expect(t).not.toContain(BKEY);
         expect(t).not.toContain(FKEY);
@@ -422,8 +430,8 @@ describe('modo "janela" do coletor (main)', () => {
     const dir = arquivar(publicar(NOW, ANTES));
     try {
       const r = await rodar(dir, { FRED_API_KEY: FKEY, BLS_API_KEY: BKEY, COLLECT_MODE: 'janela' }, fetchCom(DEPOIS_REVISADO, { n: 0 }), AFTER_CPI);
-      expect(r.logs).toContain(`| CPI-2026-11-10 | 2026-11-10 13:30 | oficial | ${CPI_ANTERIOR} | +0,4% m/m · +4,0% a/a | +0,4% m/m · +3,0% a/a |`);
-      expect(r.logs).toContain('| NFP-2026-11-06 | 2026-11-06 13:30 | oficial | +119 mil | +50 mil | +150 mil |');
+      expect(r.logs).toContain(`| CPI-2026-11-10 | 2026-11-10 13:30 | oficial | BLS | ${CPI_ANTERIOR} | +0,4% m/m · +4,0% a/a | +0,4% m/m · +3,0% a/a | — |`);
+      expect(r.logs).toContain('| NFP-2026-11-06 | 2026-11-06 13:30 | oficial | BLS | +119 mil | +50 mil | +150 mil | — |');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -439,7 +447,7 @@ describe('modo "janela" do coletor (main)', () => {
       expect(n.n).toBe(0);
       expect(lido(dir, 'events.json')).toBe(antes);
       expect(lido(dir, 'status.json')).toBeNull();
-      expect(r.logs).toMatch(/Nenhum evento do BLS está esperando o número oficial/);
+      expect(r.logs).toMatch(/Nenhum evento do BLS ou da BEA está esperando o número oficial/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

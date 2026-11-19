@@ -6,7 +6,8 @@
 // O que NUNCA vai para lá (repositório público; lição do item 25): URL, chave, mensagem de
 // erro, valor vindo do FRED (termos do FRED) ou volatilidade (termos da Deribit). ÚNICA exceção
 // (addenda 14 e 15): os números oficiais do BLS (domínio público, "Fonte: BLS") em `values` —
-// "Anterior", "Atual" e "Revisado", todos no formato único `PREVIOUS_TEXT_RE`. A trava é
+// "Anterior", "Atual" e "Revisado", todos no formato único `PREVIOUS_TEXT_RE`. Desde o addendum 33, também os do PCE pela BEA
+// (domínio público, "Fonte: BEA"), com o NÚCLEO ao lado (`core_previous`/`core_actual`/`core_revised`), no mesmo formato. A trava é
 // `assertPublicShape`: lista FECHADA de campos e formato de cada valor — texto livre não passa.
 //
 // Fontes: as datas do FRED (CPI, Payroll, PPI, PCE) são a fonte principal; a lista fixa
@@ -17,6 +18,7 @@ import { KINDS, KIND_TIMES, STATUS, US_RELEASES } from './contextCalendar.mjs';
 import { nyToUtc } from './contextTime.mjs';
 import { buildUserAgent, MAX_BODY_BYTES } from './contextProbe.mjs';
 import { previousValues, previousValueText, actualValueText, gapNoteValues, isValidAltText, GAP_REASONS, PREVIOUS_TEXT_RE, BLS_SOURCE, BLS_SERIES } from './contextBls.mjs';
+import { BEA_SOURCE, beaPreviousValues, beaActualValues } from './contextBea.mjs';
 
 /** Releases do FRED, conferidos pelo nome na sonda (runs 5-8). FOMC não está aqui: vem da lista fixa. */
 export const FRED_RELEASES = Object.freeze({ CPI: 10, NFP: 50, PPI: 46, PCE: 54 });
@@ -24,7 +26,10 @@ export const FRED_RELEASES = Object.freeze({ CPI: 10, NFP: 50, PPI: 46, PCE: 54 
 export const PUBLIC_VERSION = 1;
 // `values` (addenda 14 e 15): os números oficiais do BLS — `null` ou `{ previous?, actual?, revised?, source }`; ver `sanitizeValues`.
 export const EVENT_KEYS = Object.freeze(['id', 'kind', 'reference', 'startsAtUtc', 'status', 'firstSeenAt', 'lastChangedAt', 'values']);
-export const VALUES_KEYS = Object.freeze(['previous', 'actual', 'revised', 'gap', 'alt', 'source']);
+export const VALUES_KEYS = Object.freeze(['previous', 'actual', 'revised', 'core_previous', 'core_actual', 'core_revised', 'gap', 'alt', 'source']);
+/** Tipo de evento → fonte oficial dos números. PCE vem da BEA (addendum 33); FOMC não tem número. */
+export const VALUE_SOURCE_BY_KIND = Object.freeze({ CPI: BLS_SOURCE, PPI: BLS_SOURCE, NFP: BLS_SOURCE, PCE: BEA_SOURCE });
+const CORE_KEYS = Object.freeze(['core_previous', 'core_actual', 'core_revised']);
 export const STATUS_KEYS = Object.freeze(['version', 'checkedAt', 'fred', 'eventsCount', 'coverageUntil', 'hash']);
 export const FRED_STATES = Object.freeze(['ok', 'parcial', 'falhou']);
 
@@ -78,15 +83,21 @@ const instant = (kind, date) => {
  */
 export function sanitizeValues(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
-  if (Object.keys(v).some((k) => !VALUES_KEYS.includes(k)) || v.source !== BLS_SOURCE) return null;
+  if (Object.keys(v).some((k) => !VALUES_KEYS.includes(k)) || ![BLS_SOURCE, BEA_SOURCE].includes(v.source)) return null;
+  // O núcleo (addendum 33) só existe nos números da BEA (PCE); lacuna oficial (`gap`/`alt`) só nos do BLS.
+  if (v.source === BLS_SOURCE && CORE_KEYS.some((k) => Object.prototype.hasOwnProperty.call(v, k))) return null;
+  if (v.source === BEA_SOURCE && ['gap', 'alt'].some((k) => Object.prototype.hasOwnProperty.call(v, k))) return null;
   const out = {};
-  for (const k of ['previous', 'actual', 'revised']) {
+  for (const k of ['previous', 'actual', 'revised', ...CORE_KEYS]) {
     if (!Object.prototype.hasOwnProperty.call(v, k)) continue;
     if (typeof v[k] !== 'string' || !PREVIOUS_TEXT_RE.test(v[k])) return null;
     out[k] = v[k];
   }
-  if (!out.previous && !out.actual) return null;
+  if (!out.previous && !out.actual && !out.core_previous && !out.core_actual) return null;
   if (out.revised && !out.actual) return null;
+  // O núcleo segue a MESMA regra: "Revisado" só junto do "Atual"; e "Atual" do núcleo só junto do "Atual" do PCE cheio (é a mesma divulgação).
+  if (out.core_revised && !out.core_actual) return null;
+  if (out.core_actual && !out.actual) return null;
   // Lacuna oficial (addendum 22): `gap` = motivo da lista fechada; `alt` = a janela alternativa (formato fechado, 2 a 11 meses). Só junto do "Atual";
   // `alt` só existe junto do `gap` (a janela só é "alternativa" ao número oficial que não existe).
   if (Object.prototype.hasOwnProperty.call(v, 'gap')) {
@@ -99,7 +110,7 @@ export function sanitizeValues(v) {
   }
   if ((out.gap || out.alt) && !out.actual) return null;
   if (out.alt && !out.gap) return null;
-  out.source = BLS_SOURCE;
+  out.source = v.source;
   return out;
 }
 
@@ -116,7 +127,9 @@ const hasHappened = (kind, date, nowMs) => {
  *   grava o "Atual"; se o "Anterior" recalculado agora difere do congelado, grava também o "Revisado". Daí em diante tudo fica
  *   CONGELADO (uma revisão posterior do mês não troca o número que saiu na divulgação).
  */
-function eventValues({ kind, reference, status, released, published, blsSeries, blsGaps }) {
+function eventValues({ kind, reference, status, released, published, blsSeries, blsGaps, beaSeries }) {
+  if (kind === 'PCE') return beaEventValues({ reference, status, released, published, beaSeries });
+  if (published && published.source !== BLS_SOURCE) published = null; // número de outra fonte num evento do BLS nunca é aproveitado
   if (published?.actual) return withGapNote(published, kind, reference, blsSeries, blsGaps);
   // Data a confirmar (adiada, retirada) que já passou NÃO é uma divulgação: nunca ganha "Atual" (o mês que o BLS traz é o do evento remarcado).
   if (released && status === STATUS.A_CONFIRMAR) return published;
@@ -134,6 +147,32 @@ function eventValues({ kind, reference, status, released, published, blsSeries, 
   if (published?.previous && fresh && fresh !== published.previous) out.revised = fresh;
   out.source = BLS_SOURCE;
   return withGapNote(sanitizeValues(out) ?? published, kind, reference, blsSeries, blsGaps);
+}
+
+/**
+ * O mesmo ciclo de `eventValues` para o PCE, com os números da BEA (addendum 33) e o NÚCLEO ao lado: antes da divulgação o "Anterior" recalculado
+ * (sem resposta da BEA, o publicado); depois, no 1º instante em que a BEA traz o mês, o "Atual" e — se a BEA corrigiu o mês anterior na própria
+ * divulgação — o "Revisado", por medida. Daí em diante CONGELADO. Valores de outra fonte (ex.: BLS num PCE) nunca são aproveitados.
+ */
+function beaEventValues({ reference, status, released, published, beaSeries }) {
+  const pub = published?.source === BEA_SOURCE ? published : null;
+  if (pub?.actual) return pub;
+  if (released && status === STATUS.A_CONFIRMAR) return pub;
+  if (!released) return (beaSeries ? beaPreviousValues(beaSeries, reference) : null) ?? pub;
+  const now = beaSeries ? beaActualValues(beaSeries, reference) : null;
+  if (!now) return pub;
+  const fresh = beaPreviousValues(beaSeries, reference);
+  const out = {};
+  const previous = pub?.previous ?? fresh?.previous ?? null;
+  if (previous) out.previous = previous;
+  out.actual = now.actual;
+  if (pub?.previous && fresh?.previous && fresh.previous !== pub.previous) out.revised = fresh.previous;
+  const corePrevious = pub?.core_previous ?? fresh?.core_previous ?? null;
+  if (corePrevious) out.core_previous = corePrevious;
+  if (now.core_actual) out.core_actual = now.core_actual;
+  if (now.core_actual && pub?.core_previous && fresh?.core_previous && fresh.core_previous !== pub.core_previous) out.core_revised = fresh.core_previous;
+  out.source = BEA_SOURCE;
+  return sanitizeValues(out) ?? pub;
 }
 
 /**
@@ -182,8 +221,9 @@ function withGapNote(values, kind, reference, blsSeries, blsGaps) {
  *    Sem número calculável nem publicado: `null`.
  * @param {Record<string, Map<string, number>|null>} [p.blsSeries] séries do BLS por código (`fetchBlsSeries().series`)
  * @param {Record<string, Map<string, string>|null>} [p.blsGaps] lacunas oficiais do BLS por série (mês → motivo), da base (`baseToGaps`); explicam o "em 12 meses" que não existe
+ * @param {{ mom: object|null, index: object|null }|null} [p.beaSeries] tabelas do PCE da BEA (`fetchBeaPce().series`, addendum 33)
  */
-export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, previous = [], nowMs, blsSeries = null, blsGaps = null }) {
+export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, previous = [], nowMs, blsSeries = null, blsGaps = null, beaSeries = null }) {
   const nowIso = new Date(nowMs).toISOString();
   const cutoffMs = nowMs - DAY_MS;
   const cand = new Map(); // id → { kind, date, reference, status }
@@ -241,7 +281,7 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     if (!utc) continue;
     const p = prevById.get(id);
     const values = eventValues({
-      kind: c.kind, reference: c.reference, status: c.status, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries, blsGaps,
+      kind: c.kind, reference: c.reference, status: c.status, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries, blsGaps, beaSeries,
     });
     // Só de ontem em diante; o já divulgado COM "Atual" fica HISTORY_DAYS dias (alimenta "Últimas divulgações").
     if (utc.ms < cutoffMs && !(values?.actual && utc.ms >= nowMs - HISTORY_DAYS * DAY_MS)) continue;
@@ -267,13 +307,14 @@ export function eventsHash(events) {
 }
 
 /**
- * Há evento do BLS (CPI, PPI, Payroll) com mês de referência que saiu há até `RESULT_WATCH_MS` e ainda não tem o "Atual"?
+ * Há evento do BLS (CPI, PPI, Payroll) ou da BEA (PCE) com mês de referência que saiu há até `RESULT_WATCH_MS` e ainda não tem o "Atual"?
  * É o que decide se o modo "janela" do coletor tem trabalho a fazer (senão sai sem rede e sem gravar nada).
  * @param {object[]} events eventos já validados (`sanitizePrevious`)
  */
 export function needsResultCheck(events, nowMs) {
   return (Array.isArray(events) ? events : []).some((e) => {
-    if (!Object.prototype.hasOwnProperty.call(BLS_SERIES, e?.kind) || !/^\d{4}-\d{2}$/.test(e?.reference ?? '')) return false;
+    // PCE (BEA, addendum 33) espera o número do mesmo jeito que os do BLS.
+    if (!(Object.prototype.hasOwnProperty.call(BLS_SERIES, e?.kind) || e?.kind === 'PCE') || !/^\d{4}-\d{2}$/.test(e?.reference ?? '')) return false;
     const ms = Date.parse(e.startsAtUtc);
     return Number.isFinite(ms) && ms <= nowMs && nowMs - ms <= RESULT_WATCH_MS && !sanitizeValues(e.values)?.actual;
   });
@@ -313,8 +354,10 @@ export function assertPublicShape(events, status) {
     if (!(e.reference === null || /^\d{4}-\d{2}$/.test(e.reference))) problems.push(`${tag}: referência inválida`);
     for (const k of ['startsAtUtc', 'firstSeenAt', 'lastChangedAt']) if (!ISO_RE.test(e[k] ?? '')) problems.push(`${tag}: ${k} inválido`);
     if (!Object.values(STATUS).includes(e.status)) problems.push(`${tag}: situação inválida`);
-    // `values`: null OU { previous?, actual?, revised?, source: 'BLS' } no formato único — nada de número solto, texto livre, URL ou outra fonte.
+    // `values`: null OU { previous?, actual?, revised?, [core_*], source: 'BLS'|'BEA' } no formato único — nada de número solto, texto livre, URL ou outra fonte.
     if (!(e.values === null || sanitizeValues(e.values) !== null)) problems.push(`${tag}: values inválido`);
+    // A fonte tem de ser a do TIPO (BLS para CPI/PPI/Payroll, BEA para o PCE); FOMC nunca tem número.
+    else if (e.values !== null && e.values.source !== VALUE_SOURCE_BY_KIND[e.kind]) problems.push(`${tag}: fonte dos números não é a do tipo`);
   }
   if (!sameKeys(status, STATUS_KEYS)) problems.push(`status: campos diferentes de ${STATUS_KEYS.join(', ')}`);
   else {
