@@ -40,11 +40,11 @@ concurrency:
 
 jobs:
   alert:
-    # Manual: sempre (é a simulação). Automático: só com `pre-evento` ou `resultado` ligada (variável vazia = padrão ligado; `nenhuma` desliga) E só se o
+    # Manual: sempre (é a simulação). Automático: só com `pre-evento`, `resultado` ou `resumo` ligada (variável vazia = padrão ligado; `nenhuma` desliga) E só se o
     # scan é deste repositório e veio do cron-job.org ou da reserva (nunca de PR/push).
     if: >-
       github.event_name == 'workflow_dispatch' || (
-      (vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resultado'))
+      (vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resultado') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resumo'))
       && github.event.workflow_run.head_repository.full_name == github.repository
       && (github.event.workflow_run.event == 'workflow_dispatch' || github.event.workflow_run.event == 'schedule'))
     runs-on: ubuntu-latest

@@ -4,8 +4,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   CATEGORIES, NEUTRAL_NOTE, parseCategories, isCategoryEnabled, readEvents, escapeHtml,
-  buildTestMessage, buildAgendaMessage, nextAlertableEvent, buildPreEventMessage, buildPreEventBriefing, buildReactionBlock, formatPct, buildResultMessage, AUTOMATIC_ONLY, DEFAULT_CATEGORIES,
+  buildTestMessage, buildAgendaMessage, nextAlertableEvent, buildPreEventMessage, buildPreEventBriefing, buildReactionBlock, formatPct, buildResultMessage, AUTOMATIC_ONLY, DEFAULT_CATEGORIES, buildDaySummary,
 } from './contextMessages.mjs';
+import { eventsOfDay } from './contextAlert.mjs';
 
 const NOW = Date.parse('2026-11-05T12:00:00.000Z');
 const ev = (id, kind, startsAtUtc, status = 'oficial') => ({ id, kind, reference: '2026-10', startsAtUtc, status, firstSeenAt: startsAtUtc, lastChangedAt: startsAtUtc });
@@ -19,7 +20,7 @@ const PROIBIDO = /probabilidade|vai subir|vai cair|deve subir|deve cair|compre|v
 
 describe('categorias', () => {
   it('padrão tudo desligado; "teste" sempre permitida; nome fora da lista é ignorado', () => {
-    expect(CATEGORIES).toEqual(['teste', 'agenda', 'pre-evento']);
+    expect(CATEGORIES).toEqual(['teste', 'agenda', 'pre-evento']); // `resultado` e `resumo` só existem no envio automático (AUTOMATIC_ONLY)
     // Vazio/ausente = o PADRÃO: só `pre-evento` (aviso automático) liga sozinho; `agenda` é do botão manual. `nenhuma` desliga tudo; lista liga só o listado.
     expect(isCategoryEnabled('pre-evento', '')).toBe(true);
     expect(isCategoryEnabled('pre-evento', undefined)).toBe(true);
@@ -34,7 +35,8 @@ describe('categorias', () => {
     expect(isCategoryEnabled('agenda', 'agenda')).toBe(true);
     expect(isCategoryEnabled('pre-evento', ' Agenda , PRE-EVENTO ')).toBe(true);
     expect(isCategoryEnabled('pre-evento', 'agenda')).toBe(false);
-    expect([...parseCategories('agenda; xyz resumo')]).toEqual(['agenda']);
+    expect([...parseCategories('agenda; xyz zzz')]).toEqual(['agenda']);
+    expect([...parseCategories('agenda; resumo')]).toEqual(['agenda', 'resumo']); // `resumo` (addendum 35) é categoria válida
   });
 });
 
@@ -269,9 +271,13 @@ describe('buildResultMessage: o resultado e o BTC desde a divulgação', () => {
 
 describe('categoria "resultado"', () => {
   it('só existe no envio automático (não está no botão manual) e vem ligada por padrão junto com o aviso de antes', () => {
-    expect(AUTOMATIC_ONLY).toContain('resultado');
+    expect(AUTOMATIC_ONLY).toEqual(['resultado', 'resumo']);
+    expect(isCategoryEnabled('resumo', '')).toBe(true); // resumo do dia (addendum 35): ligado por padrão
+    expect(isCategoryEnabled('resumo', 'pre-evento,resultado')).toBe(false);
+    expect(isCategoryEnabled('resumo', 'resumo')).toBe(true);
+    expect(isCategoryEnabled('resumo', 'nenhuma')).toBe(false);
     expect(CATEGORIES).not.toContain('resultado');
-    expect([...DEFAULT_CATEGORIES].sort()).toEqual(['pre-evento', 'resultado']);
+    expect([...DEFAULT_CATEGORIES].sort()).toEqual(['pre-evento', 'resultado', 'resumo']);
     expect(isCategoryEnabled('resultado', '')).toBe(true);
     expect(isCategoryEnabled('resultado', 'pre-evento')).toBe(false); // lista: só o listado
     expect(isCategoryEnabled('resultado', 'resultado')).toBe(true);
@@ -389,5 +395,70 @@ describe('PCE com os números da BEA (cheio e núcleo)', () => {
     expect(m).not.toContain('Núcleo');
     const antes = buildPreEventBriefing({ ...so, values: { previous: '+0,5% m/m', source: 'BEA' } }, DEPOIS - 2 * 3600000);
     expect(antes).toContain('PCE cheio +0,5% m/m · núcleo (sem alimentos e energia) indisponível');
+  });
+});
+
+// Fase 4c (addendum 35): o resumo do dia.
+describe('buildDaySummary: o que saiu hoje, o BTC e o que vem a seguir', () => {
+  const NOITE = Date.parse('2026-11-20T00:10:00Z'); // 21:10 de Brasília de 19/11
+  const cpi = { ...ev('CPI-2026-11-19', 'CPI', '2026-11-19T13:30:00.000Z'), reference: '2026-10', values: { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,2% m/m · +3,1% a/a', source: 'BLS' } };
+  const pce = { ...ev('PCE-2026-11-19', 'PCE', '2026-11-19T13:30:00.000Z'), reference: '2026-10', values: {
+    previous: '+0,5% m/m · +3,3% a/a', actual: '+0,3% m/m · +3,3% a/a', core_previous: '+0,3% m/m · +3,1% a/a', core_actual: '+0,2% m/m · +3,0% a/a', source: 'BEA' } };
+  const fomc = ev('FOMC-2026-11-19', 'FOMC', '2026-11-19T19:00:00.000Z');
+  const proximo = ev('PPI-2026-11-25', 'PPI', '2026-11-25T13:30:00.000Z');
+  const todos = readEvents([cpi, pce, fomc, proximo]);
+  const doDia = eventsOfDay(todos, '2026-11-19', NOITE);
+  const moves = new Map([['CPI-2026-11-19', { 5: -0.1, 30: 0.25, 60: 0.4 }], ['PCE-2026-11-19', { 5: 0.05, 30: null, 60: null }]]);
+  const texto = buildDaySummary({ day: '2026-11-19', events: doDia, agenda: todos, nowMs: NOITE, moves, btcDay: { pct: 0.85, rangePct: 2.1 } });
+
+  it('cabeçalho com o dia de Brasília e a contagem das divulgações', () => {
+    expect(texto).toContain('<b>Resumo do dia — qui, 19/11</b>');
+    expect(texto).toContain('Saíram 3 divulgações monitoradas hoje:');
+    expect(buildDaySummary({ day: '2026-11-19', events: [doDia[0]], nowMs: NOITE })).toContain('Saiu 1 divulgação monitorada hoje:');
+  });
+  it('cada divulgação traz os números oficiais (mesmo bloco do aviso de resultado) e o BTC depois dela', () => {
+    expect(texto).toContain('No mês: <b>+0,2%</b> (anterior +0,3%) — abaixo do anterior');
+    expect(texto).toContain('Fonte dos números: BLS.');
+    expect(texto).toContain('🕒 BTC depois: 5 min −0,10% · 30 min +0,25% · 60 min +0,40%');
+    // PCE: cheio e núcleo lado a lado, fonte BEA; prazo que ainda não passou diz isso
+    expect(texto).toContain('PCE cheio — no mês: <b>+0,3%</b> (anterior +0,5%)');
+    expect(texto).toContain('Núcleo — no mês: <b>+0,2%</b> (anterior +0,3%)');
+    expect(texto).toContain('Fonte dos números: BEA.');
+    expect(texto).toContain('BTC depois: 5 min +0,05% · 30 min ainda não passou · 60 min ainda não passou');
+    // FOMC: sem número automático, e sem movimento medido = "indisponível" (não inventa)
+    expect(texto).toContain('Este tipo não tem número oficial coletado automaticamente');
+    expect(texto).toMatch(/FOMC<\/b>[\s\S]*BTC depois: indisponível agora/);
+  });
+  it('BTC no dia: variação contra a abertura e amplitude; fonte fora do ar diz "indisponível"', () => {
+    expect(texto).toContain('<b>BTC no dia</b> (de 00:00 até agora, Brasília): +0,85% contra a abertura · amplitude de 2,10% entre a mínima e a máxima.');
+    expect(buildDaySummary({ day: '2026-11-19', events: doDia, nowMs: NOITE })).toContain('<b>BTC no dia:</b> indisponível agora');
+    expect(buildDaySummary({ day: '2026-11-19', events: doDia, nowMs: NOITE, btcDay: { pct: -1.2, rangePct: 0.5 } })).toContain('−1,20% contra a abertura');
+  });
+  it('o que vem a seguir: só o que ainda não começou, com a data e a situação; sem nada à frente diz isso', () => {
+    expect(texto).toContain('<b>O que vem a seguir:</b>');
+    expect(texto).toMatch(/• <b>PPI<\/b> — qua 25\/11, 10:30 \(Brasília\) · em 5d 13h · oficial/);
+    expect(texto).not.toMatch(/• <b>CPI<\/b>/); // o do dia não volta como "a seguir"
+    expect(buildDaySummary({ day: '2026-11-19', events: doDia, agenda: [], nowMs: NOITE })).toContain('nenhum evento na agenda por enquanto');
+  });
+  it('a projeção digitada pelo usuário segue as mesmas regras do aviso de resultado (CPI compara; PCE não compara)', () => {
+    const consensusOf = (e) => (e.kind === 'CPI' ? { projection: '+0,3% m/m · +3,1% a/a' } : e.kind === 'PCE' ? { projection: '+0,3% m/m' } : null);
+    const m = buildDaySummary({ day: '2026-11-19', events: doDia, nowMs: NOITE, consensusOf });
+    expect(m).toContain('abaixo da projeção (+0,3%)');
+    expect(m).not.toMatch(/PCE cheio[^\n]*da projeção/);
+    expect(m).toContain('Sua projeção era: +0,3% m/m — o TradingView mostra duas linhas');
+  });
+  it('TEXTO NEUTRO em todas as variações; cabe folgado no limite do Telegram; escapa HTML', () => {
+    const variacoes = [
+      texto,
+      buildDaySummary({ day: '2026-11-19', events: doDia, nowMs: NOITE }),
+      buildDaySummary({ day: '2026-11-19', events: [fomc].map((e) => readEvents([e])[0]), agenda: [], nowMs: NOITE, btcDay: { pct: 3, rangePct: 6 } }),
+    ];
+    for (const m of variacoes) {
+      expect(m).not.toMatch(PROIBIDO);
+      expect(m.trimEnd().endsWith(NEUTRAL_NOTE)).toBe(true);
+      expect(m.length).toBeLessThan(3000);
+    }
+    const sujo = readEvents([{ ...cpi, values: { ...cpi.values, actual: '<i>&x</i> m/m' } }]);
+    expect(buildDaySummary({ day: '2026-11-19', events: sujo, nowMs: NOITE })).not.toContain('<i>');
   });
 });

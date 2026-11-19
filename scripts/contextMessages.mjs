@@ -7,18 +7,19 @@ import {
 } from '../src/lib/marketContextBand.js';
 import { summarizeReactions } from './contextBtcHistory.mjs';
 import { describeFomc } from './contextConsensus.mjs';
+import { dayBoundsBrt } from './contextAlert.mjs';
 
 /** Categorias de aviso. `teste` é sempre permitida (é o botão manual); as outras só se estiverem na variável do repositório. */
 export const CATEGORIES = Object.freeze(['teste', 'agenda', 'pre-evento']);
 /** Categorias que só existem no envio AUTOMÁTICO (o botão manual não as oferece): o resultado depois da divulgação (addendum 28). */
-export const AUTOMATIC_ONLY = Object.freeze(['resultado']);
+export const AUTOMATIC_ONLY = Object.freeze(['resultado', 'resumo']);
 export const NEUTRAL_NOTE = 'Só informação — não altera sinais nem operações.';
 const EMOJI = '🗓️';
 
 export const escapeHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** Ligadas quando a variável do repositório está vazia ou ausente (addendum 27): os avisos automáticos. `agenda` é só o botão manual. */
-export const DEFAULT_CATEGORIES = Object.freeze(['pre-evento', 'resultado']);
+export const DEFAULT_CATEGORIES = Object.freeze(['pre-evento', 'resultado', 'resumo']);
 /** O valor que desliga todos os avisos automáticos. */
 export const OFF_WORD = 'nenhuma';
 
@@ -174,16 +175,12 @@ const PROJECTION_WORDS = Object.freeze({ acima: 'acima da projeção', abaixo: '
 const moveWord = (n, v) => (v === null || v === undefined ? `${n} min ainda não passou` : `${n} min ${formatPct(v)}`);
 
 /**
- * @param {{ moves?: { 5: number|null, 30: number|null, 60: number|null }|null, typical?: ReturnType<typeof summarizeReactions>|null }} [extra]
- *   `moves`: movimento do BTC desde a divulgação (`partialMoves`); `null` = a fonte de preços não respondeu. `typical`: resumo das últimas divulgações do tipo.
+ * O bloco dos números do resultado de UM evento (usado pelo aviso de resultado e pelo resumo do dia): uma linha por medida (com o anterior,
+ * "acima/abaixo do anterior" e o "Revisado") e a fonte; ou o que falta (o número oficial ainda não chegou, ou o tipo não tem número automático).
+ * Só FATOS sobre os números. `comparedToProjection`: alguma medida foi comparada com a projeção que o usuário registrou.
+ * @returns {{ lines: string[], comparedToProjection: boolean }}
  */
-export function buildResultMessage(event, nowMs, { moves = null, typical = null, consensus = null } = {}) {
-  const label = EVENT_LABELS[event.kind];
-  const lines = [
-    `${CONTEXT_EMOJI.released} <b>${escapeHtml(label)} — saiu o resultado</b>`,
-    `${escapeHtml(EVENT_META[event.kind]?.title ?? EVENT_HINTS[event.kind])} · ${escapeHtml(formatEventWhen(event.startsAtUtc))}`,
-    '',
-  ];
+export function resultNumberBlock(event, consensus = null) {
   const v = event.values;
   const isPce = event.kind === 'PCE';
   const rows = v?.actual ? resultRows(v, event.reference ?? null) : [];
@@ -197,6 +194,7 @@ export function buildResultMessage(event, nowMs, { moves = null, typical = null,
   // o calendário tem duas linhas (PCE e Core PCE) e não dá para saber de qual ela veio — comparar com a errada seria afirmar o que não se sabe.
   const projection = consensus?.projection ?? null;
   const projectionByKey = new Map(projection && !isPce ? splitValueText(projection).map((x) => [x.key, x.value]) : []);
+  const out = [];
   let comparedToProjection = false;
   if (withNumber.length) {
     for (const r of withNumber) {
@@ -207,19 +205,36 @@ export function buildResultMessage(event, nowMs, { moves = null, typical = null,
       if (projDir) comparedToProjection = true;
       const proj = projDir ? ` · ${PROJECTION_WORDS[projDir]} (${escapeHtml(projValue)})` : '';
       const rev = r.revised !== null ? `; mês anterior revisado para ${escapeHtml(r.revised)}` : '';
-      lines.push(`${CONTEXT_EMOJI.compare} ${escapeHtml(r.label)}: <b>${escapeHtml(r.actual)}</b>${prev}${dir}${proj}${rev}`);
+      out.push(`${CONTEXT_EMOJI.compare} ${escapeHtml(r.label)}: <b>${escapeHtml(r.actual)}</b>${prev}${dir}${proj}${rev}`);
     }
-    if (isPce && projection) lines.push(`Sua projeção era: ${escapeHtml(projection)} — ${PCE_PROJECTION_NOTE}.`);
-    lines.push(`Fonte dos números: ${OFFICIAL_SOURCE[event.kind] ?? 'BLS'}.`);
+    if (isPce && projection) out.push(`Sua projeção era: ${escapeHtml(projection)} — ${PCE_PROJECTION_NOTE}.`);
+    out.push(`Fonte dos números: ${OFFICIAL_SOURCE[event.kind] ?? 'BLS'}.`);
   } else if (OFFICIAL_SOURCE[event.kind]) {
-    lines.push(isPce
+    out.push(isPce
       ? 'O número oficial da BEA ainda não chegou ao sistema.'
       : 'O número oficial do BLS ainda não chegou ao sistema; assim que chegar ele aparece no painel.');
-    if (projection) lines.push(`Sua projeção era: ${escapeHtml(projection)}${isPce ? ` — ${PCE_PROJECTION_NOTE}` : ''}.`);
+    if (projection) out.push(`Sua projeção era: ${escapeHtml(projection)}${isPce ? ` — ${PCE_PROJECTION_NOTE}` : ''}.`);
   } else {
-    lines.push('Este tipo não tem número oficial coletado automaticamente: o aviso traz só o movimento do BTC.');
-    if (projection) lines.push(`Sua projeção era: ${escapeHtml(projection)} — confira o resultado no site do órgão.`);
+    out.push('Este tipo não tem número oficial coletado automaticamente: só o movimento do BTC é mostrado.');
+    if (projection) out.push(`Sua projeção era: ${escapeHtml(projection)} — confira o resultado no site do órgão.`);
   }
+  return { lines: out, comparedToProjection };
+}
+
+/**
+ * @param {{ moves?: { 5: number|null, 30: number|null, 60: number|null }|null, typical?: ReturnType<typeof summarizeReactions>|null }} [extra]
+ *   `moves`: movimento do BTC desde a divulgação (`partialMoves`); `null` = a fonte de preços não respondeu. `typical`: resumo das últimas divulgações do tipo.
+ */
+export function buildResultMessage(event, nowMs, { moves = null, typical = null, consensus = null } = {}) {
+  const label = EVENT_LABELS[event.kind];
+  const lines = [
+    `${CONTEXT_EMOJI.released} <b>${escapeHtml(label)} — saiu o resultado</b>`,
+    `${escapeHtml(EVENT_META[event.kind]?.title ?? EVENT_HINTS[event.kind])} · ${escapeHtml(formatEventWhen(event.startsAtUtc))}`,
+    '',
+  ];
+  const numbers = resultNumberBlock(event, consensus);
+  lines.push(...numbers.lines);
+  const comparedToProjection = numbers.comparedToProjection;
   lines.push('');
   if (moves) {
     lines.push(`${CONTEXT_EMOJI.horizon} <b>BTC desde a divulgação:</b> ${moveWord(5, moves[5])} · ${moveWord(30, moves[30])} · ${moveWord(60, moves[60])}`);
@@ -235,5 +250,50 @@ export function buildResultMessage(event, nowMs, { moves = null, typical = null,
   } else {
     lines.push('', 'Sem a projeção do mercado (dado pago) não dá para dizer se o número foi surpresa.', NEUTRAL_NOTE);
   }
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Fase 4c (addendum 35): o RESUMO DO DIA, às 21h de Brasília — o que saiu hoje, com os números oficiais, o que o BTC fez depois de cada divulgação e no dia, e o
+// que vem a seguir. Só FATOS e medições do passado: nada de previsão de direção, de probabilidade nem de ordem (travado por `PROIBIDO` nos testes).
+
+const WEEKDAY_DAY_MONTH = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short', day: '2-digit', month: '2-digit' });
+const dayLabel = (day) => WEEKDAY_DAY_MONTH.format(new Date(dayBoundsBrt(day).startMs + 12 * 3600000)).replace('.', '');
+
+/**
+ * @param {{ day: string, events: object[], agenda?: object[], nowMs: number, moves?: Map<string, object|null>, btcDay?: { pct: number, rangePct: number }|null,
+ *   consensusOf?: (event: object) => object|null }} p
+ *   `events`: os eventos do dia (`eventsOfDay`); `agenda`: a lista inteira para "o que vem a seguir"; `moves`: id do evento → `partialMoves` (ausente/`null` = fonte de preços fora);
+ *   `btcDay`: `loadBtcDay` (`null` = indisponível).
+ */
+export function buildDaySummary({ day, events, agenda = [], nowMs, moves = new Map(), btcDay = null, consensusOf = () => null }) {
+  const lines = [`${CONTEXT_EMOJI.released} <b>Resumo do dia — ${escapeHtml(dayLabel(day))}</b>`, ''];
+  lines.push(events.length === 1 ? 'Saiu 1 divulgação monitorada hoje:' : `Saíram ${events.length} divulgações monitoradas hoje:`, '');
+  for (const e of events) {
+    lines.push(`<b>${escapeHtml(EVENT_LABELS[e.kind])}</b> — ${escapeHtml(EVENT_META[e.kind]?.title ?? EVENT_HINTS[e.kind])} · ${escapeHtml(formatEventWhen(e.startsAtUtc))}`);
+    lines.push(...resultNumberBlock(e, consensusOf(e)).lines);
+    const m = moves.get(e.id) ?? null;
+    lines.push(m
+      ? `${CONTEXT_EMOJI.horizon} BTC depois: ${moveWord(5, m[5])} · ${moveWord(30, m[30])} · ${moveWord(60, m[60])}`
+      : `${CONTEXT_EMOJI.horizon} BTC depois: indisponível agora (a fonte de preços não respondeu).`);
+    lines.push('');
+  }
+  if (btcDay) {
+    lines.push(`${CONTEXT_EMOJI.gauge} <b>BTC no dia</b> (de 00:00 até agora, Brasília): ${formatPct(btcDay.pct)} contra a abertura · amplitude de ${formatPct(btcDay.rangePct).replace('+', '')} entre a mínima e a máxima.`);
+  } else {
+    lines.push(`${CONTEXT_EMOJI.gauge} <b>BTC no dia:</b> indisponível agora (a fonte de preços não respondeu).`);
+  }
+  const next = (Array.isArray(agenda) ? agenda : []).filter((e) => Number.isFinite(e?.startMs) && e.startMs > nowMs).slice(0, 3);
+  lines.push('');
+  if (next.length) {
+    lines.push('<b>O que vem a seguir:</b>');
+    for (const e of next) {
+      const quando = e.status === 'a_confirmar' ? '' : ` · ${formatCountdown(e.startMs - nowMs)}`;
+      lines.push(`• <b>${escapeHtml(EVENT_LABELS[e.kind])}</b> — ${escapeHtml(formatEventWhen(e.startsAtUtc))}${quando} · ${escapeHtml(STATUS_LABELS[e.status])}`);
+    }
+  } else {
+    lines.push('<b>O que vem a seguir:</b> nenhum evento na agenda por enquanto.');
+  }
+  lines.push('', 'Os números vêm do órgão oficial de cada divulgação; o BTC é o que aconteceu, medido nas velas da Binance — descreve o passado, não prevê o próximo.', NEUTRAL_NOTE);
   return lines.join('\n');
 }

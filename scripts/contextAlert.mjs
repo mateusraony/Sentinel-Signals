@@ -24,11 +24,11 @@ export const SENT_KEEP_MS = 30 * DAY_MS;
 /** Teto de entradas (defesa: o arquivo é pequeno por construção — 1 aviso por evento, ~2 eventos por semana). */
 export const SENT_MAX_ENTRIES = 200;
 
-const KEY_RE = /^[A-Z]+-\d{4}-\d{2}-\d{2}:(pre|post)$/;
+const KEY_RE = /^[A-Z]+-\d{4}-\d{2}-\d{2}:(pre|post|dia)$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const FIRM = new Set(Object.keys(STATUS_LABELS).filter((s) => s !== 'a_confirmar'));
 
-/** A chave do "já avisei" de um evento e fase — `pre` (1 h antes) ou `post` (resultado). O id traz o tipo e a data; remarcar a data muda o id, então é um aviso novo. */
+/** A chave do "já avisei" de um evento e fase — `pre` (1 h antes), `post` (resultado) ou `dia` (o resumo do dia, addendum 35: o "evento" é `DIA-AAAA-MM-DD`). O id traz o tipo e a data; remarcar a data muda o id, então é um aviso novo. */
 export const alertKey = (event, phase = 'pre') => `${event.id}:${phase}`;
 
 const emptyState = () => ({ version: SENT_VERSION, sent: {} });
@@ -71,7 +71,7 @@ export function markSent(state, event, nowMs, phase = 'pre') {
 }
 
 /**
- * Trava do conteúdo PÚBLICO (a branch `context-data` é legível por qualquer pessoa): só `version` e `sent` (chave "TIPO-AAAA-MM-DD:pre|post" →
+ * Trava do conteúdo PÚBLICO (a branch `context-data` é legível por qualquer pessoa): só `version` e `sent` (chave "TIPO-AAAA-MM-DD:pre|post|dia" →
  * instante ISO). Nada de texto livre, mensagem, chat, erro ou segredo. Lança se o formato fugir.
  */
 export function assertPublicSent(state) {
@@ -118,4 +118,48 @@ export function pickDueResults(events, nowMs, sent = emptyState()) {
     })
     .filter((e) => !Object.prototype.hasOwnProperty.call(registry, alertKey(e, 'post')))
     .sort((a, b) => (a.startMs === b.startMs ? String(a.id).localeCompare(String(b.id)) : a.startMs - b.startMs));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Fase 4c (addendum 35): o RESUMO DO DIA, às 21h de Brasília. Só nos dias em que houve divulgação monitorada (dia sem evento não manda nada: o volume de
+// mensagens é um risco registrado do projeto). Brasília é UTC−3 o ano todo (o horário de verão acabou em 2019); se o país o reinstituir, é só trocar a constante.
+export const BRT_OFFSET_MS = 3 * 60 * MIN_MS;
+/** O resumo sai a partir das 21:00 de Brasília e, se a passada atrasar, até as 02:59 do dia seguinte (depois disso o dia "vence" sem aviso). */
+export const SUMMARY_FROM_HOUR_BRT = 21;
+export const SUMMARY_WINDOW_HOURS = 6;
+
+const ymd = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+/** O dia de Brasília ('AAAA-MM-DD') que o resumo cobre AGORA, ou null se não é hora de resumo (fora de 21:00–02:59 de Brasília). */
+export function summaryDay(nowMs) {
+  if (!Number.isFinite(nowMs)) return null;
+  const w = new Date(nowMs - BRT_OFFSET_MS - SUMMARY_FROM_HOUR_BRT * 60 * MIN_MS); // o relógio de Brasília deslocado: 21:00 vira 00:00
+  return w.getUTCHours() < SUMMARY_WINDOW_HOURS ? ymd(w.getTime()) : null;
+}
+
+/** Limites do dia de Brasília `day` em ms UTC: [00:00, 24:00). */
+export function dayBoundsBrt(day) {
+  const start = Date.parse(`${day}T00:00:00.000Z`) + BRT_OFFSET_MS;
+  return { startMs: start, endMs: start + DAY_MS };
+}
+
+/** Eventos de data firme que JÁ aconteceram no dia de Brasília `day` (do mais cedo ao mais tarde). */
+export function eventsOfDay(events, day, nowMs) {
+  const { startMs, endMs } = dayBoundsBrt(day);
+  return (Array.isArray(events) ? events : [])
+    .filter((e) => e && typeof e.id === 'string' && Number.isFinite(e.startMs) && FIRM.has(e.status) && e.startMs >= startMs && e.startMs < endMs && e.startMs <= nowMs)
+    .sort((a, b) => (a.startMs === b.startMs ? String(a.id).localeCompare(String(b.id)) : a.startMs - b.startMs));
+}
+
+/**
+ * Há resumo para enviar AGORA? `{ day, id, events }` quando: é hora (21:00–02:59 de Brasília), o dia teve ao menos 1 divulgação de data firme e ainda
+ * não há registro `DIA-AAAA-MM-DD:dia`. Senão null.
+ */
+export function pickDueSummary(events, nowMs, sent = emptyState()) {
+  const day = summaryDay(nowMs);
+  if (!day) return null;
+  const id = `DIA-${day}`;
+  if (Object.prototype.hasOwnProperty.call(parseSent(sent).sent, `${id}:dia`)) return null;
+  const list = eventsOfDay(events, day, nowMs);
+  return list.length ? { day, id, events: list } : null;
 }

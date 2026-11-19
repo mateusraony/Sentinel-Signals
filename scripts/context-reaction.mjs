@@ -43,9 +43,8 @@ export async function fetchPastFredDates({ fetchImpl = fetch, env = {}, timeoutM
   return out;
 }
 
-/** Velas de 1 min de [t0 − 1 min, t0 + 60 min). Até 3 tentativas em 429/418/5xx e erro de rede; null se não deu. */
-export async function fetchWindow(t0Ms, { fetchImpl = fetch, env = {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), timeoutMs = 15000 } = {}) {
-  const url = `${KLINES_URL}?symbol=BTCUSDT&interval=1m&startTime=${t0Ms - MIN}&limit=${WINDOW_CANDLES}`;
+/** Velas da Binance de uma URL de klines. Até 3 tentativas em 429/418/5xx e erro de rede; null se não deu (nunca lança, nunca devolve texto de erro). */
+export async function fetchKlines(url, { fetchImpl = fetch, env = {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), timeoutMs = 15000 } = {}) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -60,6 +59,16 @@ export async function fetchWindow(t0Ms, { fetchImpl = fetch, env = {}, sleep = (
     if (attempt < 3) await sleep(attempt * 1000);
   }
   return null;
+}
+
+/** Velas de 1 min de [t0 − 1 min, t0 + 60 min). */
+export function fetchWindow(t0Ms, opts = {}) {
+  return fetchKlines(`${KLINES_URL}?symbol=BTCUSDT&interval=1m&startTime=${t0Ms - MIN}&limit=${WINDOW_CANDLES}`, opts);
+}
+
+/** Velas de 1 h do BTC de `startMs` até `endMs` (resumo do dia, addendum 35): no máximo 48. */
+export function fetchHourlyCandles(startMs, endMs, opts = {}) {
+  return fetchKlines(`${KLINES_URL}?symbol=BTCUSDT&interval=1h&startTime=${startMs}&endTime=${endMs}&limit=48`, opts);
 }
 
 async function pool(items, worker, concurrency) {

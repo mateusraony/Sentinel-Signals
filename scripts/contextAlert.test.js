@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   PRE_ALERT_FROM_MS, PRE_ALERT_TO_MS, SENT_KEEP_MS, SENT_MAX_ENTRIES, alertKey, parseSent, pickDueEvents, markSent, assertPublicSent, serializeSent,
   pickDueResults, RESULT_AFTER_ACTUAL_MS, RESULT_BLS_WAIT_MS, RESULT_NO_NUMBER_AFTER_MS, RESULT_MAX_AFTER_MS,
+  summaryDay, dayBoundsBrt, eventsOfDay, pickDueSummary,
 } from './contextAlert.mjs';
 
 const MIN = 60 * 1000;
@@ -182,5 +183,77 @@ describe('pickDueResults: o resultado, depois da divulgação', () => {
     const lista = [after(30, { ...COM_NUMERO, id: 'PPI-2026-11-10', kind: 'PPI', startMs: NOW - 30 * MIN }), after(90, { ...COM_NUMERO, id: 'NFP-2026-11-10', kind: 'NFP' }), null, {}, 7];
     expect(pickDueResults(lista, NOW).map((e) => e.id)).toEqual(['NFP-2026-11-10', 'PPI-2026-11-10']);
     expect(pickDueResults('x', NOW)).toEqual([]);
+  });
+});
+
+// Fase 4c (addendum 35): o resumo do dia, depois das 21h de Brasília (UTC−3).
+describe('summaryDay: o dia de Brasília que o resumo cobre agora', () => {
+  const dia = (iso) => summaryDay(Date.parse(iso));
+  it('de 21:00 de Brasília (00:00 UTC) até 02:59 do dia seguinte: cobre o dia que acabou', () => {
+    expect(dia('2026-11-20T00:00:00Z')).toBe('2026-11-19');
+    expect(dia('2026-11-20T00:15:00Z')).toBe('2026-11-19');
+    expect(dia('2026-11-20T05:59:59Z')).toBe('2026-11-19');
+  });
+  it('fora da janela (antes das 21h e depois das 02:59 de Brasília): nada', () => {
+    for (const iso of ['2026-11-19T23:59:59Z', '2026-11-20T06:00:00Z', '2026-11-20T12:00:00Z', '2026-11-19T15:00:00Z']) expect(dia(iso), iso).toBeNull();
+  });
+  it('virada de ano e de mês: o dia é o de Brasília, não o de UTC', () => {
+    expect(dia('2027-01-01T04:00:00Z')).toBe('2026-12-31');
+    expect(dia('2026-12-01T01:00:00Z')).toBe('2026-11-30');
+    expect(dia('2028-03-01T02:00:00Z')).toBe('2028-02-29'); // ano bissexto
+  });
+  it('entrada ruim: null', () => {
+    expect(summaryDay(NaN)).toBeNull();
+    expect(summaryDay(undefined)).toBeNull();
+  });
+  it('dayBoundsBrt: o dia de Brasília vai de 03:00 UTC a 03:00 UTC do dia seguinte', () => {
+    expect(dayBoundsBrt('2026-11-19')).toEqual({ startMs: Date.parse('2026-11-19T03:00:00Z'), endMs: Date.parse('2026-11-20T03:00:00Z') });
+  });
+});
+
+describe('eventsOfDay e pickDueSummary', () => {
+  const T = (iso) => Date.parse(iso);
+  const at = (iso, over = {}) => ev({ startsAtUtc: iso, startMs: T(iso), ...over });
+  const NOITE = T('2026-11-20T00:10:00Z'); // 21:10 de Brasília de 19/11
+  const cpi = at('2026-11-19T13:30:00.000Z', { id: 'CPI-2026-11-19' });
+  const fomc = at('2026-11-19T19:00:00.000Z', { id: 'FOMC-2026-11-19', kind: 'FOMC' });
+
+  it('só eventos do dia de Brasília que já aconteceram e têm data firme, do mais cedo ao mais tarde', () => {
+    const naBorda = at('2026-11-19T02:59:59.000Z', { id: 'X-2026-11-19' }); // 23:59:59 de 18/11 em Brasília
+    const proximoDia = at('2026-11-20T03:00:00.000Z', { id: 'Y-2026-11-20' }); // 00:00 de 20/11 em Brasília
+    const aConfirmar = at('2026-11-19T15:00:00.000Z', { id: 'PPI-2026-11-19', status: 'a_confirmar' });
+    const futuro = at('2026-11-20T00:30:00.000Z', { id: 'Z-2026-11-19' }); // ainda não aconteceu (agora é 00:10)
+    const lista = eventsOfDay([fomc, naBorda, proximoDia, aConfirmar, futuro, cpi], '2026-11-19', NOITE);
+    expect(lista.map((e) => e.id)).toEqual(['CPI-2026-11-19', 'FOMC-2026-11-19']);
+    expect(eventsOfDay(null, '2026-11-19', NOITE)).toEqual([]);
+  });
+
+  it('há resumo quando é hora, o dia teve divulgação e ainda não foi enviado', () => {
+    const r = pickDueSummary([cpi, fomc], NOITE);
+    expect(r.day).toBe('2026-11-19');
+    expect(r.id).toBe('DIA-2026-11-19');
+    expect(r.events.map((e) => e.id)).toEqual(['CPI-2026-11-19', 'FOMC-2026-11-19']);
+  });
+  it('dia SEM divulgação não manda nada (volume de mensagens é risco registrado)', () => {
+    expect(pickDueSummary([at('2026-11-18T13:30:00.000Z', { id: 'CPI-2026-11-18' })], NOITE)).toBeNull();
+    expect(pickDueSummary([], NOITE)).toBeNull();
+  });
+  it('fora da hora de resumo (de tarde) não manda, mesmo com divulgação', () => {
+    expect(pickDueSummary([cpi], T('2026-11-19T20:00:00Z'))).toBeNull();
+  });
+  it('registrado: a 2ª passada não repete; o registro `dia` não atrapalha os avisos de antes/depois', () => {
+    const state = markSent(null, { id: 'DIA-2026-11-19' }, NOITE, 'dia');
+    expect(Object.keys(state.sent)).toEqual(['DIA-2026-11-19:dia']);
+    expect(() => assertPublicSent(state)).not.toThrow();
+    expect(pickDueSummary([cpi], NOITE + 15 * MIN, state)).toBeNull();
+    // outro dia continua devido
+    const amanha = at('2026-11-20T13:30:00.000Z', { id: 'CPI-2026-11-20' });
+    expect(pickDueSummary([amanha], T('2026-11-21T00:10:00Z'), state)?.id).toBe('DIA-2026-11-20');
+    // o registro de resumo não conta como o aviso de resultado do mesmo evento
+    expect(pickDueResults([cpi], T('2026-11-19T16:00:00Z'), state).length).toBe(1); // CPI sem número espera 2 h; às 16:00Z já passaram 2h30
+  });
+  it('a trava pública aceita a chave `dia` e continua recusando fase desconhecida', () => {
+    expect(() => assertPublicSent({ version: 1, sent: { 'DIA-2026-11-19:dia': '2026-11-20T00:10:00.000Z' } })).not.toThrow();
+    expect(() => assertPublicSent({ version: 1, sent: { 'DIA-2026-11-19:resumo': '2026-11-20T00:10:00.000Z' } })).toThrow(/chave inválida/);
   });
 });

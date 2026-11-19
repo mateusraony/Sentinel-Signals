@@ -34337,6 +34337,22 @@ Pedido do usuário ("onde consulto o resultado depois que sair?" → "dá para d
   - Mutações: 8 plantadas. O filtro de "unscheduled" sobreviveu e foi removido, porque o formato fechado do dia já o cobre. O resumo do coletor também sobreviveu, e o teste de ponta a ponta que entrou passou a pegá-lo.
 - **Não verificado [honesto]:** o formato real da página e se 2027 já está publicado nela. A 1ª coleta depois do merge responde as duas coisas.
 
+**Addendum 35 (2026-11-19) — Fase 4c: o RESUMO DO DIA às 21h de Brasília.** Pedido do usuário (*"relatório final do dia"*) e, em 19/11, *"quero terminar tudo que precisa ser feito… eu autorizo"*.
+- **Decisão [decisão]:** o resumo sai **só nos dias em que houve divulgação monitorada** (CPI, PPI, Payroll, PCE ou FOMC de data firme que já aconteceu naquele dia de Brasília). Dia sem evento não manda nada, porque o excesso de mensagens é um risco registrado deste projeto. Os resumos de 07h e 12h do plano original **não foram feitos**: o aviso de 1 h antes já cobre a manhã. Se o usuário quiser todos os dias, é trocar uma regra em `pickDueSummary`.
+- **O que entrou [fato]:**
+  - Uma 3ª fase do alertador existente (`context-alert.yml`): `pre` (1 h antes), `post` (resultado) e agora `dia`.
+  - `summaryDay`: de 21:00 de Brasília até 02:59 do dia seguinte, cobre o dia que acabou. Brasília é UTC−3 fixo (o horário de verão acabou em 2019); a constante é `BRT_OFFSET_MS`.
+  - O registro público ganhou a chave `DIA-AAAA-MM-DD:dia`, e a trava `assertPublicSent` aceita só `pre|post|dia`.
+  - `buildDaySummary`: para cada divulgação do dia, o MESMO bloco de números do aviso de resultado (extraído para `resultNumberBlock`, com o PCE cheio e o núcleo, a fonte e a comparação com o anterior), o BTC +5/+30/+60 min depois dela e, no fim, o BTC do dia e "o que vem a seguir" (até 3 eventos).
+  - O BTC do dia vem de 1 requisição de velas de 1 h do dia de Brasília (`loadBtcDay`): variação contra a abertura e amplitude mínima→máxima. Falha vira "indisponível" naquela linha; o resumo nunca deixa de sair por causa do preço.
+  - A categoria `resumo` é automática, **ligada por padrão** e entra no `if:` do workflow. A variável `CONTEXT_TELEGRAM_CATEGORIES` com uma lista sem `resumo`, ou `nenhuma`, desliga.
+  - **Texto neutro:** só fatos e medições do passado; o teste `PROIBIDO` (sem probabilidade, direção, compra, venda, recomendação) vale para todas as variações.
+- **Provas [verificado]:**
+  - Testes novos: janela e virada de dia/mês/ano/bissexto; eventos do dia; resumo único (a 2ª passada não repete); dia sem evento não manda; a mensagem; `loadBtcDay`; e o executável de ponta a ponta (envia e registra, categoria desligada, Binance fora, simulação e falha de envio).
+  - **14 mutações plantadas, todas pegas.**
+  - A refatoração `resultNumberBlock` não mudou o aviso de resultado (os 42 testes de mensagens seguem passando).
+- **Não verificado [honesto]:** o 1º resumo real. Ele sai depois das 21h de Brasília do próximo dia com divulgação; hoje (19/11) não houve divulgação monitorada, então o 1º real é o do PCE de 25/11.
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 > **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista

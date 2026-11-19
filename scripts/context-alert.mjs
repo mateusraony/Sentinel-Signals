@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CLI do aviso AUTOMÁTICO do Contexto no Telegram — docs/known-risks.md item 285, addendum 26 (Fase 4b).
+// CLI do aviso AUTOMÁTICO do Contexto no Telegram — docs/known-risks.md item 285, addendum 26 (Fase 4b); resumo do dia às 21h de Brasília no addendum 35 (Fase 4c).
 // As regras moram em scripts/contextAlert.mjs (janela + registro do "já avisei"), a mensagem em scripts/contextMessages.mjs e o
 // envio em scripts/contextTelegram.mjs — todos testáveis sem rede.
 //
@@ -15,11 +15,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { isCategoryEnabled, readEvents, buildPreEventBriefing, buildResultMessage } from './contextMessages.mjs';
-import { loadReactions, loadMovesSince, summarizeReactions, readHistoryFile } from './contextBtcHistory.mjs';
+import { isCategoryEnabled, readEvents, buildPreEventBriefing, buildResultMessage, buildDaySummary } from './contextMessages.mjs';
+import { loadReactions, loadMovesSince, loadBtcDay, summarizeReactions, readHistoryFile } from './contextBtcHistory.mjs';
 import { CONSENSUS_FILE, parseConsensus, consensusFor } from './contextConsensus.mjs';
 import { sendTelegram, describeSendFailure } from './contextTelegram.mjs';
-import { SENT_FILE, pickDueEvents, pickDueResults, parseSent, markSent, serializeSent, alertKey } from './contextAlert.mjs';
+import { SENT_FILE, pickDueEvents, pickDueResults, pickDueSummary, dayBoundsBrt, parseSent, markSent, serializeSent, alertKey } from './contextAlert.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -62,7 +62,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   const enviar = args.enviar === true;
   const ligadas = typeof args['categorias-ligadas'] === 'string' ? args['categorias-ligadas'] : String(env.CATEGORIAS_LIGADAS ?? '');
   const dir = typeof args.dir === 'string' ? args.dir : '';
-  const out = ['## Aviso automático do Contexto — antes e depois do evento', ''];
+  const out = ['## Aviso automático do Contexto — antes, depois do evento e resumo do dia', ''];
 
   const loaded = dir ? loadEvents(dir) : { error: 'falta --dir (pasta da branch context-data)' };
   if (loaded.error) {
@@ -78,8 +78,11 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
     ...pickDueEvents(loaded.events, nowMs, state).map((event) => ({ event, phase: 'pre' })),
     ...pickDueResults(loaded.events, nowMs, state).map((event) => ({ event, phase: 'post' })),
   ];
+  // A 3ª fase (addendum 35): o resumo do dia, depois das 21h de Brasília, nos dias em que houve divulgação. O "evento" do registro é `DIA-AAAA-MM-DD`.
+  const summary = pickDueSummary(loaded.events, nowMs, state);
+  if (summary) items.push({ event: { id: summary.id }, phase: 'dia', summary });
   if (!items.length) {
-    out.push('Nada a enviar agora: nenhum evento de data firme entre 45 e 75 minutos à frente e nenhum resultado pendente de aviso (ou já avisados).');
+    out.push('Nada a enviar agora: nenhum evento de data firme entre 45 e 75 minutos à frente, nenhum resultado pendente de aviso e nenhum resumo do dia para esta hora (ou já avisados).');
     console.log(out.join('\n'));
     return 0;
   }
@@ -92,8 +95,15 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   let consensusState = null;
   try { consensusState = JSON.parse(fs.readFileSync(path.join(dir, CONSENSUS_FILE), 'utf8')); } catch { consensusState = null; }
   const consensusOf = (event) => consensusFor(parseConsensus(consensusState, nowMs), event, nowMs);
-  const categoryOf = ({ phase }) => (phase === 'pre' ? 'pre-evento' : 'resultado');
-  const compose = async ({ event, phase }) => {
+  const categoryOf = ({ phase }) => (phase === 'pre' ? 'pre-evento' : phase === 'dia' ? 'resumo' : 'resultado');
+  const compose = async ({ event, phase, summary: due }) => {
+    if (phase === 'dia') {
+      // Resumo do dia: o que o BTC fez depois de cada divulgação e no dia (velas da Binance, sem chave); falha vira "indisponível" naquela linha.
+      const moves = new Map();
+      for (const e of due.events) moves.set(e.id, await loadMovesSince({ t0Ms: e.startMs, nowMs, fetchImpl, env: {}, sleep }));
+      const btcDay = await loadBtcDay({ dayStartMs: dayBoundsBrt(due.day).startMs, nowMs, fetchImpl, env: {}, sleep });
+      return buildDaySummary({ day: due.day, events: due.events, agenda: loaded.events, nowMs, moves, btcDay, consensusOf });
+    }
     const rows = await loadReactions({ kind: event.kind, history, fetchImpl, env: {}, sleep });
     const consensus = consensusOf(event);
     if (phase === 'pre') return buildPreEventBriefing(event, nowMs, { reactions: rows, consensus });

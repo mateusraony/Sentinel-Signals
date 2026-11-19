@@ -4,7 +4,7 @@
 // nunca completada com vela vizinha). É MEDIDO, NÃO PREVISTO: descreve o passado com o número de casos à vista, sem direção e sem probabilidade.
 //
 // Sem banco, sem Telegram, sem segredo (a Binance não pede chave). Falha de rede de UMA divulgação vira "sem dado" daquela linha; nunca lança.
-import { fetchWindow } from './context-reaction.mjs';
+import { fetchWindow, fetchHourlyCandles } from './context-reaction.mjs';
 import { reactionAt, median, OFFSETS_MIN } from './contextReaction.mjs';
 import { KIND_TIMES } from './contextCalendar.mjs';
 import { nyToUtc } from './contextTime.mjs';
@@ -86,6 +86,24 @@ export async function loadMovesSince({ t0Ms, nowMs, fetchImpl, env = {}, sleep }
   try {
     const candles = await fetchWindow(t0Ms, { fetchImpl, env, ...(sleep ? { sleep } : {}) });
     return candles ? partialMoves(candles, t0Ms, nowMs) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * O BTC no DIA (resumo do dia, addendum 35): da abertura da 1ª vela de 1 h do dia de Brasília até o último preço, com a amplitude (mínima a máxima).
+ * `{ pct, rangePct, hours }` em % ou `null` se a fonte não respondeu / veio vazia / sem a vela de abertura do dia. Nunca lança. É MEDIDO, não previsto.
+ */
+export async function loadBtcDay({ dayStartMs, nowMs, fetchImpl, env = {}, sleep }) {
+  try {
+    const candles = await fetchHourlyCandles(dayStartMs, nowMs, { fetchImpl, env, ...(sleep ? { sleep } : {}) });
+    if (!candles?.length || candles[0].t !== dayStartMs) return null;
+    const open = candles[0].o;
+    const close = candles[candles.length - 1].c;
+    const high = Math.max(...candles.map((c) => c.h));
+    const low = Math.min(...candles.map((c) => c.l));
+    return { pct: (close / open - 1) * 100, rangePct: (high / low - 1) * 100, hours: candles.length };
   } catch {
     return null;
   }
