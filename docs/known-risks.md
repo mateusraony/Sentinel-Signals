@@ -34320,6 +34320,23 @@ Pedido do usuário ("onde consulto o resultado depois que sair?" → "dá para d
   - a hora exata em que a API da BEA passa a trazer o mês novo no dia da divulgação. O FRED atualizou o PCEPI 14 min depois, em 29/10. O modo "janela" (a cada ~15 min) e a espera de até 2 h cobrem um atraso.
   - os dados de 2026M10 em diante, porque a 1ª divulgação real com o leitor é a de 25/11. O "Anterior" real (setembro: cheio +0,5% no mês, núcleo +0,3%) aparece no `events.json` na 1ª coleta depois do merge.
 
+**Addendum 34 (2026-11-19) — calendário do FOMC lido no site do Fed, automático (opção A do usuário), começando em FASE DE OBSERVAÇÃO.**
+- **Contexto [fato]:** a lista fixa (`contextCalendar.mjs`) é a ÚNICA fonte das datas do FOMC e termina em 09/12/2026 (sonda de 19/11: "só 33 dias de cobertura"). Tentei ler o calendário oficial do Fed nesta sessão para escrever as datas de 2027. Liberei `www.federalreserve.gov` na rede do ambiente desta sessão (só esse endereço), mas a regra de permissões recusou a leitura. Não pus datas de memória.
+- **Opções levadas ao usuário [decisão do usuário]:**
+  - **A** (escolhida, *"A, pode seguir com o automático"*): o coletor, que roda no GitHub e alcança o site do Fed (a sonda já confere essa página), lê o calendário sozinho a cada coleta;
+  - **B**: eu escreveria as datas de 2027 à mão, com uma autorização do usuário.
+- **O que entrou [fato]:**
+  - `scripts/contextFed.mjs` lê `fomccalendars.htm`. Cada ano vem no bloco "AAAA FOMC Meetings"; cada reunião, num par `fomc-meeting__month`/`fomc-meeting__date`.
+  - A data do evento é o ÚLTIMO dia da reunião, o dia do comunicado: "Apr/May 30-1" vira 1º de maio.
+  - Dia fora do formato fechado ("15 (unscheduled)", "23 (notation vote)") fica de fora.
+  - **Ano que não traz exatamente 8 reuniões válidas, em ordem, é descartado inteiro**: nunca meio calendário.
+  - Sem chave e sem segredo novo. Nunca lança; uma falha vira um código curto (`http`/`formato`/`rede`).
+- **FASE DE OBSERVAÇÃO [decisão]:** a estrutura REAL da página não pôde ser conferida daqui (o teste usa um HTML que imita a estrutura conhecida). Por isso, as datas lidas **só aparecem no resumo do coletor** ("Fed — calendário do FOMC (só observação: ainda NÃO entra no events.json)"), ano a ano, comparadas com a lista fixa ("lista fixa: N de M bate(m)"), e não entram no `events.json`. Um teste prova isso. O próximo PR passa a usá-las, depois de eu conferir nos resumos reais do coletor (log do GitHub) que a leitura bate com a página.
+- **Provas [verificado]:**
+  - `scripts/contextFed.test.js` tem 11 testes: último dia; reunião que atravessa o mês; asterisco; reuniões extraordinárias fora; ano incompleto, com 9, fora de ordem ou repetido descartado; página sem formato; HTTP/rede; o resumo; e o `main` do coletor sem datas novas no `events.json`.
+  - Mutações: 8 plantadas. O filtro de "unscheduled" sobreviveu e foi removido, porque o formato fechado do dia já o cobre. O resumo do coletor também sobreviveu, e o teste de ponta a ponta que entrou passou a pegá-lo.
+- **Não verificado [honesto]:** o formato real da página e se 2027 já está publicado nela. A 1ª coleta depois do merge responde as duas coisas.
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 > **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista
