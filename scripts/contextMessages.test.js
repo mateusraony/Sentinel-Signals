@@ -447,6 +447,12 @@ describe('buildDaySummary: o que saiu hoje, o BTC e o que vem a seguir', () => {
     expect(m).not.toMatch(/PCE cheio[^\n]*da projeção/);
     expect(m).toContain('Sua projeção era: +0,3% m/m — o TradingView mostra duas linhas');
   });
+  it('ACHADO DA REVISÃO (B2): o rodapé só fala em "números do órgão oficial" quando algum evento do dia tem número (dia só de FOMC não)', () => {
+    const soFomc = buildDaySummary({ day: '2026-11-19', events: [readEvents([fomc])[0]], agenda: [], nowMs: NOITE });
+    expect(soFomc).not.toContain('Os números vêm do órgão oficial');
+    expect(soFomc).toContain('O BTC é o que aconteceu, medido nas velas da Binance');
+    expect(texto).toContain('Os números vêm do órgão oficial de cada divulgação; o BTC é o que aconteceu');
+  });
   it('TEXTO NEUTRO em todas as variações; cabe folgado no limite do Telegram; escapa HTML', () => {
     const variacoes = [
       texto,

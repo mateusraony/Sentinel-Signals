@@ -294,6 +294,7 @@ export function buildDaySummary({ day, events, agenda = [], nowMs, moves = new M
   } else {
     lines.push('<b>O que vem a seguir:</b> nenhum evento na agenda por enquanto.');
   }
-  lines.push('', 'Os números vêm do órgão oficial de cada divulgação; o BTC é o que aconteceu, medido nas velas da Binance — descreve o passado, não prevê o próximo.', NEUTRAL_NOTE);
+  const comNumero = events.some((e) => e.values?.actual);
+  lines.push('', `${comNumero ? 'Os números vêm do órgão oficial de cada divulgação; o ' : 'O '}BTC é o que aconteceu, medido nas velas da Binance — descreve o passado, não prevê o próximo.`, NEUTRAL_NOTE);
   return lines.join('\n');
 }

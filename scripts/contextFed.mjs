@@ -152,7 +152,7 @@ export function describeFomcCalendar(fed, fixedDates = []) {
  * As datas que o coletor USA (addendum 36): do calendário já lido, só os anos aceitos. `upcoming` = do ano corrente em diante (viram eventos);
  * `past` = todas as datas já passadas dos anos aceitos (alimentam o histórico do BTC nas reuniões); `years` = os anos aceitos a partir do corrente
  * (só neles a lista fixa pode ser rebaixada). null se o Fed não respondeu ou nenhum ano passou nas travas.
- * @returns {{ upcoming: string[], past: string[], years: string[] }|null}
+ * @returns {{ upcoming: string[], past: string[]|null, years: string[] }|null}
  */
 export function fomcDatesFromCalendar(fed, nowMs) {
   const years = fed?.calendar?.years;
@@ -162,7 +162,9 @@ export function fomcDatesFromCalendar(fed, nowMs) {
   const upcomingYears = all.filter(([y]) => y >= currentYear);
   return {
     upcoming: upcomingYears.flatMap(([, dates]) => dates),
-    past: all.flatMap(([, dates]) => dates).filter((d) => d < new Date(nowMs).toISOString().slice(0, 10)),
+    // O histórico só é SUBSTITUÍDO quando o ano corrente foi aceito: sem ele (ex.: o Fed devolveu 2026 inválido e aceitou 2021–2025) a lista de passadas ficaria sem as reuniões
+    // mais recentes e o aviso mostraria reuniões antigas como "as últimas". null = mantém o histórico anterior (achado da revisão independente de 19/11).
+    past: years[currentYear] ? all.flatMap(([, dates]) => dates).filter((d) => d < new Date(nowMs).toISOString().slice(0, 10)) : null,
     years: upcomingYears.map(([y]) => y),
   };
 }

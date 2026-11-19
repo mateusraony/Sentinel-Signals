@@ -197,7 +197,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   // A base é aditiva: se a trava recusar, os eventos já gravados seguem e só a base fica de fora (o log diz).
   const baseState = writeBase(baseFile, merged.base);
   // As datas passadas (addendum 27): aditivo como a base — se a trava recusar, os eventos já gravados seguem e só o histórico fica de fora.
-  const historyState = writeHistory(path.join(args.dir, HISTORY_FILE), { ...fredDatesByKind, FOMC: fomc ? fomc.past : null }, nowMs);
+  const historyState = writeHistory(path.join(args.dir, HISTORY_FILE), { ...fredDatesByKind, FOMC: fomc?.past ?? null }, nowMs);
   console.log(formatCollectMarkdown(status, events, fredDatesByKind, bls, describeBase(merged.base, merged.stats, baseState), bea, fed, rate));
   console.log(`\nHistórico de datas passadas (history.json): ${historyState}.`);
   return 0;

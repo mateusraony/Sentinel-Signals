@@ -101,7 +101,9 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
       // Resumo do dia: o que o BTC fez depois de cada divulgação e no dia (velas da Binance, sem chave); falha vira "indisponível" naquela linha.
       const moves = new Map();
       for (const e of due.events) moves.set(e.id, await loadMovesSince({ t0Ms: e.startMs, nowMs, fetchImpl, env: {}, sleep }));
-      const btcDay = await loadBtcDay({ dayStartMs: dayBoundsBrt(due.day).startMs, nowMs, fetchImpl, env: {}, sleep });
+      // Passada atrasada (ex.: 01:00 de Brasília, depois de uma falha de envio): o BTC "do dia" vai só até o fim DAQUELE dia, nunca entra no seguinte.
+      const { startMs: diaIni, endMs: diaFim } = dayBoundsBrt(due.day);
+      const btcDay = await loadBtcDay({ dayStartMs: diaIni, nowMs: Math.min(nowMs, diaFim - 1), fetchImpl, env: {}, sleep });
       return buildDaySummary({ day: due.day, events: due.events, agenda: loaded.events, nowMs, moves, btcDay, consensusOf });
     }
     const rows = await loadReactions({ kind: event.kind, history, fetchImpl, env: {}, sleep });

@@ -321,11 +321,11 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     if (!latest) continue;
     let next = null;
     for (const [id, c] of cand) {
-      if (c.kind !== kind) continue;
+      if (c.kind !== kind || c.status === STATUS.A_CONFIRMAR) continue; // data a confirmar (ex.: a antiga de uma remarcação) nunca é "o próximo"
       const u = instant(c.kind, c.date);
       if (u && u.ms > nowMs && (!next || u.ms < next.ms)) next = { id, c, ms: u.ms };
     }
-    if (!next || next.c.reference || next.c.status === STATUS.A_CONFIRMAR) continue;
+    if (!next || next.c.reference) continue;
     const expected = shiftMonth(latest, 1);
     if (shiftMonth(next.c.date.slice(0, 7), -1) === expected) cand.set(next.id, { ...next.c, reference: expected });
   }
