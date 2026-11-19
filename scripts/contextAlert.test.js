@@ -252,6 +252,18 @@ describe('eventsOfDay e pickDueSummary', () => {
     // o registro de resumo não conta como o aviso de resultado do mesmo evento
     expect(pickDueResults([cpi], T('2026-11-19T16:00:00Z'), state).length).toBe(1); // CPI sem número espera 2 h; às 16:00Z já passaram 2h30
   });
+  it('ACHADO DA REVISÃO (M1): enquanto falta um evento firme DESTE dia (às 23:30 de Brasília), o resumo espera; sai depois dele, com os dois', () => {
+    const tarde = at('2026-11-20T02:30:00.000Z', { id: 'FOMC-2026-11-19', kind: 'FOMC' }); // 23:30 de 19/11 em Brasília
+    expect(pickDueSummary([cpi, tarde], NOITE)).toBeNull(); // 21:10: o das 23:30 ainda não aconteceu
+    const depois = pickDueSummary([cpi, tarde], T('2026-11-20T02:40:00Z')); // 23:40
+    expect(depois.events.map((e) => e.id)).toEqual(['CPI-2026-11-19', 'FOMC-2026-11-19']);
+    // um evento do DIA SEGUINTE (a partir das 00:00 de Brasília) não segura o resumo
+    const amanha = at('2026-11-20T13:30:00.000Z', { id: 'PPI-2026-11-20' });
+    expect(pickDueSummary([cpi, amanha], NOITE)?.id).toBe('DIA-2026-11-19');
+    // a_confirmar do mesmo dia (hora incerta) também não segura
+    const incerto = at('2026-11-20T02:30:00.000Z', { id: 'X-2026-11-19', status: 'a_confirmar' });
+    expect(pickDueSummary([cpi, incerto], NOITE)?.id).toBe('DIA-2026-11-19');
+  });
   it('a trava pública aceita a chave `dia` e continua recusando fase desconhecida', () => {
     expect(() => assertPublicSent({ version: 1, sent: { 'DIA-2026-11-19:dia': '2026-11-20T00:10:00.000Z' } })).not.toThrow();
     expect(() => assertPublicSent({ version: 1, sent: { 'DIA-2026-11-19:resumo': '2026-11-20T00:10:00.000Z' } })).toThrow(/chave inválida/);

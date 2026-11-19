@@ -279,6 +279,11 @@ describe('referência derivada: evento que só existe no FRED (fora da lista fix
     for (const t of [t2, t3]) expect(t[0].lastChangedAt).toBe(t1[0].lastChangedAt);
     expect(t3[0].reference).toBe('2026-12');
   });
+  it('ACHADO DA REVISÃO (B3): uma data "a confirmar" (a antiga de uma remarcação) nunca é "o próximo": a nova data oficial ganha a referência', () => {
+    const evs = build(['2027-01-29'], { fixedList: [{ kind: 'PCE', reference: null, date: '2027-01-28', status: 'a_confirmar' }] });
+    expect(pce(evs, '2027-01-29').reference).toBe('2026-12');
+    expect(pce(evs, '2027-01-28').reference).toBeNull();
+  });
   it('a referência da lista fixa continua mandando (nunca é sobrescrita)', () => {
     const evs = build(['2027-01-29'], { fixedList: [{ kind: 'PCE', reference: '2026-10', date: '2027-01-29', status: 'oficial' }] });
     expect(pce(evs, '2027-01-29').reference).toBe('2026-10');

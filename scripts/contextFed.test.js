@@ -116,6 +116,14 @@ describe('fomcDatesFromCalendar — as datas que o coletor USA', () => {
     expect(r.past).not.toContain('2026-12-09');
     expect(r.past).not.toContain('2027-01-27');
   });
+  it('ACHADO DA REVISÃO (B4): sem o ano CORRENTE aceito, a lista de passadas é null (o histórico anterior fica) — nunca reuniões antigas no lugar das recentes', () => {
+    const semCorrente = { calendar: parseFomcCalendar(`<html>${year(2027, Y2027)}${year(2026, Y2026.slice(0, 5))}${year(2024, Y2024)}</html>`), reason: 'ok' };
+    const r = fomcDatesFromCalendar(semCorrente, NOW);
+    expect(r.years).toEqual(['2027']); // 2026 incompleto (5 reuniões) foi descartado
+    expect(r.past).toBeNull();
+    expect(r.upcoming).toEqual(D2027);
+    expect(fomcDatesFromCalendar(fed, NOW).past).not.toBeNull(); // com o ano corrente aceito, as passadas vêm
+  });
   it('Fed fora do ar, página no formato errado ou sem nenhum ano aceito: null (a lista fixa segue valendo)', () => {
     expect(fomcDatesFromCalendar(null, NOW)).toBeNull();
     expect(fomcDatesFromCalendar({ calendar: null, reason: 'rede' }, NOW)).toBeNull();

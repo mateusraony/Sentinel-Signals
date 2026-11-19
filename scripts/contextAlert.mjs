@@ -161,5 +161,9 @@ export function pickDueSummary(events, nowMs, sent = emptyState()) {
   const id = `DIA-${day}`;
   if (Object.prototype.hasOwnProperty.call(parseSent(sent).sent, `${id}:dia`)) return null;
   const list = eventsOfDay(events, day, nowMs);
-  return list.length ? { day, id, events: list } : null;
+  // Ainda falta um evento de data firme DESTE dia (ex.: às 23:30 de Brasília, depois das 21h)? Espera: o resumo sai quando ele já tiver acontecido, e o dia só
+  // "vence" às 02:59 (achado da revisão independente de 19/11). Hoje nenhum evento monitorado cai depois das 21h (todos saem entre 09:30 e 16:00 de Brasília).
+  const { startMs, endMs } = dayBoundsBrt(day);
+  const ainda = (Array.isArray(events) ? events : []).some((e) => e && Number.isFinite(e.startMs) && FIRM.has(e.status) && e.startMs > nowMs && e.startMs >= startMs && e.startMs < endMs);
+  return list.length && !ainda ? { day, id, events: list } : null;
 }

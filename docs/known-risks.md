@@ -34378,6 +34378,30 @@ Pedido do usuário ("onde consulto o resultado depois que sair?" → "dá para d
   - Testes: `contextFed.test.js` (reescrito, 22), `contextBea.test.js` (+9), `contextRates.test.js` (novo) e `contextHistory.test.js` (FOMC e o resto).
   - Mutações plantadas: 28, todas pegas. Cinco sobreviveram na 1ª rodada e viraram teste: o filtro de datas passadas, o rebaixamento só nos anos aceitos, "o próximo" ignora o passado, os passos de 0,25 e o script de mutação, que contava erro de sintaxe como "sobreviveu" (corrigido).
   - Suíte `scripts/` inteira verde (2115 testes).
+
+**Addendum 37 (2026-11-19) — revisão final: agentes independentes, ensaio do dia do PCE e saúde dos workflows.** Pedido do usuário: *"ao fim faça uma revisão e análise de tudo para ter certeza que tudo está funcionando e correto e que posso confiar"*.
+- **Revisão independente do código de hoje (#593 e #594), por um agente que não escreveu o código [fato]:** **nenhum defeito importante**, nenhum vazamento de segredo e nenhuma regressão dos fluxos dos PRs #586–#592; a tela do PCE/FOMC segue intacta; os horários do FOMC conferem (14:00 em Nova York = 18:00 UTC no horário de verão e 19:00 UTC sem ele, inclusive em 2027); `events.json` fica **byte a byte igual** em 13 sequências simuladas sem mudança real (Fed fora do ar, de volta, dados repetidos). Achados menores, todos verificados e corrigidos neste addendum:
+  1. **(médio) O resumo das 21h perdia um evento que ocorre DEPOIS dele** (ex.: às 23:30 de Brasília), porque o registro do dia já era gravado. Agora o resumo espera enquanto falta um evento de data firme daquele dia. Na prática nenhum evento monitorado cai ali (todos saem entre 09:30 e 16:00 de Brasília), mas o limite ficou correto.
+  2. **(baixo) "BTC no dia" invadia o dia seguinte** numa passada atrasada: agora termina no fim do dia resumido.
+  3. **(baixo) o rodapé "os números vêm do órgão oficial"** aparecia num dia só de FOMC, que não tem número: agora só aparece quando há número.
+  4. **(baixo) o "próximo" evento para a referência derivada podia ser uma data "a confirmar"** (a antiga de uma remarcação): agora é ignorada.
+  5. **(baixo) o histórico do FOMC era substituído mesmo sem o ano corrente aceito**, mostrando reuniões antigas como "as últimas": agora só substitui com o ano corrente aceito; senão mantém o anterior.
+  - **Aceito, só registrado:** com o Fed fora do ar o status publicado vence o da lista fixa (mesmo comportamento do FRED); uma correção feita na lista só vale quando o Fed responde.
+- **Ensaio do dia do PCE (25/11) com o código REAL, rede falsa no formato da BEA/Binance/Telegram [verificado]:**
+  - véspera: o "Anterior" oficial entra no `events.json` (cheio +0,5% m/m, núcleo +0,3%);
+  - 1 h antes: o aviso mostra "Anterior (BEA): PCE cheio… · núcleo…";
+  - 13:40Z, BEA ainda sem outubro: nenhum "Atual" falso;
+  - 13:50Z, BEA publica outubro e revisa setembro: o "Atual" entra, com o "Revisado";
+  - o aviso de resultado traz as 4 medidas (cheio e núcleo, no mês e em 12 meses);
+  - uma revisão posterior da BEA NÃO troca o que saiu (congelado);
+  - às 21:10 de Brasília sai 1 resumo do dia (uma vez só; a 2ª passada não repete);
+  - o registro público só tem códigos e horas;
+  - **a chave da BEA e o token do Telegram não aparecem em nenhum arquivo público nem mensagem.**
+  - Limite do ensaio: dados simulados (o dia real é 25/11).
+- **Saúde dos workflows em produção (agente de leitura, 19/11 ~18:05 UTC) [verificado]:** `scan.yml` a cada ~15 min sem lacuna maior que 25 min nas últimas 20 h (80 execuções, todas verdes); backups do Postgres e do Firestore diários e verdes; auditoria de saúde sem erro nem aviso (66 operações lidas, 0 ativas, nenhuma presa); medidor do Neon em **42,9 de 100 CU-h (43%)**, projeção do mês ~72,6; relatório diário enviado; retenção de logs, keep-warm, alertador e CI verdes; `context-collect` com os "skipped" esperados fora das janelas. **Nenhum segredo apareceu nos logs.** Observação menor: o driver `pg` avisa que os modos SSL `prefer/require/verify-ca` viram alias de `verify-full` na próxima major — só acompanhar.
+- **Provas [verificado]:** 6 testes novos (um por achado, mais a derivada sem `a_confirmar`) e 8 mutações plantadas: 7 pegas e 1 equivalente (sem diferença de comportamento).
+- **Fase 5 (marcador de operações abertas durante um evento) [decisão: NÃO feita]:** é condicionada a ≤ 30% das operações marcadas e exige imagens e aprovação visual do usuário. Estimativa (Poisson, **não medida**): a duração média de uma operação na configuração de produção é 2,3 dias (item 132) e há ~32 eventos de alta importância por ano (CPI, Payroll, FOMC), o que dá cerca de **18%** das operações marcadas se só esses contarem e ~30% se PPI e PCE entrarem — no limite. A medição real precisa das operações do banco (esta sessão não o alcança). Fica como proposta ao usuário.
+
 - **Não verificado [honesto]:** (a) as 8 datas de 2027 contra uma 2ª fonte; (b) o formato real do JSON do NY Fed; (c) como a BEA responde a um ano sem dado; (d) o 1º evento de FOMC gerado pelas datas do Fed só aparece depois do merge, na próxima coleta (a das 00:00 UTC de 20/11 ou a de 10:00).
 
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)

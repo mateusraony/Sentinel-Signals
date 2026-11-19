@@ -431,6 +431,14 @@ describe('o resumo do dia (fase 4c): executável de ponta a ponta', () => {
     expect(fs.existsSync(sentFile())).toBe(true);
   });
 
+  it('ACHADO DA REVISÃO (B1): numa passada ATRASADA (01:00 de Brasília) o "BTC no dia" termina no fim do dia resumido, não entra no dia seguinte', async () => {
+    const f = router();
+    await go(['--dir', dir, '--enviar', '--categorias-ligadas', ''], f, Date.parse('2026-11-20T04:00:00Z'));
+    const url1h = f.mock.calls.map(([u]) => new URL(String(u))).find((u) => u.searchParams.get('interval') === '1h');
+    expect(Number(url1h.searchParams.get('endTime'))).toBe(Date.parse('2026-11-20T03:00:00Z') - 1);
+    expect(Number(url1h.searchParams.get('startTime'))).toBe(DAY_START);
+  });
+
   it('simulação: mostra o resumo, NÃO manda Telegram e NÃO grava o registro', async () => {
     const f = router();
     const r = await go(['--dir', dir, '--categorias-ligadas', ''], f);
