@@ -51,24 +51,28 @@ export function eventsDuring(window, events, { kinds = HIGH_IMPORTANCE_KINDS } =
 /**
  * A medição do portão da Fase 5: de todas as operações COBERTAS pelo histórico de eventos, quantas ficaram abertas durante algum evento.
  * Cobertura: o histórico de eventos só vai até `coverageStartMs` para trás; operação que abriu antes disso não entra na conta
- * (senão contaria "sem evento" onde só faltava dado). Operação sem janela legível fica de fora e é contada à parte (`unreadable`).
- * @param {any[]} ops @param {{ kind: string, startsAtMs: number }[]} events @param {{ nowMs?: number, coverageStartMs?: number, kinds?: readonly string[] }} [opts]
- * @returns {{ total:number, marked:number, fraction:number|null, byKind:Record<string,number>, unreadable:number, outsideCoverage:number }}
+ * (senão contaria "sem evento" onde só faltava dado). O MESMO vale para buracos no meio do histórico (`gaps`, intervalos {startMs,endMs} em que o
+ * histórico pode estar sem uma divulgação): operação cuja janela toca um buraco fica de fora (`inGap`) — contá-la como "sem evento" subestimaria a fração.
+ * Operação sem janela legível fica de fora e é contada à parte (`unreadable`).
+ * @param {any[]} ops @param {{ kind: string, startsAtMs: number }[]} events @param {{ nowMs?: number, coverageStartMs?: number, kinds?: readonly string[], gaps?: { startMs: number, endMs: number }[] }} [opts]
+ * @returns {{ total:number, marked:number, fraction:number|null, byKind:Record<string,number>, unreadable:number, outsideCoverage:number, inGap:number }}
  */
-export function overlapStats(ops, events, { nowMs, coverageStartMs = 0, kinds = HIGH_IMPORTANCE_KINDS } = {}) {
+export function overlapStats(ops, events, { nowMs, coverageStartMs = 0, kinds = HIGH_IMPORTANCE_KINDS, gaps = [] } = {}) {
   const byKind = Object.fromEntries(kinds.map((k) => [k, 0]));
   let total = 0;
   let marked = 0;
   let unreadable = 0;
   let outsideCoverage = 0;
+  let inGap = 0;
   for (const op of Array.isArray(ops) ? ops : []) {
     const w = opWindow(op, nowMs);
     if (!w) { unreadable += 1; continue; }
     if (w.startMs < coverageStartMs) { outsideCoverage += 1; continue; }
+    if (gaps.some((g) => w.startMs <= g.endMs && w.endMs >= g.startMs)) { inGap += 1; continue; }
     total += 1;
     const hit = eventsDuring(w, events, { kinds });
     if (hit.length) marked += 1;
     for (const k of new Set(hit.map((e) => e.kind))) byKind[k] += 1; // 1 operação conta 1x por tipo, mesmo com 2 CPIs na janela
   }
-  return { total, marked, fraction: total ? marked / total : null, byKind, unreadable, outsideCoverage };
+  return { total, marked, fraction: total ? marked / total : null, byKind, unreadable, outsideCoverage, inGap };
 }

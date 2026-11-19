@@ -9,6 +9,10 @@ import { nyToUtc } from './contextTime.mjs';
 import { HIGH_IMPORTANCE_KINDS, ALL_KINDS } from '../src/lib/contextOverlap.js';
 
 export const GATE_FRACTION = 0.3;
+const DAY_MS = 86400000;
+/** Tipos mensais (uma divulgação por mês); o FOMC tem 8 por ano (intervalo máximo normal ~8 semanas). */
+const MONTHLY_KINDS = new Set(['CPI', 'NFP', 'PPI', 'PCE']);
+const FOMC_MAX_GAP_DAYS = 75;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const FIRM_STATUS = new Set(['oficial', 'confirmada']);
 
@@ -46,7 +50,47 @@ export function buildEvents({ history, events, nowMs, kinds = ALL_KINDS }) {
   }
   const have = kinds.filter((k) => firstKnown[k] != null);
   const coverageStartMs = have.length === kinds.length ? Math.max(...have.map((k) => firstKnown[k])) : null;
-  return { events: Object.values(seen).sort((a, b) => a.startsAtMs - b.startsAtMs), coverageStartMs, kindsWithHistory: have };
+  const events2 = Object.values(seen).sort((a, b) => a.startsAtMs - b.startsAtMs);
+  const msByKind = {};
+  for (const e of events2) (msByKind[e.kind] ??= []).push(e.startsAtMs);
+  return { events: events2, coverageStartMs, kindsWithHistory: have, gaps: findGaps(msByKind, nowMs) };
+}
+
+/**
+ * Os BURACOS do histórico de cada tipo (achado do Codex no PR #596): o coletor tira do histórico o mês com 2 datas (`contextHistory.mjs`), então "a data mais antiga"
+ * não prova que não faltou nenhuma depois dela. Tipo mensal: cada mês, do primeiro ao anterior ao atual, sem nenhuma data. FOMC: espaço maior que 75 dias entre duas
+ * reuniões conhecidas (ou desde a última até agora). Um intervalo {startMs, endMs} por buraco, por tipo.
+ * @param {Record<string, number[]>} msByKind instantes conhecidos por tipo
+ */
+export function findGaps(msByKind, nowMs) {
+  const gaps = {};
+  for (const [kind, list] of Object.entries(msByKind)) {
+    const known = [...list].sort((a, b) => a - b);
+    if (!known.length) continue;
+    const out = [];
+    if (MONTHLY_KINDS.has(kind)) {
+      const have = new Set(known.map((ms) => new Date(ms).toISOString().slice(0, 7)));
+      const first = new Date(known[0]);
+      const now = new Date(nowMs);
+      let y = first.getUTCFullYear();
+      let m = first.getUTCMonth();
+      const stop = now.getUTCFullYear() * 12 + now.getUTCMonth(); // o mês de hoje não conta: a divulgação dele pode ainda não ter saído
+      while (y * 12 + m < stop) {
+        const key = `${y}-${String(m + 1).padStart(2, '0')}`;
+        if (!have.has(key)) out.push({ startMs: Date.UTC(y, m, 1), endMs: Date.UTC(y, m + 1, 1) - 1 });
+        m += 1;
+        if (m > 11) { m = 0; y += 1; }
+      }
+    } else {
+      for (let i = 1; i < known.length; i += 1) {
+        if (known[i] - known[i - 1] > FOMC_MAX_GAP_DAYS * DAY_MS) out.push({ startMs: known[i - 1] + 1, endMs: known[i] - 1 });
+      }
+      const last = known[known.length - 1];
+      if (nowMs - last > FOMC_MAX_GAP_DAYS * DAY_MS) out.push({ startMs: last + 1, endMs: nowMs });
+    }
+    if (out.length) gaps[kind] = out;
+  }
+  return gaps;
 }
 
 const pct = (f) => (f == null ? 'n/d' : `${(f * 100).toFixed(1).replace('.', ',')}%`);
@@ -60,14 +104,15 @@ export function gateVerdict(stats) {
 }
 
 /** Linhas do relatório (texto puro, vai para o log público). `high`/`all`: saídas de `overlapStats`. */
-export function formatReport({ high, all, coverageStartMs, nowMs, eventsCount, durationHoursMedian }) {
+export function formatReport({ high, all, coverageStartMs, nowMs, eventsCount, durationHoursMedian, gapMonths = [] }) {
   const L = [];
   L.push('# Medição da Fase 5 — operações abertas durante um evento macro');
   L.push('');
   L.push('Só contagens e percentuais (o repositório e o log são públicos). Correlação, não causa.');
   L.push('');
   L.push(`- Período coberto pelo histórico de eventos: ${day(coverageStartMs)} → ${day(nowMs)} (${eventsCount} eventos conhecidos).`);
-  L.push(`- Operações dentro do período: **${high.total}** · fora do período (antes do histórico): ${high.outsideCoverage} · sem horário legível: ${high.unreadable}.`);
+  L.push(`- Operações dentro do período: **${high.total}** · fora do período (antes do histórico): ${high.outsideCoverage} · sem horário legível: ${high.unreadable} · em período com divulgação faltando no histórico: ${high.inGap}.`);
+  if (gapMonths.length) L.push(`- Meses sem divulgação no histórico (operações que os tocam ficam fora da conta): ${gapMonths.join(', ')}.`);
   if (durationHoursMedian != null) L.push(`- Duração mediana das operações do período: ${durationHoursMedian.toFixed(1).replace('.', ',')} h.`);
   L.push('');
   L.push(`## Alta importância (${HIGH_IMPORTANCE_KINDS.join(', ')})`);
@@ -78,7 +123,7 @@ export function formatReport({ high, all, coverageStartMs, nowMs, eventsCount, d
   L.push(`- Marcadas: ${all.marked} de ${all.total} = ${pct(all.fraction)}`);
   L.push('');
   L.push(`**Portão (≤ ${pct(GATE_FRACTION)}): ${gateVerdict(high)}**`);
-  if (high.total < 30) L.push(`Atenção: amostra pequena (${high.total} operações) — a fração tem margem de erro grande; leia como ordem de grandeza.`);
+  if (high.total < 30) L.push(`Atenção: amostra pequena (${high.total} ${high.total === 1 ? 'operação' : 'operações'}) — a fração tem margem de erro grande; leia como ordem de grandeza.`);
   return L;
 }
 

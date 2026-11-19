@@ -47,12 +47,15 @@ export async function run({ fetchImpl = fetch, listOps, nowMs = Date.now(), repo
   }
   if (!Array.isArray(ops)) return { lines: ['❌ Resposta inesperada do banco. [codigo: banco_resposta]'], code: 3 };
 
+  const gapsFor = (kinds) => kinds.flatMap((k) => built.gaps[k] ?? []);
   const common = { nowMs, coverageStartMs: built.coverageStartMs };
-  const high = overlapStats(ops, built.events, { ...common, kinds: HIGH_IMPORTANCE_KINDS });
-  const all = overlapStats(ops, built.events, { ...common, kinds: ALL_KINDS });
-  const windows = ops.map((o) => opWindow(o, nowMs)).filter((w) => w && w.startMs >= built.coverageStartMs);
+  const high = overlapStats(ops, built.events, { ...common, kinds: HIGH_IMPORTANCE_KINDS, gaps: gapsFor(HIGH_IMPORTANCE_KINDS) });
+  const all = overlapStats(ops, built.events, { ...common, kinds: ALL_KINDS, gaps: gapsFor(ALL_KINDS) });
+  const gapMonths = ALL_KINDS.flatMap((k) => (built.gaps[k] ?? []).map((g) => `${k} ${new Date(g.startMs).toISOString().slice(0, 7)}`));
+  const gapAll = gapsFor(HIGH_IMPORTANCE_KINDS);
+  const windows = ops.map((o) => opWindow(o, nowMs)).filter((w) => w && w.startMs >= built.coverageStartMs && !gapAll.some((g) => w.startMs <= g.endMs && w.endMs >= g.startMs));
   const lines = [
-    ...formatReport({ high, all, coverageStartMs: built.coverageStartMs, nowMs, eventsCount: built.events.length, durationHoursMedian: medianHours(windows) }),
+    ...formatReport({ high, all, coverageStartMs: built.coverageStartMs, nowMs, eventsCount: built.events.length, durationHoursMedian: medianHours(windows), gapMonths }),
     ...(notes.length ? ['', ...notes] : []),
   ];
   return { lines, code: 0 };

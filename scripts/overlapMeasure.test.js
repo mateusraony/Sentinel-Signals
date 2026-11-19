@@ -1,20 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { eventInstant, buildEvents, gateVerdict, formatReport, medianHours, GATE_FRACTION } from './overlapMeasure.mjs';
+import { eventInstant, buildEvents, findGaps, gateVerdict, formatReport, medianHours, GATE_FRACTION } from './overlapMeasure.mjs';
 import { run } from './overlap-measure.mjs';
 import { overlapStats } from '../src/lib/contextOverlap.js';
 
 const D = (s) => Date.parse(s);
 const NOW = D('2026-11-19T12:00:00Z');
+// Histórico contínuo (um por mês, de abr a nov/2026; o FOMC com as reuniões de verdade) — cada teste de buraco parte dele e tira um mês.
+const monthly = (days) => Object.keys(days).sort().reverse().map((m) => `${m}-${days[m]}`);
+const MESES = ['2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
+const diaFixo = (d) => Object.fromEntries(MESES.map((m) => [m, d]));
 const HISTORY = {
   version: 1,
   dates: {
-    CPI: ['2026-11-10', '2026-10-14', '2026-04-10'],
-    NFP: ['2026-11-06', '2026-04-03'],
-    PPI: ['2026-11-13', '2026-04-14'],
-    PCE: ['2026-10-29', '2026-02-20'],
-    FOMC: ['2026-10-28', '2025-12-10'],
+    CPI: monthly(diaFixo('10')),
+    NFP: monthly(diaFixo('06')),
+    PPI: monthly(diaFixo('13')),
+    PCE: monthly(diaFixo('12')),
+    FOMC: ['2026-10-28', '2026-09-16', '2026-07-29', '2026-06-17', '2026-04-29', '2026-03-18', '2026-01-28', '2025-12-10'],
   },
 };
+const semMes = (kind, mes) => ({ ...HISTORY, dates: { ...HISTORY.dates, [kind]: HISTORY.dates[kind].filter((d) => !d.startsWith(mes)) } });
 
 describe('eventInstant', () => {
   it('converte pelo horário de Nova York, com horário de verão (CPI 08:30 ET)', () => {
@@ -35,8 +40,8 @@ describe('eventInstant', () => {
 describe('buildEvents', () => {
   it('lê o histórico e a cobertura é o MAIS RECENTE dos primeiros dias conhecidos dos 5 tipos', () => {
     const b = buildEvents({ history: HISTORY, events: [], nowMs: NOW });
-    expect(b.events).toHaveLength(11);
-    expect(b.coverageStartMs).toBe(eventInstant('PPI', '2026-04-14')); // o último "primeiro dia" é o do PPI
+    expect(b.events).toHaveLength(40);
+    expect(b.coverageStartMs).toBe(eventInstant('PPI', '2026-04-13')); // o último "primeiro dia" é o do PPI
     expect(b.kindsWithHistory).toHaveLength(5);
   });
 
@@ -55,7 +60,7 @@ describe('buildEvents', () => {
       null,
     ];
     const b = buildEvents({ history: HISTORY, events, nowMs: NOW });
-    expect(b.events).toHaveLength(12);
+    expect(b.events).toHaveLength(41);
     expect(b.events.filter((e) => e.startsAtMs === D('2026-11-10T13:30:00Z'))).toHaveLength(1);
     expect(b.events.some((e) => e.startsAtMs > NOW)).toBe(false);
     expect(b.events.some((e) => e.startsAtMs === D('2026-11-17T13:30:00Z'))).toBe(false);
@@ -64,6 +69,48 @@ describe('buildEvents', () => {
   it('entradas quebradas não derrubam', () => {
     expect(buildEvents({ history: null, events: 'x', nowMs: NOW }).events).toEqual([]);
     expect(buildEvents({ history: { dates: { CPI: ['lixo', null, 5] } }, events: [], nowMs: NOW }).events).toEqual([]);
+  });
+});
+
+describe('findGaps / buracos do histórico (achado do Codex no PR #596)', () => {
+  const ms = (kind, d) => eventInstant(kind, d);
+  it('histórico contínuo: nenhum buraco', () => {
+    const b = buildEvents({ history: HISTORY, events: [], nowMs: NOW });
+    expect(b.gaps).toEqual({});
+  });
+
+  it('mês tirado do histórico mensal vira UM buraco, do 1º ao último milissegundo do mês (UTC)', () => {
+    const b = buildEvents({ history: semMes('CPI', '2026-07'), events: [], nowMs: NOW });
+    expect(Object.keys(b.gaps)).toEqual(['CPI']);
+    expect(b.gaps.CPI).toEqual([{ startMs: D('2026-07-01T00:00:00Z'), endMs: D('2026-08-01T00:00:00Z') - 1 }]);
+  });
+
+  it('o mês de hoje nunca é buraco (a divulgação dele pode ainda não ter saído)', () => {
+    const h = { ...HISTORY, dates: { ...HISTORY.dates, PPI: HISTORY.dates.PPI.filter((d) => !d.startsWith('2026-11')) } };
+    expect(buildEvents({ history: h, events: [], nowMs: NOW }).gaps).toEqual({});
+  });
+
+  it('o events.json pode tapar um buraco (a data está lá, então não falta)', () => {
+    const events = [{ kind: 'CPI', startsAtUtc: new Date(ms('CPI', '2026-07-14')).toISOString(), status: 'oficial' }];
+    expect(buildEvents({ history: semMes('CPI', '2026-07'), events, nowMs: NOW }).gaps).toEqual({});
+  });
+
+  it('FOMC: espaço de mais de 75 dias entre duas reuniões é buraco; o normal (≤ 8 semanas) não é', () => {
+    const f = (...ds) => ({ FOMC: ds.map((d) => ms('FOMC', d)) });
+    expect(findGaps(f('2026-01-28', '2026-03-18', '2026-04-29'), D('2026-05-10T00:00:00Z'))).toEqual({});
+    const g = findGaps(f('2026-01-28', '2026-05-06'), D('2026-05-10T00:00:00Z')).FOMC;
+    expect(g).toHaveLength(1);
+    expect(g[0].startMs).toBe(ms('FOMC', '2026-01-28') + 1);
+    expect(g[0].endMs).toBe(ms('FOMC', '2026-05-06') - 1);
+  });
+
+  it('FOMC: a última reunião conhecida há mais de 75 dias também é buraco até agora', () => {
+    const g = findGaps({ FOMC: [ms('FOMC', '2026-01-28')] }, D('2026-06-01T00:00:00Z')).FOMC;
+    expect(g).toEqual([{ startMs: ms('FOMC', '2026-01-28') + 1, endMs: D('2026-06-01T00:00:00Z') }]);
+  });
+
+  it('tipo sem datas não gera buraco nem quebra', () => {
+    expect(findGaps({ CPI: [] }, NOW)).toEqual({});
   });
 });
 
@@ -120,6 +167,35 @@ describe('run (sem rede nem banco)', () => {
     const direto = overlapStats(ops, b.events, { nowMs: NOW, coverageStartMs: b.coverageStartMs });
     const { lines } = await run({ fetchImpl: okFetch, listOps: async () => ops, nowMs: NOW });
     expect(lines.join('\n')).toContain(`${direto.marked} de ${direto.total}`);
+  });
+
+  it('operação que toca um mês sem divulgação no histórico fica FORA da conta (não vira "sem evento")', async () => {
+    const fetchGap = async (url) => ({ status: 200, text: async () => JSON.stringify(String(url).endsWith('history.json') ? semMes('CPI', '2026-07') : []) });
+    const ops = [
+      op('2026-07-10T00:00:00Z', '2026-07-12T00:00:00Z'), // dentro do buraco do CPI de julho
+      op('2026-07-31T20:00:00Z', '2026-08-02T00:00:00Z'), // começa em julho e entra em agosto: também toca o buraco
+      op('2026-11-09T20:00:00Z', '2026-11-11T08:00:00Z'), // fora do buraco, pega o CPI de novembro
+    ];
+    const text = (await run({ fetchImpl: fetchGap, listOps: async () => ops, nowMs: NOW })).lines.join('\n');
+    expect(text).toContain('Operações dentro do período: **1**');
+    expect(text).toContain('em período com divulgação faltando no histórico: 2');
+    expect(text).toContain('CPI 2026-07');
+    expect(text).toContain('1 de 1');
+  });
+
+  it('a duração mediana também ignora as operações dentro de um buraco', async () => {
+    const fetchGap = async (url) => ({ status: 200, text: async () => JSON.stringify(String(url).endsWith('history.json') ? semMes('CPI', '2026-07') : []) });
+    const ops = [op('2026-11-14T00:00:00Z', '2026-11-14T10:00:00Z'), op('2026-07-01T00:00:00Z', '2026-07-30T00:00:00Z')]; // 10 h boa; ~29 dias dentro do buraco
+    const text = (await run({ fetchImpl: fetchGap, listOps: async () => ops, nowMs: NOW })).lines.join('\n');
+    expect(text).toContain('mediana das operações do período: 10,0 h');
+  });
+
+  it('o buraco de um tipo que não é de alta importância só afeta o painel "todos"', async () => {
+    const fetchGap = async (url) => ({ status: 200, text: async () => JSON.stringify(String(url).endsWith('history.json') ? semMes('PCE', '2026-07') : []) });
+    const ops = [op('2026-07-20T00:00:00Z', '2026-07-22T00:00:00Z')]; // julho sem PCE; sem CPI/NFP/FOMC nesses dias
+    const text = (await run({ fetchImpl: fetchGap, listOps: async () => ops, nowMs: NOW })).lines.join('\n');
+    expect(text).toContain('Marcadas: **0 de 1**'); // alta importância: a operação conta
+    expect(text).toContain('Marcadas: 0 de 0'); // todos: ela fica fora
   });
 
   it('a alta importância não conta PPI/PCE; o painel "todos" conta', async () => {

@@ -116,6 +116,18 @@ describe('overlapStats', () => {
     expect(s).toMatchObject({ total: 1, marked: 1, outsideCoverage: 1 });
   });
 
+  it('operação cuja janela toca um buraco do histórico fica fora do denominador (inGap)', () => {
+    const gaps = [{ startMs: D('2026-11-12T00:00:00Z'), endMs: D('2026-11-13T00:00:00Z') }];
+    const dentro = closedOp({ entry_candle_time_15m: '2026-11-12T10:00:00Z', closed_at: '2026-11-12T12:00:00Z' });
+    const atravessa = closedOp({ entry_candle_time_15m: '2026-11-11T10:00:00Z', closed_at: '2026-11-14T00:00:00Z' });
+    const fora = closedOp({ entry_candle_time_15m: '2026-11-14T00:00:00Z', closed_at: '2026-11-15T00:00:00Z' });
+    const s = overlapStats([dentro, atravessa, fora, opCpi], events, { nowMs: NOW, gaps });
+    expect(s).toMatchObject({ total: 2, inGap: 2, marked: 1 });
+    // a borda do buraco também conta (fechado dos dois lados)
+    const borda = closedOp({ entry_candle_time_15m: '2026-11-13T00:00:00Z', closed_at: '2026-11-13T06:00:00Z' });
+    expect(overlapStats([borda], events, { nowMs: NOW, gaps }).inGap).toBe(1);
+  });
+
   it('operação ilegível é contada à parte e nunca vira "sem evento"', () => {
     const s = overlapStats([{ status: 'TP2_HIT' }, opCpi], events, { nowMs: NOW });
     expect(s).toMatchObject({ total: 1, marked: 1, unreadable: 1 });
