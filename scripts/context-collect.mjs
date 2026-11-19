@@ -22,7 +22,8 @@ import { pathToFileURL } from 'node:url';
 import { buildEvents, buildStatus, assertPublicShape, fetchFredDates, sanitizePrevious, needsResultCheck, FRED_RELEASES } from './contextCollect.mjs';
 import { fetchBlsSeries, allSeriesIds } from './contextBls.mjs';
 import { fetchBeaPce, describeBea } from './contextBea.mjs';
-import { fetchFomcCalendar, describeFomcCalendar } from './contextFed.mjs';
+import { fetchFomcCalendar, describeFomcCalendar, fomcDatesFromCalendar } from './contextFed.mjs';
+import { fetchPolicyRate, describePolicyRate } from './contextRates.mjs';
 import { US_RELEASES } from './contextCalendar.mjs';
 import { mergeBase, baseToSeries, baseToGaps, assertBaseShape, sanitizeBase, serializeBase, describeBase } from './contextBlsBase.mjs';
 import { HISTORY_FILE, buildHistory, serializeHistory } from './contextHistory.mjs';
@@ -124,7 +125,7 @@ export function resolveMode(env) {
   return env?.COLLECT_MODE === 'janela' ? 'janela' : 'normal';
 }
 
-export function formatCollectMarkdown(status, events, fredDatesByKind, bls = null, baseLine = null, bea = null, fed = null) {
+export function formatCollectMarkdown(status, events, fredDatesByKind, bls = null, baseLine = null, bea = null, fed = null, rate = null) {
   const lines = ['## Coletor de contexto — datas dos eventos', ''];
   lines.push(`Checado em ${status.checkedAt} (UTC). FRED: **${status.fred}**${status.fred === 'ok' ? '' : ' — os tipos sem resposta usam a lista fixa'}.`);
   const porTipo = Object.keys(FRED_RELEASES).map((k) => `${k} ${Array.isArray(fredDatesByKind[k]) ? 'ok' : 'sem resposta'}`).join(' · ');
@@ -134,9 +135,11 @@ export function formatCollectMarkdown(status, events, fredDatesByKind, bls = nul
   if (baseLine) lines.push(baseLine);
   const beaLine = describeBea(bea);
   if (beaLine) lines.push(beaLine);
-  // Calendário do FOMC lido no site do Fed (addendum 34): FASE DE OBSERVAÇÃO — só aparece aqui, comparado com a lista fixa; não entra no events.json.
+  // Calendário do FOMC lido no site do Fed (addendum 34; passou a valer nos eventos no addendum 36), comparado com a lista fixa.
   const fixedFomc = US_RELEASES.filter((e) => e.kind === 'FOMC').map((e) => e.date);
   for (const l of describeFomcCalendar(fed, fixedFomc)) lines.push(l);
+  const rateLine = describePolicyRate(rate);
+  if (rateLine) lines.push(rateLine);
   lines.push(`Eventos publicados: ${status.eventsCount}. Cobertura confirmada até: ${status.coverageUntil ?? '—'}.`);
   lines.push('');
   lines.push('| Evento | Hora (UTC) | Situação | Fonte | Anterior | Atual | Revisado | Núcleo: anterior → atual |');
@@ -173,9 +176,14 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   const merged = mergeBase(readBase(baseFile), { series: bls.series, gaps: bls.gaps });
   // A BEA (PCE, addendum 33) também é opcional: sem a chave ou sem resposta, o PCE mantém o que já estava publicado. Nunca lança.
   const bea = await fetchBeaPce({ fetchImpl, env, nowMs });
-  // O calendário do FOMC no site do Fed (addendum 34): só observação por enquanto (vai para o resumo, não para os eventos). Nunca lança.
-  const fed = await fetchFomcCalendar({ fetchImpl, env });
-  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: baseToSeries(merged.base), blsGaps: baseToGaps(merged.base), beaSeries: bea.series });
+  // O calendário do FOMC no site do Fed (addendum 36): as datas dos anos aceitos viram eventos e as reuniões passadas alimentam o histórico. Fora do modo "janela" (que só espera
+  // um número oficial e não tem o que fazer com calendário): lá o Fed não é consultado e os FOMC já publicados ficam como estão. Nunca lança.
+  const janela = resolveMode(env) === 'janela';
+  const fed = janela ? null : await fetchFomcCalendar({ fetchImpl, env });
+  const fomc = fomcDatesFromCalendar(fed, nowMs);
+  // A taxa de juros atual (NY Fed): só observação, vai para o resumo (addendum 36).
+  const rate = janela ? null : await fetchPolicyRate({ fetchImpl, env, nowMs });
+  const events = buildEvents({ fredDatesByKind, previous, nowMs, blsSeries: baseToSeries(merged.base), blsGaps: baseToGaps(merged.base), beaSeries: bea.series, fomc });
   const status = buildStatus({ events, fredDatesByKind, nowMs });
   try {
     assertPublicShape(events, status);
@@ -189,8 +197,8 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
   // A base é aditiva: se a trava recusar, os eventos já gravados seguem e só a base fica de fora (o log diz).
   const baseState = writeBase(baseFile, merged.base);
   // As datas passadas (addendum 27): aditivo como a base — se a trava recusar, os eventos já gravados seguem e só o histórico fica de fora.
-  const historyState = writeHistory(path.join(args.dir, HISTORY_FILE), fredDatesByKind, nowMs);
-  console.log(formatCollectMarkdown(status, events, fredDatesByKind, bls, describeBase(merged.base, merged.stats, baseState), bea, fed));
+  const historyState = writeHistory(path.join(args.dir, HISTORY_FILE), { ...fredDatesByKind, FOMC: fomc ? fomc.past : null }, nowMs);
+  console.log(formatCollectMarkdown(status, events, fredDatesByKind, bls, describeBase(merged.base, merged.stats, baseState), bea, fed, rate));
   console.log(`\nHistórico de datas passadas (history.json): ${historyState}.`);
   return 0;
 }

@@ -80,7 +80,7 @@ Outras decisões permanentes: **não** reintroduzir Base44; **não** usar Vercel
 Netlify (manter GitHub + Render + Firebase); **não** habilitar trading real;
 **não** alterar algo funcional sem necessidade demonstrada.
 **Contexto de Mercado (itens 284/285):** Fases 1–3 e 4a feitas (sonda, coletor `context-data`, faixa no
-Dashboard, Telegram manual sem banco; números do BLS — Anterior/Atual/Revisado, addenda 14-15); 4b avisos automáticos **antes (1 h) e depois (resultado)** do evento, completos e ligados por padrão (addenda 26-28), com a projeção que o usuário registra (addendum 30) e o PCE oficial automático da BEA, cheio e núcleo (addendum 33); resumo do dia (4c) e 5–6 pendentes. Só informativa — nunca toca motor/score; sem Neon.
+Dashboard, Telegram manual sem banco; números do BLS — Anterior/Atual/Revisado, addenda 14-15); 4b avisos automáticos **antes (1 h) e depois (resultado)** do evento, completos e ligados por padrão (addenda 26-28), com a projeção que o usuário registra (addendum 30) e o PCE oficial automático da BEA, cheio e núcleo (addendum 33), o resumo do dia às 21h (addendum 35) e as datas do FOMC lidas no site do Fed (addendum 36); 5–6 pendentes. Só informativa — nunca toca motor/score; sem Neon.
 
 ## Scan agendado (GitHub Actions) — roda sem navegador
 

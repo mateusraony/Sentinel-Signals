@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import { KINDS, KIND_TIMES, STATUS, US_RELEASES } from './contextCalendar.mjs';
 import { nyToUtc } from './contextTime.mjs';
 import { buildUserAgent, MAX_BODY_BYTES } from './contextProbe.mjs';
-import { previousValues, previousValueText, actualValueText, gapNoteValues, isValidAltText, GAP_REASONS, PREVIOUS_TEXT_RE, BLS_SOURCE, BLS_SERIES } from './contextBls.mjs';
+import { previousValues, previousValueText, actualValueText, gapNoteValues, isValidAltText, shiftMonth, GAP_REASONS, PREVIOUS_TEXT_RE, BLS_SOURCE, BLS_SERIES } from './contextBls.mjs';
 import { BEA_SOURCE, beaPreviousValues, beaActualValues } from './contextBea.mjs';
 
 /** Releases do FRED, conferidos pelo nome na sonda (runs 5-8). FOMC não está aqui: vem da lista fixa. */
@@ -114,6 +114,14 @@ export function sanitizeValues(v) {
   return out;
 }
 
+/** O último mês ('AAAA-MM') que a fonte oficial do tipo já publicou, ou null (sem a fonte ou sem dado). */
+function latestPublishedMonth(kind, blsSeries, beaSeries) {
+  const spec = BLS_SERIES[kind];
+  const map = kind === 'PCE' ? beaSeries?.mom?.headline : blsSeries?.[spec?.month ?? spec?.jobs];
+  if (!(map instanceof Map) || !map.size) return null;
+  return [...map.keys()].sort().pop();
+}
+
 /** A hora do evento já passou? (evento sem hora calculável conta como futuro: nunca é tratado como "já divulgado"). */
 const hasHappened = (kind, date, nowMs) => {
   const utc = instant(kind, date);
@@ -128,6 +136,8 @@ const hasHappened = (kind, date, nowMs) => {
  *   CONGELADO (uma revisão posterior do mês não troca o número que saiu na divulgação).
  */
 function eventValues({ kind, reference, status, released, published, blsSeries, blsGaps, beaSeries }) {
+  // Tipo sem número oficial automático (FOMC): nunca tem `values`, nem que o arquivo anterior traga um (um arquivo adulterado travaria o coletor na trava pública).
+  if (!Object.prototype.hasOwnProperty.call(VALUE_SOURCE_BY_KIND, kind)) return null;
   if (kind === 'PCE') return beaEventValues({ reference, status, released, published, beaSeries });
   if (published && published.source !== BLS_SOURCE) published = null; // número de outra fonte num evento do BLS nunca é aproveitado
   if (published?.actual) return withGapNote(published, kind, reference, blsSeries, blsGaps);
@@ -222,8 +232,10 @@ function withGapNote(values, kind, reference, blsSeries, blsGaps) {
  * @param {Record<string, Map<string, number>|null>} [p.blsSeries] séries do BLS por código (`fetchBlsSeries().series`)
  * @param {Record<string, Map<string, string>|null>} [p.blsGaps] lacunas oficiais do BLS por série (mês → motivo), da base (`baseToGaps`); explicam o "em 12 meses" que não existe
  * @param {{ mom: object|null, index: object|null }|null} [p.beaSeries] tabelas do PCE da BEA (`fetchBeaPce().series`, addendum 33)
+ * @param {{ upcoming: string[], years: string[] }|null} [p.fomc] datas do FOMC lidas no site do Fed (`fomcDatesFromCalendar`, addendum 36): `upcoming` = as datas do ano corrente em diante,
+ *   `years` = os anos que o Fed trouxe completos (só neles a lista fixa pode ser rebaixada). null = o Fed não respondeu: nada muda (lista fixa + o que já estava publicado).
  */
-export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, previous = [], nowMs, blsSeries = null, blsGaps = null, beaSeries = null }) {
+export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, previous = [], nowMs, blsSeries = null, blsGaps = null, beaSeries = null, fomc = null }) {
   const nowIso = new Date(nowMs).toISOString();
   const cutoffMs = nowMs - DAY_MS;
   const cand = new Map(); // id → { kind, date, reference, status }
@@ -256,9 +268,33 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     }
   }
 
+  // FOMC pelo site do Fed (addendum 36). Mesma disciplina do FRED: data que o Fed traz = 'oficial'; data da lista fixa que o Fed NÃO traz, num ano que ele trouxe
+  // completo = 'a_confirmar' (remarcação, retirada ou divergência; não alerta) — exceto a que já aconteceu e foi publicada. Fed fora do ar (`fomc` null) não mexe em nada.
+  const fomcYears = new Set(Array.isArray(fomc?.years) ? fomc.years : []);
+  if (fomcYears.size && Array.isArray(fomc?.upcoming)) {
+    const set = new Set(fomc.upcoming);
+    for (const d of fomc.upcoming) {
+      if (!DATE_RE.test(d)) continue;
+      const id = eventId('FOMC', d);
+      const prev = cand.get(id);
+      cand.set(id, { kind: 'FOMC', date: d, reference: prev?.reference ?? d.slice(0, 7), status: STATUS.OFICIAL });
+    }
+    for (const [id, c] of cand) {
+      if (c.kind !== 'FOMC' || set.has(c.date) || !fomcYears.has(c.date.slice(0, 4))) continue;
+      const published = prevById.get(id)?.status;
+      const keep = hasHappened(c.kind, c.date, nowMs) && Object.values(STATUS).includes(published);
+      cand.set(id, { ...c, status: keep ? published : STATUS.A_CONFIRMAR });
+    }
+  }
+
   for (const [id, c] of cand) {
     const p = prevById.get(id);
-    if (!p || !(c.kind in FRED_RELEASES) || fredAnswered.has(c.kind) || !Object.values(STATUS).includes(p.status)) continue;
+    if (!p || !Object.values(STATUS).includes(p.status)) continue;
+    // A fonte do tipo NÃO respondeu nesta coleta: evento JÁ publicado mantém a situação publicada, mesmo que também esteja na lista fixa (a lista só decide evento novo).
+    // FOMC (addendum 36; achado do Codex no PR #594): vale o mesmo para as datas de um ano que o Fed não trouxe completo agora — sem isto, uma data já rebaixada para
+    // "a confirmar" voltava a "oficial" (da lista fixa) a cada coleta com o Fed fora do ar ou no modo "janela", reativando o alerta de uma reunião que mudou.
+    const sourceSilent = c.kind in FRED_RELEASES ? !fredAnswered.has(c.kind) : c.kind === 'FOMC' ? !fomcYears.has(c.date.slice(0, 4)) : false;
+    if (!sourceSilent) continue;
     cand.set(id, { ...c, status: p.status, reference: c.reference ?? (typeof p.reference === 'string' ? p.reference : null) });
   }
   for (const [id, p] of prevById) {
@@ -266,7 +302,8 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     const m = /^([A-Z]+)-(\d{4}-\d{2}-\d{2})$/.exec(id);
     if (!m || !Object.prototype.hasOwnProperty.call(KINDS, m[1])) continue;
     const kind = m[1];
-    const sourceAnswered = kind in FRED_RELEASES ? fredAnswered.has(kind) : true; // FOMC: a lista fixa sempre "responde"
+    // FOMC (addendum 36): só "responde" no ANO que o Fed trouxe completo; Fed fora do ar, ou ano não aceito, mantém o publicado (uma queda não apaga nem rebaixa nada).
+    const sourceAnswered = kind in FRED_RELEASES ? fredAnswered.has(kind) : kind === 'FOMC' ? fomcYears.has(m[2].slice(0, 4)) : true;
     cand.set(id, {
       kind,
       date: m[2],
@@ -275,22 +312,43 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     });
   }
 
+  // Mês de referência dos eventos que só existem no FRED (addendum 36; achado da revisão independente de 19/11): sem ele o evento sai sem "Anterior"/"Atual" e o aviso
+  // dizia que a fonte "não respondeu". A referência da lista fixa continua mandando. Para os outros, só o PRÓXIMO evento de cada tipo e só quando DOIS sinais
+  // concordam: o mês anterior ao da data de divulgação (CPI, PPI, Payroll e PCE medem o mês anterior) e o mês seguinte ao último que a fonte oficial já publicou. Se
+  // divergirem (divulgação atrasada, por exemplo), fica sem referência — nunca um "Anterior" de outro mês escrito como fato.
+  for (const kind of ['CPI', 'PPI', 'NFP', 'PCE']) {
+    const latest = latestPublishedMonth(kind, blsSeries, beaSeries);
+    if (!latest) continue;
+    let next = null;
+    for (const [id, c] of cand) {
+      if (c.kind !== kind) continue;
+      const u = instant(c.kind, c.date);
+      if (u && u.ms > nowMs && (!next || u.ms < next.ms)) next = { id, c, ms: u.ms };
+    }
+    if (!next || next.c.reference || next.c.status === STATUS.A_CONFIRMAR) continue;
+    const expected = shiftMonth(latest, 1);
+    if (shiftMonth(next.c.date.slice(0, 7), -1) === expected) cand.set(next.id, { ...next.c, reference: expected });
+  }
+
   const out = [];
   for (const [id, c] of cand) {
     const utc = instant(c.kind, c.date);
     if (!utc) continue;
     const p = prevById.get(id);
+    // A referência já publicada acompanha o evento (addendum 36; achado do Codex no PR #594): a derivada só existe ANTES da hora da divulgação (é do "próximo" evento);
+    // sem carregá-la adiante, o evento perdia a referência na 1ª coleta depois da divulgação, o "Atual" nunca era anexado e o modo "janela" parava de esperá-lo.
+    const reference = c.reference ?? p?.reference ?? null;
     const values = eventValues({
-      kind: c.kind, reference: c.reference, status: c.status, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries, blsGaps, beaSeries,
+      kind: c.kind, reference, status: c.status, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries, blsGaps, beaSeries,
     });
     // Só de ontem em diante; o já divulgado COM "Atual" fica HISTORY_DAYS dias (alimenta "Últimas divulgações").
     if (utc.ms < cutoffMs && !(values?.actual && utc.ms >= nowMs - HISTORY_DAYS * DAY_MS)) continue;
     // Mudou = situação, hora OU mês de referência (antes a referência era ignorada). O número do BLS NÃO entra: não é remarcação.
-    const changed = !p || p.status !== c.status || p.startsAtUtc !== utc.iso || (p.reference ?? null) !== (c.reference ?? null);
+    const changed = !p || p.status !== c.status || p.startsAtUtc !== utc.iso || (p.reference ?? null) !== (reference ?? null);
     out.push({
       id,
       kind: c.kind,
-      reference: c.reference,
+      reference,
       startsAtUtc: utc.iso,
       status: c.status,
       firstSeenAt: typeof p?.firstSeenAt === 'string' && ISO_RE.test(p.firstSeenAt) ? p.firstSeenAt : nowIso,

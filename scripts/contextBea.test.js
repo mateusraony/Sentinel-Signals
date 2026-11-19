@@ -7,7 +7,7 @@ import path from 'node:path';
 import {
   parseBeaTable, beaMonthText, beaPreviousValues, beaActualValues, fetchBeaPce, describeBea, beaYears, BEA_TABLES, BEA_SOURCE,
 } from './contextBea.mjs';
-import { buildEvents, buildStatus, assertPublicShape, sanitizeValues } from './contextCollect.mjs';
+import { buildEvents, buildStatus, assertPublicShape, sanitizeValues, needsResultCheck } from './contextCollect.mjs';
 import { main } from './context-collect.mjs';
 
 const KEY = 'ABCDEF01-2345-6789-ABCD-EF0123456789';
@@ -214,5 +214,121 @@ describe('main do coletor com a BEA (ponta a ponta, sem FRED/BLS)', () => {
     expect(out).toContain('BEA (números do PCE): 2 de 2 tabelas lidas.');
     expect(out).toContain('| PCE-2026-11-25 | 2026-11-25 13:30 | oficial | BEA | +0,5% m/m · +3,3% a/a | — | — | +0,3% m/m · +3,1% a/a → — |');
     expect(out + fs.readFileSync(path.join(dir, 'events.json'), 'utf8')).not.toContain(KEY);
+  });
+});
+
+// Addendum 36 (achados da revisão independente de 19/11): a referência dos eventos só do FRED e a 2ª tentativa sem o ano corrente.
+describe('referência derivada: evento que só existe no FRED (fora da lista fixa)', () => {
+  const NOW = Date.parse('2026-12-24T12:00:00Z'); // depois do PCE de 23/12 (que mediu novembro)
+  const MOM_NOV = { [HEAD]: { '2026M09': '0.4', '2026M10': '0.3', '2026M11': '0.2' }, [CORE]: { '2026M09': '0.3', '2026M10': '0.2', '2026M11': '0.2' } };
+  const IDX_NOV = {
+    [HEAD]: { '2025M10': '128.400', '2025M11': '128.700', '2026M10': '132.650', '2026M11': '132.900' },
+    [CORE]: { '2025M10': '127.300', '2025M11': '127.600', '2026M10': '131.164', '2026M11': '131.400' },
+  };
+  const novSeries = series(MOM_NOV, IDX_NOV);
+  const build = (fred, extra = {}) => buildEvents({ fredDatesByKind: { PCE: fred }, fixedList: [], previous: [], nowMs: NOW, beaSeries: novSeries, ...extra });
+  const pce = (evs, d) => evs.find((e) => e.id === `PCE-${d}`);
+
+  it('o PRÓXIMO PCE (29/01/2027, só do FRED) ganha a referência 2026-12 e o "Anterior" oficial de novembro', () => {
+    const evs = build(['2027-01-29']);
+    expect(pce(evs, '2027-01-29').reference).toBe('2026-12');
+    expect(pce(evs, '2027-01-29').values).toEqual({ previous: '+0,2% m/m · +3,3% a/a', core_previous: '+0,2% m/m · +3,0% a/a', source: 'BEA' });
+  });
+  it('só o próximo de cada tipo: o seguinte (26/02) continua sem referência até virar o próximo', () => {
+    const evs = build(['2027-01-29', '2027-02-26']);
+    expect(pce(evs, '2027-01-29').reference).toBe('2026-12');
+    expect(pce(evs, '2027-02-26').reference).toBeNull();
+    expect(pce(evs, '2027-02-26').values).toBeNull();
+  });
+  it('os DOIS sinais precisam concordar: a fonte atrasada (último mês = outubro) ou a data fora do padrão deixam o evento sem referência', () => {
+    const velha = series({ [HEAD]: { '2026M09': '0.4', '2026M10': '0.3' }, [CORE]: { '2026M09': '0.3', '2026M10': '0.2' } }, IDX_SET);
+    expect(pce(build(['2027-01-29'], { beaSeries: velha }), '2027-01-29').reference).toBeNull();
+    expect(pce(build(['2027-03-27']), '2027-03-27').reference).toBeNull(); // 03/2027 mediria 2027-02, mas a fonte diz 2026-12
+  });
+  it('um PCE já passado (23/12, sem referência) não conta como "o próximo": quem ganha é o 29/01', () => {
+    const evs = build(['2026-12-23', '2027-01-29']);
+    expect(pce(evs, '2027-01-29').reference).toBe('2026-12');
+  });
+  it('ACHADO DO CODEX (#594): a referência derivada SOBREVIVE à hora da divulgação — o "Atual" é anexado e o modo "janela" continua esperando', () => {
+    // O CPI de 13/01/2027 mede DEZEMBRO: antes da divulgação o último mês publicado é novembro.
+    const cpiAntes = { CUSR0000SA0: new Map([['2026-10', 299], ['2026-11', 300]]), CUUR0000SA0: new Map([['2025-11', 289], ['2026-10', 298], ['2026-11', 299]]) };
+    const ANTES = Date.parse('2027-01-13T12:00:00Z');
+    const DEPOIS = Date.parse('2027-01-13T13:40:00Z'); // 10 min depois das 13:30 UTC
+    const cpi = (nowMs, series, previous) => buildEvents({ fredDatesByKind: { CPI: ['2027-01-13'] }, fixedList: [], previous, nowMs, blsSeries: series });
+    const ev = (evs) => evs.find((e) => e.id === 'CPI-2027-01-13');
+    const antes = cpi(ANTES, cpiAntes, []);
+    expect(ev(antes).reference).toBe('2026-12');
+    expect(ev(antes).values.previous).toMatch(/m\/m/); // o "Anterior" (novembro) foi calculado
+    // depois da hora e AINDA sem o número: a referência fica (era null antes da correção) e o modo "janela" continua esperando
+    const depoisSemNumero = cpi(DEPOIS, cpiAntes, antes);
+    expect(ev(depoisSemNumero).reference).toBe('2026-12');
+    expect(needsResultCheck(depoisSemNumero, DEPOIS)).toBe(true);
+    // o BLS publica dezembro: o "Atual" é anexado ao evento
+    const comDezembro = { CUSR0000SA0: new Map([['2026-10', 299], ['2026-11', 300], ['2026-12', 301]]), CUUR0000SA0: new Map([['2025-11', 289], ['2025-12', 290], ['2026-10', 298], ['2026-11', 299], ['2026-12', 300]]) };
+    const depois = cpi(DEPOIS + 20 * 60000, comDezembro, depoisSemNumero);
+    expect(ev(depois).reference).toBe('2026-12');
+    expect(ev(depois).values.actual).toMatch(/m\/m/);
+    expect(needsResultCheck(depois, DEPOIS + 20 * 60000)).toBe(false); // já tem o "Atual": a janela para de esperar
+  });
+  it('a referência carregada adiante NÃO conta como mudança: "lastChangedAt" fica quieto entre coletas (senão o arquivo público mudaria a cada passada)', () => {
+    const cpiS = { CUSR0000SA0: new Map([['2026-10', 299], ['2026-11', 300]]), CUUR0000SA0: new Map([['2025-11', 289], ['2026-10', 298], ['2026-11', 299]]) };
+    const run = (nowMs, previous) => buildEvents({ fredDatesByKind: { CPI: ['2027-01-13'] }, fixedList: [], previous, nowMs, blsSeries: cpiS });
+    const t1 = run(Date.parse('2027-01-13T12:00:00Z'), []);
+    const t2 = run(Date.parse('2027-01-13T12:15:00Z'), t1);
+    const t3 = run(Date.parse('2027-01-13T13:40:00Z'), t2); // já depois da hora: a referência vem do arquivo anterior
+    for (const t of [t2, t3]) expect(t[0].lastChangedAt).toBe(t1[0].lastChangedAt);
+    expect(t3[0].reference).toBe('2026-12');
+  });
+  it('a referência da lista fixa continua mandando (nunca é sobrescrita)', () => {
+    const evs = build(['2027-01-29'], { fixedList: [{ kind: 'PCE', reference: '2026-10', date: '2027-01-29', status: 'oficial' }] });
+    expect(pce(evs, '2027-01-29').reference).toBe('2026-10');
+  });
+  it('sem a fonte (BEA fora do ar) não inventa referência; data a confirmar nunca ganha', () => {
+    expect(pce(build(['2027-01-29'], { beaSeries: null }), '2027-01-29').reference).toBeNull();
+    const evs = build([], { fixedList: [{ kind: 'PCE', reference: null, date: '2027-01-29', status: 'a_confirmar' }] });
+    expect(pce(evs, '2027-01-29').reference).toBeNull();
+  });
+  it('BLS também: o próximo CPI só do FRED (10/02/2027) ganha 2027-01 quando o último mês publicado é dezembro', () => {
+    const cpiSeries = { CUSR0000SA0: new Map([['2026-11', 300], ['2026-12', 301]]), CUUR0000SA0: new Map([['2025-12', 290], ['2026-11', 299], ['2026-12', 300]]) };
+    const evs = buildEvents({ fredDatesByKind: { CPI: ['2027-02-10'] }, fixedList: [], previous: [], nowMs: NOW, blsSeries: cpiSeries });
+    expect(evs.find((e) => e.id === 'CPI-2027-02-10').reference).toBe('2027-01');
+    expect(evs.find((e) => e.id === 'CPI-2027-02-10').values.previous).toMatch(/m\/m/);
+  });
+});
+
+describe('FOMC nunca tem números oficiais automáticos', () => {
+  it('um arquivo anterior com `values` num FOMC (adulterado) não trava o coletor: o valor é descartado e a trava pública passa', () => {
+    const NOW = Date.parse('2026-11-19T15:00:00Z');
+    const previous = [{ id: 'FOMC-2026-12-09', kind: 'FOMC', reference: '2026-12', startsAtUtc: '2026-12-09T19:00:00.000Z', status: 'oficial', firstSeenAt: '2026-11-01T00:00:00.000Z', lastChangedAt: '2026-11-01T00:00:00.000Z', values: { previous: '+0,3% m/m', source: 'BLS' } }];
+    const evs = buildEvents({ fredDatesByKind: {}, fixedList: [{ kind: 'FOMC', reference: '2026-12', date: '2026-12-09', status: 'oficial' }], previous, nowMs: NOW });
+    expect(evs.find((e) => e.id === 'FOMC-2026-12-09').values).toBeNull();
+    expect(() => assertPublicShape(evs, buildStatus({ events: evs, fredDatesByKind: {}, nowMs: NOW }))).not.toThrow();
+  });
+});
+
+describe('fetchBeaPce: 2ª tentativa sem o ano corrente', () => {
+  const NOW = Date.parse('2027-01-20T12:00:00Z'); // janeiro: a BEA ainda não tem nenhum valor de 2027
+  const respondeSemOAnoNovo = (calls) => async (url) => {
+    const u = new URL(String(url));
+    calls.push(u.searchParams.get('Year'));
+    if (u.searchParams.get('Year').includes('2027')) return new Response(JSON.stringify({ BEAAPI: { Results: { Error: { APIErrorDescription: 'Data not available for 2027' } } } }));
+    return new Response(u.searchParams.get('TableName') === 'T20807' ? beaBody('T20807', MOM_SET) : beaBody('T20804', IDX_SET));
+  };
+  it('o pedido com 2027 é recusado → repete só com 2025 e 2026 e lê as 2 tabelas', async () => {
+    const calls = [];
+    const r = await fetchBeaPce({ fetchImpl: respondeSemOAnoNovo(calls), env: { BEA_API_KEY: KEY }, nowMs: NOW });
+    expect(r.read).toBe(2);
+    expect(calls).toEqual(['2025,2026,2027', '2025,2026,2027', '2025,2026', '2025,2026']);
+    expect(beaYears(NOW, { withCurrent: false })).toBe('2025,2026');
+  });
+  it('a 1ª tentativa deu certo: não há 2ª; tudo falhou: 4 chamadas e nada vaza', async () => {
+    const calls = [];
+    const ok = await fetchBeaPce({ fetchImpl: async (url) => { calls.push(1); return new Response(String(url).includes('T20807') ? beaBody('T20807', MOM_SET) : beaBody('T20804', IDX_SET)); }, env: { BEA_API_KEY: KEY }, nowMs: NOW });
+    expect(ok.read).toBe(2);
+    expect(calls.length).toBe(2);
+    let n = 0;
+    const falha = await fetchBeaPce({ fetchImpl: async (url) => { n += 1; throw new Error(`x ${url}`); }, env: { BEA_API_KEY: KEY }, nowMs: NOW });
+    expect(falha).toEqual({ series: null, keyPresent: true, read: 0 });
+    expect(n).toBe(4);
   });
 });
