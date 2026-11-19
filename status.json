@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "checkedAt": "2026-11-19T15:01:22.263Z",
+  "checkedAt": "2026-11-19T19:37:53.917Z",
   "fred": "ok",
-  "eventsCount": 11,
-  "coverageUntil": "2026-12-23T13:30:00.000Z",
-  "hash": "a5518f870cdf5f8709cc54165e07b751ec8ed6ab77d2af8ee522694d5693f476"
+  "eventsCount": 19,
+  "coverageUntil": "2027-11-17T19:00:00.000Z",
+  "hash": "33fe629984e0fea88cd0df153e69f5dd8f8df6d64cd9f0188ffeff46169b7be7"
 }

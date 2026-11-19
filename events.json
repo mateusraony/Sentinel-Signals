@@ -137,5 +137,85 @@
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
     "lastChangedAt": "2026-10-31T16:19:52.086Z",
     "values": null
+  },
+  {
+    "id": "FOMC-2027-01-27",
+    "kind": "FOMC",
+    "reference": "2027-01",
+    "startsAtUtc": "2027-01-27T19:00:00.000Z",
+    "status": "oficial",
+    "firstSeenAt": "2026-11-19T19:37:53.917Z",
+    "lastChangedAt": "2026-11-19T19:37:53.917Z",
+    "values": null
+  },
+  {
+    "id": "FOMC-2027-03-17",
+    "kind": "FOMC",
+    "reference": "2027-03",
+    "startsAtUtc": "2027-03-17T18:00:00.000Z",
+    "status": "oficial",
+    "firstSeenAt": "2026-11-19T19:37:53.917Z",
+    "lastChangedAt": "2026-11-19T19:37:53.917Z",
+    "values": null
+  },
+  {
+    "id": "FOMC-2027-04-28",
+    "kind": "FOMC",
+    "reference": "2027-04",
+    "startsAtUtc": "2027-04-28T18:00:00.000Z",
+    "status": "oficial",
+    "firstSeenAt": "2026-11-19T19:37:53.917Z",
+    "lastChangedAt": "2026-11-19T19:37:53.917Z",
+    "values": null
+  },
+  {
+    "id": "FOMC-2027-06-09",
+    "kind": "FOMC",
+    "reference": "2027-06",
+    "startsAtUtc": "2027-06-09T18:00:00.000Z",
+    "status": "oficial",
+    "firstSeenAt": "2026-11-19T19:37:53.917Z",
+    "lastChangedAt": "2026-11-19T19:37:53.917Z",
+    "values": null
+  },
+  {
+    "id": "FOMC-2027-07-28",
+    "kind": "FOMC",
+    "reference": "2027-07",
+    "startsAtUtc": "2027-07-28T18:00:00.000Z",
+    "status": "oficial",
+    "firstSeenAt": "2026-11-19T19:37:53.917Z",
+    "lastChangedAt": "2026-11-19T19:37:53.917Z",
+    "values": null
+  },
+  {
+    "id": "FOMC-2027-09-15",
+    "kind": "FOMC",
+    "reference": "2027-09",
+    "startsAtUtc": "2027-09-15T18:00:00.000Z",
+    "status": "oficial",
+    "firstSeenAt": "2026-11-19T19:37:53.917Z",
+    "lastChangedAt": "2026-11-19T19:37:53.917Z",
+    "values": null
+  },
+  {
+    "id": "FOMC-2027-10-27",
+    "kind": "FOMC",
+    "reference": "2027-10",
+    "startsAtUtc": "2027-10-27T18:00:00.000Z",
+    "status": "oficial",
+    "firstSeenAt": "2026-11-19T19:37:53.917Z",
+    "lastChangedAt": "2026-11-19T19:37:53.917Z",
+    "values": null
+  },
+  {
+    "id": "FOMC-2027-11-17",
+    "kind": "FOMC",
+    "reference": "2027-11",
+    "startsAtUtc": "2027-11-17T19:00:00.000Z",
+    "status": "oficial",
+    "firstSeenAt": "2026-11-19T19:37:53.917Z",
+    "lastChangedAt": "2026-11-19T19:37:53.917Z",
+    "values": null
   }
 ]
