@@ -154,6 +154,38 @@ describe('buildEvents com as datas do Fed — regras de rebaixamento e de contin
   });
 });
 
+describe('achados do Codex no PR #594 — FOMC rebaixado não volta a "oficial" sem o Fed', () => {
+  const NOW = Date.parse('2026-11-19T15:00:00Z');
+  const fixed = [{ kind: 'FOMC', reference: '2026-12', date: '2026-12-09', status: 'oficial' }];
+  const fomcRemarcado = { upcoming: ['2026-12-10', ...D2027], years: ['2026', '2027'] }; // o Fed moveu 09/12 para 10/12
+  const byId = (evs, id) => evs.find((e) => e.id === id);
+
+  it('o Fed move a reunião (09→10/12); na coleta SEGUINTE, com o Fed fora do ar ou no modo "janela" (fomc null), a data antiga continua "a confirmar" e a nova "oficial"', () => {
+    const c1 = buildEvents({ fredDatesByKind: {}, fixedList: fixed, previous: [], nowMs: NOW, fomc: fomcRemarcado });
+    expect(byId(c1, 'FOMC-2026-12-09').status).toBe('a_confirmar');
+    const c2 = buildEvents({ fredDatesByKind: {}, fixedList: fixed, previous: c1, nowMs: NOW + 15 * 60000, fomc: null });
+    expect(byId(c2, 'FOMC-2026-12-09').status).toBe('a_confirmar'); // sem a correção voltava a 'oficial' e reativava o alerta
+    expect(byId(c2, 'FOMC-2026-12-10').status).toBe('oficial');
+    const c3 = buildEvents({ fredDatesByKind: {}, fixedList: fixed, previous: c2, nowMs: NOW + 30 * 60000, fomc: null });
+    expect(c3.map((e) => [e.id, e.status])).toEqual(c2.map((e) => [e.id, e.status]));
+  });
+  it('o Fed RESPONDE e tira uma data que estava oficial: vira "a confirmar" (a preservação vale só quando o Fed NÃO responde)', () => {
+    const publicado = buildEvents({ fredDatesByKind: {}, fixedList: fixed, previous: [], nowMs: NOW, fomc: { upcoming: ['2026-12-09', ...D2027], years: ['2026', '2027'] } });
+    expect(byId(publicado, 'FOMC-2026-12-09').status).toBe('oficial');
+    const tirou = buildEvents({ fredDatesByKind: {}, fixedList: fixed, previous: publicado, nowMs: NOW + 60000, fomc: fomcRemarcado });
+    expect(byId(tirou, 'FOMC-2026-12-09').status).toBe('a_confirmar');
+    expect(byId(tirou, 'FOMC-2026-12-10').status).toBe('oficial');
+  });
+  it('um ano que o Fed não trouxe agora (mas trouxe antes) também mantém o publicado — só o ano aceito decide', () => {
+    const c1 = buildEvents({ fredDatesByKind: {}, fixedList: fixed, previous: [], nowMs: NOW, fomc: fomcRemarcado });
+    const soOutroAno = buildEvents({ fredDatesByKind: {}, fixedList: fixed, previous: c1, nowMs: NOW + 60000, fomc: { upcoming: ['2029-01-31'], years: ['2029'] } });
+    expect(byId(soOutroAno, 'FOMC-2026-12-09').status).toBe('a_confirmar');
+  });
+  it('sem nenhum registro anterior, a lista fixa segue valendo (evento novo nasce "oficial")', () => {
+    expect(byId(buildEvents({ fredDatesByKind: {}, fixedList: fixed, previous: [], nowMs: NOW, fomc: null }), 'FOMC-2026-12-09').status).toBe('oficial');
+  });
+});
+
 describe('fetchFomcCalendar — nunca lança, devolve só um código', () => {
   it('ok, HTTP de erro, formato inesperado e rede caída', async () => {
     let seen;

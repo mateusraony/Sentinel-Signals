@@ -289,7 +289,12 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
 
   for (const [id, c] of cand) {
     const p = prevById.get(id);
-    if (!p || !(c.kind in FRED_RELEASES) || fredAnswered.has(c.kind) || !Object.values(STATUS).includes(p.status)) continue;
+    if (!p || !Object.values(STATUS).includes(p.status)) continue;
+    // A fonte do tipo NÃO respondeu nesta coleta: evento JÁ publicado mantém a situação publicada, mesmo que também esteja na lista fixa (a lista só decide evento novo).
+    // FOMC (addendum 36; achado do Codex no PR #594): vale o mesmo para as datas de um ano que o Fed não trouxe completo agora — sem isto, uma data já rebaixada para
+    // "a confirmar" voltava a "oficial" (da lista fixa) a cada coleta com o Fed fora do ar ou no modo "janela", reativando o alerta de uma reunião que mudou.
+    const sourceSilent = c.kind in FRED_RELEASES ? !fredAnswered.has(c.kind) : c.kind === 'FOMC' ? !fomcYears.has(c.date.slice(0, 4)) : false;
+    if (!sourceSilent) continue;
     cand.set(id, { ...c, status: p.status, reference: c.reference ?? (typeof p.reference === 'string' ? p.reference : null) });
   }
   for (const [id, p] of prevById) {
@@ -330,17 +335,20 @@ export function buildEvents({ fredDatesByKind = {}, fixedList = US_RELEASES, pre
     const utc = instant(c.kind, c.date);
     if (!utc) continue;
     const p = prevById.get(id);
+    // A referência já publicada acompanha o evento (addendum 36; achado do Codex no PR #594): a derivada só existe ANTES da hora da divulgação (é do "próximo" evento);
+    // sem carregá-la adiante, o evento perdia a referência na 1ª coleta depois da divulgação, o "Atual" nunca era anexado e o modo "janela" parava de esperá-lo.
+    const reference = c.reference ?? p?.reference ?? null;
     const values = eventValues({
-      kind: c.kind, reference: c.reference, status: c.status, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries, blsGaps, beaSeries,
+      kind: c.kind, reference, status: c.status, released: utc.ms <= nowMs, published: sanitizeValues(p?.values), blsSeries, blsGaps, beaSeries,
     });
     // Só de ontem em diante; o já divulgado COM "Atual" fica HISTORY_DAYS dias (alimenta "Últimas divulgações").
     if (utc.ms < cutoffMs && !(values?.actual && utc.ms >= nowMs - HISTORY_DAYS * DAY_MS)) continue;
     // Mudou = situação, hora OU mês de referência (antes a referência era ignorada). O número do BLS NÃO entra: não é remarcação.
-    const changed = !p || p.status !== c.status || p.startsAtUtc !== utc.iso || (p.reference ?? null) !== (c.reference ?? null);
+    const changed = !p || p.status !== c.status || p.startsAtUtc !== utc.iso || (p.reference ?? null) !== (reference ?? null);
     out.push({
       id,
       kind: c.kind,
-      reference: c.reference,
+      reference,
       startsAtUtc: utc.iso,
       status: c.status,
       firstSeenAt: typeof p?.firstSeenAt === 'string' && ISO_RE.test(p.firstSeenAt) ? p.firstSeenAt : nowIso,

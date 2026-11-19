@@ -7,7 +7,7 @@ import path from 'node:path';
 import {
   parseBeaTable, beaMonthText, beaPreviousValues, beaActualValues, fetchBeaPce, describeBea, beaYears, BEA_TABLES, BEA_SOURCE,
 } from './contextBea.mjs';
-import { buildEvents, buildStatus, assertPublicShape, sanitizeValues } from './contextCollect.mjs';
+import { buildEvents, buildStatus, assertPublicShape, sanitizeValues, needsResultCheck } from './contextCollect.mjs';
 import { main } from './context-collect.mjs';
 
 const KEY = 'ABCDEF01-2345-6789-ABCD-EF0123456789';
@@ -248,6 +248,36 @@ describe('referência derivada: evento que só existe no FRED (fora da lista fix
   it('um PCE já passado (23/12, sem referência) não conta como "o próximo": quem ganha é o 29/01', () => {
     const evs = build(['2026-12-23', '2027-01-29']);
     expect(pce(evs, '2027-01-29').reference).toBe('2026-12');
+  });
+  it('ACHADO DO CODEX (#594): a referência derivada SOBREVIVE à hora da divulgação — o "Atual" é anexado e o modo "janela" continua esperando', () => {
+    // O CPI de 13/01/2027 mede DEZEMBRO: antes da divulgação o último mês publicado é novembro.
+    const cpiAntes = { CUSR0000SA0: new Map([['2026-10', 299], ['2026-11', 300]]), CUUR0000SA0: new Map([['2025-11', 289], ['2026-10', 298], ['2026-11', 299]]) };
+    const ANTES = Date.parse('2027-01-13T12:00:00Z');
+    const DEPOIS = Date.parse('2027-01-13T13:40:00Z'); // 10 min depois das 13:30 UTC
+    const cpi = (nowMs, series, previous) => buildEvents({ fredDatesByKind: { CPI: ['2027-01-13'] }, fixedList: [], previous, nowMs, blsSeries: series });
+    const ev = (evs) => evs.find((e) => e.id === 'CPI-2027-01-13');
+    const antes = cpi(ANTES, cpiAntes, []);
+    expect(ev(antes).reference).toBe('2026-12');
+    expect(ev(antes).values.previous).toMatch(/m\/m/); // o "Anterior" (novembro) foi calculado
+    // depois da hora e AINDA sem o número: a referência fica (era null antes da correção) e o modo "janela" continua esperando
+    const depoisSemNumero = cpi(DEPOIS, cpiAntes, antes);
+    expect(ev(depoisSemNumero).reference).toBe('2026-12');
+    expect(needsResultCheck(depoisSemNumero, DEPOIS)).toBe(true);
+    // o BLS publica dezembro: o "Atual" é anexado ao evento
+    const comDezembro = { CUSR0000SA0: new Map([['2026-10', 299], ['2026-11', 300], ['2026-12', 301]]), CUUR0000SA0: new Map([['2025-11', 289], ['2025-12', 290], ['2026-10', 298], ['2026-11', 299], ['2026-12', 300]]) };
+    const depois = cpi(DEPOIS + 20 * 60000, comDezembro, depoisSemNumero);
+    expect(ev(depois).reference).toBe('2026-12');
+    expect(ev(depois).values.actual).toMatch(/m\/m/);
+    expect(needsResultCheck(depois, DEPOIS + 20 * 60000)).toBe(false); // já tem o "Atual": a janela para de esperar
+  });
+  it('a referência carregada adiante NÃO conta como mudança: "lastChangedAt" fica quieto entre coletas (senão o arquivo público mudaria a cada passada)', () => {
+    const cpiS = { CUSR0000SA0: new Map([['2026-10', 299], ['2026-11', 300]]), CUUR0000SA0: new Map([['2025-11', 289], ['2026-10', 298], ['2026-11', 299]]) };
+    const run = (nowMs, previous) => buildEvents({ fredDatesByKind: { CPI: ['2027-01-13'] }, fixedList: [], previous, nowMs, blsSeries: cpiS });
+    const t1 = run(Date.parse('2027-01-13T12:00:00Z'), []);
+    const t2 = run(Date.parse('2027-01-13T12:15:00Z'), t1);
+    const t3 = run(Date.parse('2027-01-13T13:40:00Z'), t2); // já depois da hora: a referência vem do arquivo anterior
+    for (const t of [t2, t3]) expect(t[0].lastChangedAt).toBe(t1[0].lastChangedAt);
+    expect(t3[0].reference).toBe('2026-12');
   });
   it('a referência da lista fixa continua mandando (nunca é sobrescrita)', () => {
     const evs = build(['2027-01-29'], { fixedList: [{ kind: 'PCE', reference: '2026-10', date: '2027-01-29', status: 'oficial' }] });
