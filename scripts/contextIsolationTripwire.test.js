@@ -684,7 +684,7 @@ const SEGREDOS_DO_ALERTADOR = new Set(['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']
 const CONDICAO_DE_ENVIO = "github.event_name == 'workflow_run' || inputs.enviar";
 const IF_DO_ALERTADOR = [
   "github.event_name == 'workflow_dispatch' || (",
-  "(vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resultado'))",
+  "(vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resultado') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resumo'))",
   '&& github.event.workflow_run.head_repository.full_name == github.repository',
   "&& (github.event.workflow_run.event == 'workflow_dispatch' || github.event.workflow_run.event == 'schedule'))",
 ].join(' ');
@@ -789,10 +789,11 @@ describe('tripwire: o aviso automático de 1 h antes só grava o registro, só f
       real.replace(seg, 'TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}'),
       real.replace(seg, 'TELEGRAM_BOT_TOKEN: ${{ toJSON(secrets) }}'),
       real.replace('node scripts/context-alert.mjs "${ARGS[@]}"', 'node scripts/context-alert.mjs "${{ inputs.enviar }}"'),
-      real.replace("(vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resultado'))\n      && ", ''),
+      real.replace("(vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resultado') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resumo'))\n      && ", ''),
       // Ligar sem filtro nenhum ou fazer o `nenhuma` não desligar (o `nenhuma` precisa fazer o job nem começar):
-      real.replace("(vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resultado'))", "(vars.CONTEXT_TELEGRAM_CATEGORIES != 'nenhuma')"),
+      real.replace("(vars.CONTEXT_TELEGRAM_CATEGORIES == '' || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'pre-evento') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resultado') || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resumo'))", "(vars.CONTEXT_TELEGRAM_CATEGORIES != 'nenhuma')"),
       real.replace(" || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resultado')", ''),
+      real.replace(" || contains(vars.CONTEXT_TELEGRAM_CATEGORIES, 'resumo')", ''), // o resumo do dia (addendum 35) precisa poder ligar o job
       real.replace("vars.CONTEXT_TELEGRAM_CATEGORIES == '' ||", ''),
       real.replace('      && github.event.workflow_run.head_repository.full_name == github.repository\n', ''),
       real.replace("github.event_name == 'workflow_dispatch' || (", "github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run' || ("),

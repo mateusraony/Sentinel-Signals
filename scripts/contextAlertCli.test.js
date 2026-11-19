@@ -341,3 +341,110 @@ describe('o relatório nunca contém segredo', () => {
     }
   });
 });
+
+// Addendum 35: o resumo do dia às 21h de Brasília.
+describe('o resumo do dia (fase 4c): executável de ponta a ponta', () => {
+  const MIN = 60 * 1000;
+  const HOUR = 60 * MIN;
+  const SAIU = '2026-11-19T13:30:00.000Z';
+  const NOITE = Date.parse('2026-11-20T00:10:00Z'); // 21:10 de Brasília
+  const DAY_START = Date.parse('2026-11-19T03:00:00Z');
+  const DIA = [
+    { id: 'CPI-2026-11-19', kind: 'CPI', reference: '2026-10', startsAtUtc: SAIU, status: 'oficial', firstSeenAt: '2026-11-01T00:00:00.000Z', lastChangedAt: '2026-11-01T00:00:00.000Z',
+      values: { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,2% m/m · +3,1% a/a', source: 'BLS' } },
+    { id: 'PPI-2026-11-25', kind: 'PPI', reference: '2026-10', startsAtUtc: '2026-11-25T13:30:00.000Z', status: 'oficial', firstSeenAt: '2026-11-01T00:00:00.000Z', lastChangedAt: '2026-11-01T00:00:00.000Z' },
+  ];
+  const router = ({ binanceOk = true } = {}) => vi.fn(async (url) => {
+    const u = String(url);
+    if (u.startsWith('https://api.telegram.org/')) return { ok: true, status: 200 };
+    if (!binanceOk) return { ok: false, status: 500, text: async () => '' };
+    const q = new URL(u).searchParams;
+    const start = Number(q.get('startTime'));
+    if (q.get('interval') === '1h') {
+      const rows = Array.from({ length: 22 }, (_, i) => [start + i * HOUR, '100', '102', '99', i === 21 ? '101' : '100', '1', start + (i + 1) * HOUR - 1, '1', 1, '1', '1', '0']);
+      return { ok: true, status: 200, text: async () => JSON.stringify(rows) };
+    }
+    const rows = Array.from({ length: 61 }, (_, i) => [start + i * MIN, '100', '100.1', '99.9', i === 0 ? '100' : '100.4', '1', start + (i + 1) * MIN - 1, '1', 1, '1', '1', '0']);
+    return { ok: true, status: 200, text: async () => JSON.stringify(rows) };
+  });
+  const SEM_ESPERA = async () => {};
+  const go = (argv, fetchImpl, now = NOITE) => { saida = []; return main(argv, ENV, { fetchImpl, now: () => now, sleep: SEM_ESPERA }).then((code) => ({ code, texto: saida.join('\n') })); };
+  const enviado = (f) => f.mock.calls.filter(([u]) => String(u).startsWith('https://api.telegram.org/')).map(([, init]) => JSON.parse(init.body).text);
+  beforeEach(() => { fs.writeFileSync(path.join(dir, 'events.json'), JSON.stringify(DIA)); });
+
+  it('depois das 21h de Brasília, num dia com divulgação: manda 1 resumo com números, BTC depois e BTC no dia, e registra', async () => {
+    const f = router();
+    const r = await go(['--dir', dir, '--enviar', '--categorias-ligadas', ''], f);
+    expect(r.code).toBe(0);
+    const textos = enviado(f);
+    expect(textos.length).toBe(1);
+    expect(textos[0]).toContain('<b>Resumo do dia — qui, 19/11</b>');
+    expect(textos[0]).toContain('No mês: <b>+0,2%</b> (anterior +0,3%) — abaixo do anterior');
+    expect(textos[0]).toContain('BTC depois: 5 min +0,40% · 30 min +0,40% · 60 min +0,40%');
+    expect(textos[0]).toContain('+1,00% contra a abertura');
+    expect(textos[0]).toContain('amplitude de 3,03% entre a mínima e a máxima');
+    expect(textos[0]).toMatch(/• <b>PPI<\/b> — qua 25\/11/);
+    expect(JSON.parse(fs.readFileSync(sentFile(), 'utf8')).sent).toEqual({ 'DIA-2026-11-19:dia': new Date(NOITE).toISOString() });
+    // a janela da busca do dia é a do dia de Brasília
+    const url1h = f.mock.calls.map(([u]) => new URL(String(u))).find((u) => u.searchParams.get('interval') === '1h');
+    expect(Number(url1h.searchParams.get('startTime'))).toBe(DAY_START);
+  });
+
+  it('a 2ª passada (15 min depois) NÃO repete; e o dia seguinte sem divulgação não manda nada', async () => {
+    const f1 = router();
+    await go(['--dir', dir, '--enviar', '--categorias-ligadas', ''], f1);
+    const f2 = router();
+    const r2 = await go(['--dir', dir, '--enviar', '--categorias-ligadas', ''], f2, NOITE + 15 * MIN);
+    expect(enviado(f2)).toEqual([]);
+    expect(r2.texto).toContain('Nada a enviar agora');
+    const f3 = router();
+    await go(['--dir', dir, '--enviar', '--categorias-ligadas', ''], f3, NOITE + 24 * HOUR); // 21h do dia 20: nada saiu no dia 20
+    expect(enviado(f3)).toEqual([]);
+  });
+
+  it('antes das 21h (de tarde) não manda resumo', async () => {
+    const f = router();
+    await go(['--dir', dir, '--enviar', '--categorias-ligadas', ''], f, Date.parse('2026-11-19T20:00:00Z'));
+    expect(enviado(f).filter((t) => t.includes('Resumo do dia'))).toEqual([]);
+  });
+
+  it('categoria `resumo` desligada (lista sem ela, ou `nenhuma`): não envia nem registra; ligada só ela: envia', async () => {
+    for (const ligadas of ['pre-evento,resultado', 'nenhuma']) {
+      const f = router();
+      const r = await go(['--dir', dir, '--enviar', '--categorias-ligadas', ligadas], f);
+      expect(enviado(f)).toEqual([]);
+      expect(r.texto).toContain('Categoria `resumo` desligada');
+      expect(fs.existsSync(sentFile())).toBe(false);
+    }
+    const f = router();
+    await go(['--dir', dir, '--enviar', '--categorias-ligadas', 'resumo'], f);
+    expect(enviado(f).length).toBe(1);
+  });
+
+  it('a Binance fora do ar NÃO impede o resumo: sai com "indisponível" nas linhas do BTC', async () => {
+    const f = router({ binanceOk: false });
+    const r = await go(['--dir', dir, '--enviar', '--categorias-ligadas', ''], f);
+    expect(r.code).toBe(0);
+    const [texto] = enviado(f);
+    expect(texto).toContain('BTC depois: indisponível agora');
+    expect(texto).toContain('<b>BTC no dia:</b> indisponível agora');
+    expect(fs.existsSync(sentFile())).toBe(true);
+  });
+
+  it('simulação: mostra o resumo, NÃO manda Telegram e NÃO grava o registro', async () => {
+    const f = router();
+    const r = await go(['--dir', dir, '--categorias-ligadas', ''], f);
+    expect(r.texto).toContain('Resumo do dia');
+    expect(r.texto).toContain('DIA-2026-11-19:dia');
+    expect(enviado(f)).toEqual([]);
+    expect(fs.existsSync(sentFile())).toBe(false);
+  });
+
+  it('falha de envio não registra (a próxima passada tenta de novo) e o relatório não traz o token', async () => {
+    const f = vi.fn(async (u) => { if (String(u).startsWith('https://api.telegram.org/')) throw new Error(`falha em ${u}`); return router()(u); });
+    const r = await go(['--dir', dir, '--enviar', '--categorias-ligadas', ''], f);
+    expect(r.code).toBe(1);
+    expect(r.texto).not.toContain(TOKEN);
+    expect(fs.existsSync(sentFile())).toBe(false);
+  });
+});

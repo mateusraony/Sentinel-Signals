@@ -133,7 +133,7 @@ Estado: Fases 1–3 e 4a feitas; **4b: aviso automático 1 h antes (`context-ale
    com chave liga/desliga por categoria; risco registrado de excesso de mensagens — comece com o mínimo e me mostre). Reaproveite
    `context-notify.yml` (4a) e o vocabulário de `docs/notification-vocabulary.md`. **Sem `DATABASE_URL`** no workflow
    (`adminTelegram.js` grava `SystemLog` no banco quando o envio falha — usar o remetente sem banco).
-3. **4c — resumos 07h/12h/21h** = fatos + "leitura possível" em texto de modelo **rotulado como hipótese** (sem IA generativa;
+3. **4c — resumo do dia: FEITO em 19/11 (addendum 35): só o das 21h de Brasília, só em dia com divulgação, ligado por padrão; os de 07h/12h não foram feitos (o aviso de 1 h antes já cobre).** Plano original: resumos 07h/12h/21h = fatos + "leitura possível" em texto de modelo **rotulado como hipótese** (sem IA generativa;
    **nada de probabilidade nem direção**; regra do item 285 add. 5: "profissional = tamanho do movimento, não direção").
 4. **5 — marcador "aberta durante <evento>" no Histórico**: só se o portão passar (≤ 30% das operações marcadas, medido
    retroativamente com as ~344 operações do backtest + datas passadas). Calculado no navegador (`contextOverlap.js`), **sem

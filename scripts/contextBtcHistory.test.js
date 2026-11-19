@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadReactions, summarizeReactions, readHistoryFile, partialMoves, loadMovesSince, REACTION_COUNT } from './contextBtcHistory.mjs';
+import { loadReactions, summarizeReactions, readHistoryFile, partialMoves, loadMovesSince, loadBtcDay, REACTION_COUNT } from './contextBtcHistory.mjs';
 import { nyToUtc } from './contextTime.mjs';
 
 const MIN = 60 * 1000;
@@ -178,5 +178,34 @@ describe('partialMoves / loadMovesSince', () => {
     expect(await loadMovesSince({ t0Ms: T0, nowMs: T0, fetchImpl: fora, sleep: async () => {} })).toBeNull();
     const lanca = vi.fn(async () => { throw new Error('x'); });
     expect(await loadMovesSince({ t0Ms: T0, nowMs: T0, fetchImpl: lanca, sleep: async () => {} })).toBeNull();
+  });
+});
+
+// Addendum 35: o BTC no dia (velas de 1 h do dia de Brasília).
+describe('loadBtcDay — o BTC do dia, medido', () => {
+  const HOUR = 60 * MIN;
+  const START = Date.parse('2026-11-19T03:00:00Z'); // 00:00 de Brasília
+  const NOW = Date.parse('2026-11-20T00:10:00Z');
+  const hourly = (n, { open = 100, close = 101, high = 103, low = 99, skipFirst = false } = {}) => JSON.stringify(Array.from({ length: n }, (_, i) => {
+    const t = START + (skipFirst ? i + 1 : i) * HOUR;
+    return [t, String(i === 0 ? open : 100), String(i === 1 ? high : 100.5), String(i === 2 ? low : 99.8), String(i === n - 1 ? close : 100.2), '1', t + HOUR - 1, '1', 1, '1', '1', '0'];
+  }));
+  const ok = (body) => vi.fn(async () => ({ ok: true, status: 200, text: async () => body }));
+
+  it('variação contra a abertura da 1ª vela do dia, amplitude mínima→máxima e a URL certa (1 h, a janela do dia)', async () => {
+    const f = ok(hourly(22));
+    const r = await loadBtcDay({ dayStartMs: START, nowMs: NOW, fetchImpl: f, sleep: async () => {} });
+    expect(r.pct).toBeCloseTo(1, 6); // 100 → 101
+    expect(r.rangePct).toBeCloseTo((103 / 99 - 1) * 100, 6);
+    expect(r.hours).toBe(22);
+    const u = new URL(String(f.mock.calls[0][0]));
+    expect(u.origin + u.pathname).toBe('https://data-api.binance.vision/api/v3/klines');
+    expect(Object.fromEntries(u.searchParams)).toEqual({ symbol: 'BTCUSDT', interval: '1h', startTime: String(START), endTime: String(NOW), limit: '48' });
+  });
+  it('sem a vela de abertura do dia (a lista começa depois), vazia, fonte fora do ar ou que lança: null — nunca lança', async () => {
+    expect(await loadBtcDay({ dayStartMs: START, nowMs: NOW, fetchImpl: ok(hourly(10, { skipFirst: true })), sleep: async () => {} })).toBeNull();
+    expect(await loadBtcDay({ dayStartMs: START, nowMs: NOW, fetchImpl: ok('[]'), sleep: async () => {} })).toBeNull();
+    expect(await loadBtcDay({ dayStartMs: START, nowMs: NOW, fetchImpl: vi.fn(async () => ({ ok: false, status: 500, text: async () => '' })), sleep: async () => {} })).toBeNull();
+    expect(await loadBtcDay({ dayStartMs: START, nowMs: NOW, fetchImpl: vi.fn(async () => { throw new Error('boom https://x?key=SEGREDO'); }), sleep: async () => {} })).toBeNull();
   });
 });
