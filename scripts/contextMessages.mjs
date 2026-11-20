@@ -7,6 +7,7 @@ import {
 } from '../src/lib/marketContextBand.js';
 import { summarizeReactions } from './contextBtcHistory.mjs';
 import { describeFomc } from './contextConsensus.mjs';
+import { fmt as fmtRate, POLICY_RATE_SOURCE_NOTE } from './contextRates.mjs';
 import { dayBoundsBrt } from './contextAlert.mjs';
 
 /** Categorias de aviso. `teste` é sempre permitida (é o botão manual); as outras só se estiverem na variável do repositório. */
@@ -131,9 +132,10 @@ export function buildReactionBlock(label, rows) {
 /**
  * Aviso COMPLETO antes do evento: o que é, a importância, o valor anterior (BLS), onde a projeção do mercado está indisponível e o que o BTC fez nas últimas
  * divulgações do mesmo tipo. Sem operações abertas (decisão do usuário em 01/11: ler o banco acordaria o Neon).
+ * `policyRate` (só FOMC, addendum 42): a faixa-alvo atual dos juros lida do NY Fed (`parseEffr`); é o "Anterior" oficial do FOMC e traz a linha de atribuição dos termos de uso.
  * @param {{ reactions?: Array<{ date: string, reaction: object|null }>|null }} [extra]
  */
-export function buildPreEventBriefing(event, nowMs, { reactions = null, consensus = null } = {}) {
+export function buildPreEventBriefing(event, nowMs, { reactions = null, consensus = null, policyRate = null } = {}) {
   const label = EVENT_LABELS[event.kind];
   const meta = EVENT_META[event.kind];
   const lines = [
@@ -147,20 +149,27 @@ export function buildPreEventBriefing(event, nowMs, { reactions = null, consensu
   if (event.kind === 'PCE' && (v?.previous || v?.core_previous)) {
     // As duas medidas, sempre lado a lado (addendum 33): o usuário não precisa saber qual linha do calendário é qual.
     lines.push(`<b>Anterior (${source}):</b> PCE cheio ${escapeHtml(v.previous ?? 'indisponível')} · ${CORE_LABEL} ${escapeHtml(v.core_previous ?? 'indisponível')}`);
+  } else if (event.kind === 'FOMC' && policyRate) {
+    // FOMC (addendum 42): o "Anterior" oficial é a faixa-alvo ATUAL dos juros (a que vale até a decisão), lida do NY Fed. A taxa efetiva vai ao lado como fato.
+    lines.push(`<b>Anterior (faixa-alvo dos juros, NY Fed):</b> ${fmtRate(policyRate.from)} a ${fmtRate(policyRate.to)} · taxa efetiva ${fmtRate(policyRate.effective)} (em ${dayMonth(policyRate.date)})`);
   } else if (v?.previous) lines.push(`<b>Anterior (${source ?? 'BLS'}):</b> ${escapeHtml(v.previous)}`);
   else if (consensus?.previous) lines.push(`<b>Anterior (informado por você):</b> ${escapeHtml(consensus.previous)}`);
   else if (source) lines.push(`<b>Anterior:</b> indisponível agora (${source === 'BEA' ? 'a BEA' : `o ${source}`} não respondeu na última coleta).`);
   else lines.push('<b>Anterior:</b> sem fonte oficial automática para este tipo (você pode registrar no botão "Registrar projeção do Contexto").');
   if (consensus?.projection) {
     // FOMC: a projeção é a TAXA (como o TradingView mostra); com o "Anterior" registrado, diz o que ela implica (fato aritmético sobre os dois números do usuário).
-    const fomc = event.kind === 'FOMC' ? describeFomc(consensus.projection, consensus.previous) : null;
+    // Sem o "Anterior" digitado, usa o limite superior da faixa-alvo do NY Fed (é o número que o calendário do TradingView mostra como juros atual) e diz isso.
+    const fomcBase = consensus.previous ?? (policyRate ? fmtRate(policyRate.to) : null);
+    const fomc = event.kind === 'FOMC' ? describeFomc(consensus.projection, fomcBase) : null;
+    const fomcNote = fomc && !consensus.previous ? ' (contra o limite superior da faixa atual)' : '';
     const pce = event.kind === 'PCE' ? ` (${PCE_PROJECTION_NOTE})` : '';
-    lines.push(`<b>Projeção (informada por você):</b> ${escapeHtml(consensus.projection)}${fomc ? ` — ${escapeHtml(fomc)}` : ''}${pce} — não é o consenso oficial do mercado.`, '');
+    lines.push(`<b>Projeção (informada por você):</b> ${escapeHtml(consensus.projection)}${fomc ? ` — ${escapeHtml(fomc)}${fomcNote}` : ''}${pce} — não é o consenso oficial do mercado.`, '');
   } else {
     lines.push('<b>Projeção do mercado (consenso):</b> indisponível — é dado pago; o sistema não inventa um número. Você pode registrar a sua no botão "Registrar projeção do Contexto" (Actions).', '');
   }
   lines.push(...buildReactionBlock(label, reactions), '');
   lines.push('Sem previsão de direção (alta ou baixa): com poucos casos isso seria precisão inventada.', NEUTRAL_NOTE);
+  if (event.kind === 'FOMC' && policyRate) lines.push(POLICY_RATE_SOURCE_NOTE); // atribuição pedida pelos termos de uso do NY Fed
   return lines.join('\n');
 }
 

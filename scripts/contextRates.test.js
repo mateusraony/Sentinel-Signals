@@ -42,9 +42,9 @@ describe('fetchPolicyRate e describePolicyRate', () => {
     expect((await fetchPolicyRate({ fetchImpl: async () => new Response('{}'), nowMs: NOW })).reason).toBe('formato');
     expect(await fetchPolicyRate({ fetchImpl: async (u) => { throw new Error(`falha ${u}`); }, nowMs: NOW })).toEqual({ rate: null, reason: 'rede' });
   });
-  it('a linha do resumo diz que é só observação e traz a faixa; a falha diz por quê', () => {
+  it('a linha do resumo diz onde a taxa é usada e traz a faixa; a falha diz por quê', () => {
     expect(describePolicyRate({ rate: { date: '2026-11-18', from: 3.75, to: 4, effective: 3.83 }, reason: 'ok' }))
-      .toBe('Juros do Fed (NY Fed, só observação: ainda NÃO entra no events.json nem no Telegram): faixa-alvo de 3,75% a 4,00% (limite superior 4,00%), taxa efetiva 3,83% em 2026-11-18.');
+      .toBe('Juros do Fed (NY Fed; usados só no aviso do Telegram antes do FOMC, nunca no events.json): faixa-alvo de 3,75% a 4,00% (limite superior 4,00%), taxa efetiva 3,83% em 2026-11-18.');
     expect(describePolicyRate({ rate: null, reason: 'formato' })).toMatch(/a resposta não está no formato esperado\.$/);
     expect(describePolicyRate(null)).toBeNull();
   });
