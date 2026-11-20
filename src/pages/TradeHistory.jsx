@@ -29,6 +29,8 @@ import { buildEntryContext, buildPlanVsActual, buildResultBreakdown, costModelNo
 import { explainOperationDecision, legacyClosedOperationText } from '@/lib/decisionExplanation';
 import { useCopyToClipboard, formatTradeOpLine } from '@/lib/clipboardText';
 import { QueryErrorState } from '@/components/QueryErrorState';
+import OpEventMarker from '@/components/trades/OpEventMarker';
+import { useOperationEvents } from '@/hooks/useOperationEvents';
 import { outcomeColor } from '@/lib/outcomeColor';
 import { winRateColor } from '@/lib/metricColorRanges';
 
@@ -141,7 +143,7 @@ function TradeContext({ op }) {
   );
 }
 
-function HistoryCard({ op }) {
+function HistoryCard({ op, eventCtx = null }) {
   const [expanded, setExpanded] = useState(false);
   const isBuy = op.side === 'BUY';
   const pnl = calcRealizedPnlPct(op);
@@ -254,6 +256,8 @@ function HistoryCard({ op }) {
                 </TooltipContent>
               </Tooltip>
             )}
+            {/* Fase 5 do Contexto (item 285): aberta durante CPI, Payroll ou FOMC, só com dado confiável. Correlação, nunca causa. */}
+            <OpEventMarker op={op} ctx={eventCtx} />
           </div>
           {/* Por quê — sempre visível, sem precisar expandir (achado de
               clareza acima). Trunca em 2 linhas em telas estreitas em vez de
@@ -559,6 +563,7 @@ export default function TradeHistory() {
   const [showChart, setShowChart] = useState(true);
   const [showOverview, setShowOverview] = useState(true); // item 293 — "Visão geral" (relatório + "Como terminaram")
   const [sortBy, setSortBy] = useState('date_desc');
+  const eventCtx = useOperationEvents();
 
   const { data: operations = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['trade-history'],
@@ -843,7 +848,7 @@ export default function TradeHistory() {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map(op => <HistoryCard key={op.id} op={op} />)}
+          {filtered.map(op => <HistoryCard key={op.id} op={op} eventCtx={eventCtx} />)}
         </div>
       )}
     </div>
