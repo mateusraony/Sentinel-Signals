@@ -631,3 +631,51 @@ describe('TradeHistory — contexto da entrada, plano × realizado e formação 
     expect(resultado.textContent).not.toMatch(/\dR\b/);
   });
 });
+
+// Fase 5 do Contexto de Mercado (item 285, addendum 41): o mesmo selo "Aberta durante o CPI (10/11)" da aba Trades, agora também aqui.
+describe('TradeHistory — selo "Aberta durante <evento>"', () => {
+  const MESES = ['2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
+  const mensal = (dia) => MESES.map((m) => `${m}-${dia}`).reverse();
+  const HISTORY = {
+    version: 1,
+    dates: {
+      CPI: mensal('10'), NFP: mensal('06'), PPI: mensal('13'), PCE: mensal('12'),
+      FOMC: ['2026-10-28', '2026-09-16', '2026-07-29', '2026-06-17', '2026-04-29', '2026-03-18', '2026-01-28', '2025-12-10'],
+    },
+  };
+  const FECHADA = (id, symbol, abre, fecha) => ({
+    id, asset_id: `a_${id}`, symbol, side: 'BUY', status: 'STOP_HIT', entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 110, tp2: 120,
+    exit_price: 95, tp1_hit: false, partial_percent: 50, created_date: abre, entry_candle_time_15m: abre, stop_hit_at: fecha, closed_at: fecha,
+  });
+  const COM_CPI = FECHADA('h_cpi', 'BTCUSDT', '2026-11-09T20:00:00.000Z', '2026-11-11T08:00:00.000Z');
+  const SEM_EVENTO = FECHADA('h_livre', 'ETHUSDT', '2026-11-14T00:00:00.000Z', '2026-11-15T00:00:00.000Z');
+  const ok = (body) => ({ ok: true, json: async () => body });
+
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  async function abrir(ops, fetchImpl) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-19T12:00:00Z'));
+    vi.stubGlobal('fetch', fetchImpl);
+    mockBackend(ops);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+    await screen.findAllByText('BTC/USDT');
+  }
+
+  it('só a operação aberta durante o CPI ganha o selo (e a dica diz que é só coincidência)', async () => {
+    await abrir([COM_CPI, SEM_EVENTO], async (url) => (String(url).endsWith('history.json') ? ok(HISTORY) : ok([])));
+    const selo = await screen.findByText('Aberta durante o CPI (10/11)');
+    expect(document.querySelectorAll('[data-op-event-marker]').length).toBe(1);
+    expect(selo.closest('[data-op-event-marker]').getAttribute('aria-label')).toMatch(/não diz que o evento mexeu no resultado/);
+    // o selo está no card do BTC, não no do ETH
+    expect(within(selo.closest('div.rounded-xl')).getByText('BTC/USDT')).toBeTruthy();
+  });
+
+  it('sem o histórico de datas a tela é a mesma de sempre, sem selo', async () => {
+    await abrir([COM_CPI], async () => ({ ok: false, status: 404 }));
+    await new Promise((r) => setTimeout(r, 50)); // dá tempo da busca falhar e a tela reagir
+    expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-op-event-marker]')).toBeNull();
+  });
+});

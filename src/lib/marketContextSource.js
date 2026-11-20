@@ -26,3 +26,17 @@ export async function fetchMarketContext({ fetchImpl = globalThis.fetch } = {}) 
   try { checkedAtMs = parseCheckedAt(await getJson('status.json', fetchImpl)); } catch { checkedAtMs = null; }
   return { events, checkedAtMs };
 }
+
+/**
+ * Os dados do marcador "aberta durante <evento>" do Histórico (Fase 5): `events.json` (os recentes) e `history.json` (as datas passadas) da branch pública
+ * `context-data`. Sem o histórico não há marcador (devolve null): ele cobre meses que o `events.json` já não guarda. Nunca lança por falta do histórico.
+ * @returns {Promise<{ events: object[], history: object }|null>}
+ */
+export async function fetchOperationEventsSource({ fetchImpl = globalThis.fetch } = {}) {
+  if (typeof fetchImpl !== 'function') return null;
+  let history;
+  try { history = await getJson('history.json', fetchImpl); } catch { return null; }
+  let events = [];
+  try { events = parseEvents(await getJson('events.json', fetchImpl)); } catch { events = []; }
+  return { events, history };
+}

@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   STALE_AFTER_MS, JUST_RELEASED_MS, MAX_EVENTS_SHOWN, APPROACH_HORIZON_MS, BAND_STATES, EVENT_LABELS, EVENT_META, IMPACT_LABELS,
-  CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, MOVE_COLORS, parseEventValues, eventValueSlots,
+  CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, MOVE_COLORS, parseEventValues, eventValueSlots, eventResultRows, agencyOf, hasResultValues, PCE_GROUPS,
   RESULT_CARD_MS, RESULT_KINDS, HISTORY_SHOWN, splitValueText, valueNumber, compareValues, resultRows, resultEvents, releaseHistory,
   parseEvents, parseCheckedAt, upcomingEvents, bandState, formatCountdown, formatCountdownBare, formatEventWhen, formatAge,
   isBandEnabled, setBandEnabled, parseAlt, shiftMonth, GAP_REASONS, KIND_EMOJI, CONTEXT_EMOJI,
@@ -520,7 +520,7 @@ describe('resultEvents e releaseHistory — quem vira cartão de resultado e que
 
   it('constantes', () => {
     expect(RESULT_CARD_MS).toBe(24 * HORA);
-    expect(RESULT_KINDS).toEqual(['CPI', 'PPI', 'NFP']);
+    expect(RESULT_KINDS).toEqual(['CPI', 'PPI', 'NFP', 'PCE']);
     expect(HISTORY_SHOWN).toBe(5);
   });
 
@@ -531,13 +531,13 @@ describe('resultEvents e releaseHistory — quem vira cartão de resultado e que
     expect(resultEvents([b, limite, a], NOW).map((x) => x.id)).toEqual(['NFP-a', 'CPI-b', 'PPI-c']);
   });
 
-  it('resultEvents não inclui: futuro, depois de 24 h, a confirmar, PCE/FOMC, sem número, nem lixo', () => {
+  it('resultEvents não inclui: futuro, depois de 24 h, a confirmar, FOMC, sem número, nem lixo', () => {
     const lixo = [null, 7, {}, { kind: 'CPI' }];
     const fora = [
       e('futuro', 'CPI', -HORA),
       e('velho', 'CPI', 24 * HORA + 1),
       e('talvez', 'CPI', HORA, { previous: '+0,3% m/m', source: 'BLS' }, 'a_confirmar'),
-      e('pce', 'PCE', HORA),
+      e('pce-sem-numero', 'PCE', HORA, { previous: null, actual: null, source: 'BEA' }),
       e('fomc', 'FOMC', HORA),
       e('sem-numero', 'CPI', HORA, null),
       e('numeros-vazios', 'CPI', HORA, { previous: null, actual: null, source: null }),
@@ -663,27 +663,78 @@ describe('MOVE_COLORS — verde (subiu), vermelho (caiu) e neutro (sem variaçã
   });
 });
 
-// Addendum 33: o PCE ganhou números oficiais (BEA), mas por enquanto só o Telegram os mostra — a tela fica exatamente como era.
-describe('PCE com números da BEA: o leitor guarda o núcleo, a tela não muda', () => {
+// Addendum 33/38: o PCE tem números oficiais (BEA) — o leitor guarda o núcleo e a tela mostra as duas medidas lado a lado.
+describe('PCE com números da BEA: o leitor guarda o núcleo e a tela mostra cheio e núcleo', () => {
   const NOW = Date.parse('2026-12-27T12:00:00Z');
   const pce = {
     id: 'PCE-2026-11-25', kind: 'PCE', status: 'oficial', startsAtUtc: '2026-11-25T13:30:00.000Z', startMs: Date.parse('2026-11-25T13:30:00.000Z'),
-    values: { previous: '+0,5% m/m', actual: '+0,3% m/m', core_previous: '+0,3% m/m', core_actual: '+0,2% m/m', source: 'BEA' },
+    values: { previous: '+0,5% m/m · +2,8% a/a', actual: '+0,3% m/m · +2,9% a/a', core_previous: '+0,3% m/m · +3,0% a/a', core_actual: '+0,2% m/m · +3,1% a/a', source: 'BEA' },
   };
   it('parseEventValues guarda o núcleo (o aviso precisa dele); "Atual"/"Revisado" do núcleo só junto do "Atual"', () => {
-    expect(parseEventValues(pce.values)).toMatchObject({ core_previous: '+0,3% m/m', core_actual: '+0,2% m/m', source: 'BEA' });
+    expect(parseEventValues(pce.values)).toMatchObject({ core_previous: '+0,3% m/m · +3,0% a/a', core_actual: '+0,2% m/m · +3,1% a/a', source: 'BEA' });
     const semAtual = parseEventValues({ previous: '+0,5% m/m', core_previous: '+0,3% m/m', core_actual: '+0,2% m/m', core_revised: '+0,1% m/m', source: 'BEA' });
     expect(semAtual.core_actual).toBeUndefined();
     expect(semAtual.core_revised).toBeUndefined();
     expect(parseEventValues({ core_previous: '+0,3% m/m', source: 'BEA' })).toMatchObject({ core_previous: '+0,3% m/m' });
   });
-  it('a faixa não ganha espaço de número para o PCE e a lista "Últimas divulgações" não o inclui (tela igual à de antes)', () => {
-    expect(eventValueSlots(pce)).toEqual([]);
-    expect(releaseHistory([pce], NOW)).toEqual([]);
-    expect(resultEvents([pce], Date.parse('2026-11-25T14:00:00Z'))).toEqual([]);
-    // Os do BLS continuam iguais.
-    const nfp = { ...pce, id: 'NFP-2026-11-06', kind: 'NFP', values: { previous: '+119 mil', actual: '+50 mil', source: 'BLS' } };
-    expect(eventValueSlots(nfp).length).toBe(2);
-    expect(releaseHistory([nfp], NOW).length).toBe(1);
+
+  it('o órgão de cada tipo: PCE é da BEA, o resto do BLS (e tipo desconhecido cai no BLS)', () => {
+    expect(['CPI', 'PPI', 'NFP', 'PCE', 'FOMC', 'XYZ'].map(agencyOf)).toEqual(['BLS', 'BLS', 'BLS', 'BEA', 'BLS', 'BLS']);
+  });
+
+  it('hasResultValues: o PCE com só o núcleo conta; o CPI com só o núcleo NÃO', () => {
+    expect(hasResultValues({ kind: 'PCE', values: { core_previous: '+0,3% m/m' } })).toBe(true);
+    expect(hasResultValues({ kind: 'CPI', values: { core_previous: '+0,3% m/m' } })).toBe(false);
+    expect(hasResultValues({ kind: 'PCE', values: {} })).toBe(false);
+    expect(hasResultValues(null)).toBe(false);
+  });
+
+  it('eventValueSlots do PCE: cada número diz se é cheio ou núcleo; sem o Atual aparece "aguardando"', () => {
+    expect(eventValueSlots(pce).map((x) => [x.key, x.label])).toEqual([
+      ['previous', 'Anterior · PCE cheio'], ['core_previous', 'Anterior · núcleo'], ['actual', 'Atual · PCE cheio'], ['core_actual', 'Atual · núcleo'],
+    ]);
+    const antes = { ...pce, values: { previous: pce.values.previous, core_previous: pce.values.core_previous, source: 'BEA' } };
+    expect(eventValueSlots(antes).map((x) => [x.key, x.text === null])).toEqual([['previous', false], ['core_previous', false], ['actual', true]]);
+    // BLS continua igual.
+    expect(eventValueSlots({ kind: 'NFP', values: { previous: '+119 mil', actual: '+50 mil', source: 'BLS' } }).map((x) => x.label)).toEqual(['Anterior', 'Atual']);
+  });
+
+  it('eventResultRows do PCE: 4 linhas com o nome da medida, na ordem cheio e núcleo, comparando cada uma com o SEU anterior', () => {
+    const rows = eventResultRows(pce);
+    expect(rows.map((r) => [r.key, r.label, r.previous, r.actual, r.direction])).toEqual([
+      ['headline-mom', 'PCE cheio · no mês', '+0,5%', '+0,3%', 'abaixo'],
+      ['headline-yoy', 'PCE cheio · em 12 meses', '+2,8%', '+2,9%', 'acima'],
+      ['core-mom', 'Núcleo · no mês', '+0,3%', '+0,2%', 'abaixo'],
+      ['core-yoy', 'Núcleo · em 12 meses', '+3,0%', '+3,1%', 'acima'],
+    ]);
+  });
+
+  it('eventResultRows do PCE: cada linha diz de que medida é (group) e o nome curto (measure); PCE_GROUPS explica as duas', () => {
+    const rows = eventResultRows(pce);
+    expect(rows.map((r) => [r.group, r.measure])).toEqual([['headline', 'No mês'], ['headline', 'Em 12 meses'], ['core', 'No mês'], ['core', 'Em 12 meses']]);
+    expect(PCE_GROUPS.headline).toEqual({ title: 'PCE cheio', hint: 'todos os itens' });
+    expect(PCE_GROUPS.core).toEqual({ title: 'Núcleo', hint: 'sem alimentos e energia' });
+  });
+
+  it('eventResultRows do PCE: sem núcleo não há linha de núcleo; só núcleo não inventa o cheio; "Revisado" do núcleo fica no núcleo', () => {
+    expect(eventResultRows({ ...pce, values: { previous: '+0,5% m/m', source: 'BEA' } }).map((r) => r.key)).toEqual(['headline-mom']);
+    expect(eventResultRows({ ...pce, values: { core_previous: '+0,3% m/m', source: 'BEA' } }).map((r) => r.key)).toEqual(['core-mom']);
+    const rev = eventResultRows({ ...pce, values: { ...pce.values, revised: '+0,4% m/m', core_revised: '+0,1% m/m' } });
+    expect(rev.find((r) => r.key === 'headline-mom').revised).toBe('+0,4%');
+    expect(rev.find((r) => r.key === 'core-mom').revised).toBe('+0,1%');
+  });
+
+  it('eventResultRows dos outros tipos é igual a resultRows (nada muda para CPI/PPI/Payroll)', () => {
+    const cpi = { kind: 'CPI', reference: '2026-10', values: { previous: '+0,3% m/m · +3,0% a/a', actual: '+0,5% m/m · +4,0% a/a', source: 'BLS' } };
+    expect(eventResultRows(cpi)).toEqual(resultRows(cpi.values, '2026-10'));
+    expect(eventResultRows({ kind: 'PCE' })).toEqual([]);
+    expect(eventResultRows(null)).toEqual([]);
+  });
+
+  it('o PCE vira cartão de resultado (≤ 24 h) e depois entra na lista "Últimas divulgações"; o FOMC nunca', () => {
+    expect(resultEvents([pce], Date.parse('2026-11-25T14:00:00Z')).map((x) => x.id)).toEqual(['PCE-2026-11-25']);
+    expect(resultEvents([{ ...pce, values: { core_previous: '+0,3% m/m', source: 'BEA' } }], Date.parse('2026-11-25T14:00:00Z')).length).toBe(1);
+    expect(releaseHistory([pce], NOW).map((x) => x.id)).toEqual(['PCE-2026-11-25']);
+    expect(releaseHistory([{ ...pce, kind: 'FOMC' }], NOW)).toEqual([]);
   });
 });

@@ -900,3 +900,75 @@ describe('Trades — resumo do topo, filtros e histórico (item 304)', () => {
     });
   });
 });
+
+// Fase 5 do Contexto de Mercado (item 285, addendum 41): o selo "Aberta durante o CPI (10/11)" no "Histórico Completo". Correlação, nunca causa;
+// só quando há dado confiável; o Histórico nunca depende dele (sem rede = sem selo, tela igual).
+describe('Trades — selo "Aberta durante <evento>" no Histórico Completo', () => {
+  const MESES = ['2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
+  const mensal = (dia) => MESES.map((m) => `${m}-${dia}`).reverse();
+  const HISTORY = {
+    version: 1,
+    dates: {
+      CPI: mensal('10'), NFP: mensal('06'), PPI: mensal('13'), PCE: mensal('12'),
+      FOMC: ['2026-10-28', '2026-09-16', '2026-07-29', '2026-06-17', '2026-04-29', '2026-03-18', '2026-01-28', '2025-12-10'],
+    },
+  };
+  const FECHADA = (id, abre, fecha) => ({
+    id, asset_id: 'a3', symbol: 'SOLUSDT', side: 'BUY', status: 'STOP_HIT', timeframe: '15m', signal_timeframe: '4h',
+    entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 110, tp2: 120, exit_price: 95, tp1_hit: false,
+    created_date: abre, entry_candle_time_15m: abre, stop_hit_at: fecha, closed_at: fecha,
+    decision_snapshot: { decision: 'EXIT', reason_code: 'stop_hit_pre_tp1', facts: { stop: 95, stop_check_price: 94.8 }, data_status: 'LIVE' },
+  });
+  const COM_CPI = FECHADA('op_cpi', '2026-11-09T20:00:00.000Z', '2026-11-11T08:00:00.000Z');
+  const SEM_EVENTO = FECHADA('op_livre', '2026-11-14T00:00:00.000Z', '2026-11-15T00:00:00.000Z');
+  const ok = (body) => ({ ok: true, json: async () => body });
+
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-19T12:00:00Z')); });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  async function abrir(operations, fetchImpl) {
+    vi.stubGlobal('fetch', fetchImpl);
+    mockBackend({ operations, signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+    fireEvent.click(await screen.findByText('Histórico Completo'));
+    await screen.findAllByText(/tocou o stop antes de TP1/i);
+  }
+  const fetchOk = async (url) => (String(url).endsWith('history.json') ? ok(HISTORY) : ok([]));
+
+  it('operação aberta quando saiu o CPI mostra o selo, com a dica "só coincidência"; a sem evento não mostra', async () => {
+    await abrir([COM_CPI, SEM_EVENTO], fetchOk);
+    const selo = await screen.findByText('Aberta durante o CPI (10/11)');
+    expect(selo).toBeTruthy();
+    expect(document.querySelectorAll('[data-op-event-marker]').length).toBe(1);
+    const linha = selo.closest('[data-history-row]');
+    expect(linha.getAttribute('data-history-row')).toBe('op_cpi');
+    expect(selo.closest('[data-op-event-marker]').getAttribute('aria-label')).toMatch(/não diz que o evento mexeu no resultado/);
+  });
+
+  it('sem o histórico (rede falhou) a tela é a mesma de sempre e NENHUM selo aparece', async () => {
+    await abrir([COM_CPI], async () => ({ ok: false, status: 404 }));
+    expect(document.querySelector('[data-op-event-marker]')).toBeNull();
+    expect(screen.getByText(/tocou o stop antes de TP1/i)).toBeTruthy();
+  });
+
+  it('operação que toca um mês sem CPI no histórico não ganha selo (nada é afirmado)', async () => {
+    const semCpiJulho = { ...HISTORY, dates: { ...HISTORY.dates, CPI: HISTORY.dates.CPI.filter((d) => !d.startsWith('2026-07')) } };
+    const naPausa = FECHADA('op_jul', '2026-07-20T00:00:00.000Z', '2026-07-30T00:00:00.000Z'); // inclui o FOMC de 29/07
+    await abrir([naPausa], async (url) => (String(url).endsWith('history.json') ? ok(semCpiJulho) : ok([])));
+    expect(document.querySelector('[data-op-event-marker]')).toBeNull();
+  });
+
+  it('o histórico de datas só é buscado depois de abrir o "Histórico Completo"', async () => {
+    const f = vi.fn(fetchOk);
+    vi.stubGlobal('fetch', f);
+    mockBackend({ operations: [COM_CPI], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+    await screen.findByText('Histórico Completo');
+    expect(f.mock.calls.some(([u]) => String(u).endsWith('history.json'))).toBe(false);
+    fireEvent.click(screen.getByText('Histórico Completo'));
+    await screen.findByText('Aberta durante o CPI (10/11)');
+    expect(f.mock.calls.some(([u]) => String(u).endsWith('history.json'))).toBe(true);
+  });
+});

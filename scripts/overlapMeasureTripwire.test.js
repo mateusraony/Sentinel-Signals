@@ -42,7 +42,7 @@ describe('tripwire: medição da Fase 5 é só leitura (item 285)', () => {
   });
 
   it('os arquivos da medição estão limpos', () => {
-    for (const rel of ['scripts/overlap-measure.mjs', 'scripts/overlapMeasure.mjs', 'src/lib/contextOverlap.js']) {
+    for (const rel of ['scripts/overlap-measure.mjs', 'scripts/overlapMeasure.mjs', 'src/lib/contextOverlap.js', 'src/lib/contextEvents.js', 'src/lib/opEventMarkers.js']) {
       expect(problemasDoScript(ler(rel)), rel).toEqual([]);
     }
   });
@@ -62,7 +62,7 @@ describe('tripwire: medição da Fase 5 é só leitura (item 285)', () => {
 
   it('o motor não importa a medição nem o módulo de sobreposição', () => {
     for (const rel of ['src/lib/scanner.js', 'src/lib/opExitRules.js', 'src/lib/opTransition.js', 'src/lib/tradeMetrics.js']) {
-      expect(ler(rel), rel).not.toMatch(/contextOverlap|overlapMeasure|overlap-measure/);
+      expect(ler(rel), rel).not.toMatch(/contextOverlap|contextEvents|opEventMarkers|useOperationEvents|OpEventMarker|overlapMeasure|overlap-measure/);
     }
   });
 

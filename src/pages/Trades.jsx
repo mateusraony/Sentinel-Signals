@@ -20,6 +20,8 @@ import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
 import PerformanceReport from '@/components/trades/PerformanceReport';
 import TradesNowSummary from '@/components/trades/TradesNowSummary';
 import TradesFilterBar from '@/components/trades/TradesFilterBar';
+import OpEventMarker from '@/components/trades/OpEventMarker';
+import { useOperationEvents } from '@/hooks/useOperationEvents';
 import { EMPTY_FILTERS, applyTradeFilters, countActiveFilters, summarizeActiveOps } from '@/lib/tradesOverview';
 import { timeframeChipLabel } from '@/lib/tradeStory';
 import { formatSignedR } from '@/lib/stopGuarantee';
@@ -391,7 +393,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
  * (`hidden sm:block`), o selo dizia só o gráfico da entrada ("15M") e o resultado vinha sem o R. Agora, em qualquer tela:
  * o que foi, quanto deu (% e R), quando abriu e fechou (e quanto durou), por onde entrou e saiu, e o porquê.
  */
-function HistoryRow({ op }) {
+function HistoryRow({ op, eventCtx = null }) {
   const isBuy = op.side === 'BUY';
   const exitPrice = getExitPrice(op);
   const pnlPct = calcRealizedPnlPct(op);
@@ -465,6 +467,8 @@ function HistoryRow({ op }) {
           {exitPrice ? ` → saída $${formatPrice(exitPrice)}` : ''}
         </span>
       </div>
+      {/* Fase 5 do Contexto (item 285): só aparece se a operação ficou aberta durante CPI, Payroll ou FOMC e há dado confiável. Correlação, nunca causa. */}
+      <OpEventMarker op={op} ctx={eventCtx} />
       <p className="text-9px font-mono leading-relaxed line-clamp-2" style={{ color: 'rgba(255,255,255,0.5)' }}>
         💡 {whyText}
       </p>
@@ -495,6 +499,7 @@ function UpdatedAgo({ dataUpdatedAt }) {
 
 export default function Trades() {
   const [showHistory, setShowHistory] = useState(false);
+  const eventCtx = useOperationEvents({ enabled: showHistory });
   const [showInfoSignals, setShowInfoSignals] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showChart, setShowChart] = useState(true);
@@ -954,7 +959,7 @@ export default function Trades() {
                     Ver a história de cada operação na aba Histórico →
                   </Link>
                 </div>
-                {shownHistory.map(op => <HistoryRow key={op.id} op={op} />)}
+                {shownHistory.map(op => <HistoryRow key={op.id} op={op} eventCtx={eventCtx} />)}
                 {operations.length >= OPERATIONS_PAGE_SIZE && (
                   <p className="text-9px font-mono pt-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
                     Esta página carrega só as {OPERATIONS_PAGE_SIZE} operações mais recentes (ativas e fechadas); as mais antigas não entram nesta lista nem nos números acima.
