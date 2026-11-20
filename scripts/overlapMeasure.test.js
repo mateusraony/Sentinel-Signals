@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { eventInstant, buildEvents, findGaps, gateVerdict, formatReport, medianHours, GATE_FRACTION } from './overlapMeasure.mjs';
 import { run } from './overlap-measure.mjs';
+import { KIND_TIMES as KIND_TIMES_CALENDAR } from './contextCalendar.mjs';
+import { KIND_TIMES as KIND_TIMES_PAINEL } from '../src/lib/contextEvents.js';
 import { overlapStats } from '../src/lib/contextOverlap.js';
 
 const D = (s) => Date.parse(s);
@@ -20,6 +22,12 @@ const HISTORY = {
   },
 };
 const semMes = (kind, mes) => ({ ...HISTORY, dates: { ...HISTORY.dates, [kind]: HISTORY.dates[kind].filter((d) => !d.startsWith(mes)) } });
+
+describe('a tabela de horas do painel é a mesma do calendário do coletor', () => {
+  it('KIND_TIMES de src/lib/contextEvents.js == scripts/contextCalendar.mjs', () => {
+    expect(KIND_TIMES_PAINEL).toEqual(KIND_TIMES_CALENDAR);
+  });
+});
 
 describe('eventInstant', () => {
   it('converte pelo horário de Nova York, com horário de verão (CPI 08:30 ET)', () => {
