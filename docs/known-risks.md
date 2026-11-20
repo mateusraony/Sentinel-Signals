@@ -34422,6 +34422,12 @@ Pedido do usuário ("onde consulto o resultado depois que sair?" → "dá para d
 - **Imagens (computador e celular, tela REAL do Dashboard renderizada localmente com dados de EXEMPLO):** depois do número, antes do número, próximo evento e "Últimas divulgações". Aguardam o "aprovado".
 - **Limites [honesto]:** o "primeiro uso real" do PCE na tela é 25/11 (PCE de outubro); os números das imagens são de exemplo, não da BEA. A projeção digitada (consenso) segue sem ser comparada no PCE (não dá para saber de qual linha do TradingView veio).
 
+**Addendum 40 (2026-11-20) — conferência da 1ª coleta normal depois do #594 (execução 44642431011, 00:01 UTC) [verificado no log e na branch `context-data`].**
+- **Calendário do Fed:** 2021–2027 com 8 reuniões cada; 2026 bate com a lista fixa; **2027 entrou no `events.json` como 8 eventos `oficial`** (27/01, 17/03, 28/04, 09/06, 28/07, 15/09, 27/10, 17/11, com a hora certa de horário de verão/inverno: 19:00Z em janeiro e novembro, 18:00Z de março a outubro) e **`FOMC-2026-12-09` segue `oficial`**; sem nenhum evento repetido (19 eventos publicados, ids únicos).
+- **Juros do NY Fed (observação):** o formato real do JSON funcionou — faixa-alvo de 3,75% a 4,00%, taxa efetiva 3,88% em 18/11/2026. Ainda NÃO entra no `events.json` nem no Telegram; decidir com o usuário se vira o "Anterior" do FOMC (falta também ler os termos de uso do NY Fed).
+- **Sem agitação:** o commit da coleta mudou só `status.json` (a hora da checagem); `events.json` e `history.json` inalterados. `alerts-sent.json` ainda não existe na branch: nenhum aviso automático foi enviado (nenhuma divulgação de data firme desde o #594), nada estranho.
+- **Segue não verificado:** as 8 datas de 2027 contra uma 2ª fonte (vêm só da página do Fed); o 1º FOMC gerado por essas datas é o de 09/12/2026 (a lista fixa e o Fed concordam).
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 > **[SUPERADO EM PARTE — 31/10/2026]** O "desenho aprovado para a recuperação [plano, nada implementado]" e a lista
