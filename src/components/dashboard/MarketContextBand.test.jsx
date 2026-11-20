@@ -531,14 +531,21 @@ describe('MarketContextBand — resultado', () => {
     const PCE_ANTES = { previous: '+0,3% m/m · +2,8% a/a', core_previous: '+0,2% m/m · +3,0% a/a', source: 'BEA' };
     const PCE_DEPOIS = { ...PCE_ANTES, actual: '+0,5% m/m · +2,9% a/a', core_actual: '+0,2% m/m · +3,1% a/a' };
 
-    it('antes do número: 4 fichas com o nome da medida, "aguardando", e o órgão certo (a BEA, nunca o BLS)', async () => {
+    it('antes do número: 2 cartões (cheio e núcleo) com 2 linhas cada, "aguardando", e o órgão certo (a BEA, nunca o BLS)', async () => {
       dados([saiu('PCE-x', 'PCE', 12 * 60000, PCE_ANTES)]);
       const { container } = renderPage(<MarketContextBand />);
       const card = await screen.findByRole('article', { name: 'Resultado' });
+      expect(within(card).getByRole('region', { name: 'PCE cheio' })).toBeTruthy();
+      expect(within(card).getByRole('region', { name: 'Núcleo' })).toBeTruthy();
+      expect(within(card).getByText('sem alimentos e energia')).toBeTruthy(); // o que é o núcleo, em fato
       for (const nome of ['PCE cheio · no mês', 'PCE cheio · em 12 meses', 'Núcleo · no mês', 'Núcleo · em 12 meses']) {
-        expect(within(card).getByRole('region', { name: nome })).toBeTruthy();
+        expect(within(card).getByRole('group', { name: nome })).toBeTruthy();
       }
-      expect(within(within(card).getByRole('region', { name: 'Núcleo · em 12 meses' })).getByText('+3,0%')).toBeTruthy();
+      const nucleo12 = within(card).getByRole('group', { name: 'Núcleo · em 12 meses' });
+      expect(within(nucleo12).getByText('+3,0%')).toBeTruthy();
+      expect(within(nucleo12).getByText('aguardando')).toBeTruthy();
+      // cheio e núcleo não se misturam: o +2,8% do cheio não está na linha do núcleo
+      expect(within(nucleo12).queryByText('+2,8%')).toBeNull();
       expect(within(card).getByText(/A BEA ainda não publicou o número deste mês/)).toBeTruthy();
       expect(card.textContent).not.toMatch(/BLS/);
       expect(within(card).getByText('Fonte: BEA (1 casa decimal; o "em 12 meses" é calculado do índice de preços)')).toBeTruthy();
@@ -560,8 +567,9 @@ describe('MarketContextBand — resultado', () => {
       dados([saiu('PCE-x', 'PCE', 20 * 60000, { previous: '+0,3% m/m', actual: '+0,5% m/m', source: 'BEA' })]);
       renderPage(<MarketContextBand />);
       const card = await screen.findByRole('article', { name: 'Resultado' });
-      expect(within(card).getByRole('region', { name: 'PCE cheio · no mês' })).toBeTruthy();
-      expect(within(card).queryByRole('region', { name: /Núcleo/ })).toBeNull();
+      expect(within(card).getByRole('region', { name: 'PCE cheio' })).toBeTruthy();
+      expect(within(card).queryByRole('region', { name: 'Núcleo' })).toBeNull();
+      expect(within(card).queryByRole('group', { name: /Núcleo/ })).toBeNull();
     });
 
     it('no cartão, o núcleo que saiu sem número diz "da BEA" na frase e no rodapé', async () => {
@@ -570,6 +578,9 @@ describe('MarketContextBand — resultado', () => {
       const card = await screen.findByRole('article', { name: 'Resultado' });
       expect(within(card).getByRole('group', { name: 'Resumo do resultado' }).textContent).toContain('Núcleo · no mês: indisponível desta vez, não deu para calcular com os dados da BEA.');
       expect(within(card).getByText(/Indisponível: não deu para calcular com os dados da BEA\./)).toBeTruthy();
+      const linha = within(card).getByRole('group', { name: 'Núcleo · no mês' });
+      expect(within(linha).getByText('indisponível')).toBeTruthy(); // a linha do núcleo mostra "indisponível" no Atual
+      expect(within(linha).queryByText('aguardando')).toBeNull();
       expect(card.textContent).not.toMatch(/BLS/);
     });
 

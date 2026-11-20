@@ -290,11 +290,18 @@ export function resultRows(values, reference = null) {
  * As linhas do cartão de resultado de UM evento. CPI, PPI e Payroll: as de sempre (`resultRows`). PCE: as duas medidas lado a lado, cada linha dizendo de qual é
  * ("PCE cheio · no mês", "Núcleo · em 12 meses"); o núcleo só aparece se a BEA trouxe algum número dele. Nada é estimado.
  */
+/** Os dois grupos do PCE na tela: o nome e uma explicação curta de cada medida (fatos, sem opinião). */
+export const PCE_GROUPS = Object.freeze({
+  headline: { title: 'PCE cheio', hint: 'todos os itens' },
+  core: { title: 'Núcleo', hint: 'sem alimentos e energia' },
+});
+
 export function eventResultRows(e) {
   if (!e?.values) return [];
   if (e.kind !== 'PCE') return resultRows(e.values, e.reference ?? null);
   const v = e.values;
-  const tag = (rows, prefix, key) => rows.map((r) => ({ ...r, key: `${key}-${r.key}`, label: `${prefix} · ${r.label.toLowerCase()}` }));
+  // `group` diz de qual medida é a linha e `measure` é o nome curto dela ("No mês"); o `label` inteiro ("PCE cheio · no mês") serve às frases e aos leitores de tela.
+  const tag = (rows, prefix, key) => rows.map((r) => ({ ...r, key: `${key}-${r.key}`, group: key, measure: r.label, label: `${prefix} · ${r.label.toLowerCase()}` }));
   return [
     ...tag(resultRows({ previous: v.previous, actual: v.actual, revised: v.revised }, e.reference ?? null), 'PCE cheio', 'headline'),
     ...tag(resultRows({ previous: v.core_previous, actual: v.core_actual, revised: v.core_revised }, e.reference ?? null), 'Núcleo', 'core'),

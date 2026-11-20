@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { ArrowUp, ArrowDown, Equal, BadgeCheck } from 'lucide-react';
 import {
-  EVENT_META, CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, KIND_EMOJI, CONTEXT_EMOJI, eventResultRows, agencyOf, brtDayDiff, relativeDayLabel, formatEventClock, formatAge, groupEventsByDay,
+  EVENT_META, CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, KIND_EMOJI, CONTEXT_EMOJI, eventResultRows, agencyOf, PCE_GROUPS, brtDayDiff, relativeDayLabel, formatEventClock, formatAge, groupEventsByDay,
 } from '@/lib/marketContextBand';
 import { reactionNote } from '@/lib/reactionStats';
 import TokenIcon from '@/components/TokenIcon';
@@ -228,6 +228,77 @@ function MeasureTile({ r, official, accent }) {
           {diff && <span className="text-11px font-mono text-muted-foreground">{diff}</span>}
         </div>
       )}
+    </section>
+  );
+}
+
+/**
+ * O PCE tem DUAS medidas (cheio e núcleo), cada uma com "no mês" e "em 12 meses": em vez de 4 fichas grandes, 1 cartão por medida com as duas linhas
+ * (Anterior → Atual, o selo da direção e a diferença). Mais curto, e cheio × núcleo ficam lado a lado para comparar.
+ */
+function MeasureGroup({ group, rows, official, accent }) {
+  const meta = PCE_GROUPS[group];
+  return (
+    <section aria-label={meta.title} className="relative overflow-hidden rounded-2xl p-4 space-y-1 flex-auto"
+      style={{ background: 'rgba(255,255,255,0.045)', border: `1px solid ${alpha(accent.from, 0.3)}` }}>
+      <span className="absolute inset-x-0 top-0 h-1" style={{ background: `linear-gradient(90deg, ${accent.from}, ${accent.to})` }} aria-hidden="true" />
+      <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 pt-1 pb-1">
+        <h4 className="text-xs font-mono font-bold uppercase tracking-wider" style={{ color: accent.from }}>{meta.title}</h4>
+        <span className="text-10px font-mono text-muted-foreground">{meta.hint}</span>
+      </header>
+      {rows.map((r, i) => {
+        const hasActual = r.actual !== null;
+        const unavailable = official && !hasActual;
+        const dir = DIRECTION[r.direction];
+        const diff = hasActual ? deltaText(r.previous, r.actual) : null;
+        return (
+          <div key={r.key} role="group" aria-label={r.label} className="py-2.5 space-y-2" style={i > 0 ? { borderTop: '1px solid rgba(255,255,255,0.08)' } : undefined}>
+            <p className="text-10px font-mono uppercase tracking-wider text-muted-foreground">{r.measure}</p>
+            <dl className="flex flex-wrap items-end gap-x-6 gap-y-2">
+              <div className="space-y-0.5 min-w-0">
+                <dt className="text-10px font-mono uppercase tracking-wider text-muted-foreground">Anterior</dt>
+                <dd className="text-xl sm:text-2xl font-bold font-mono tabular-nums leading-none" style={{ color: PREVIOUS }}>{r.previous ?? '—'}</dd>
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <dt className="text-10px font-mono uppercase tracking-wider text-muted-foreground">Atual</dt>
+                <dd>
+                  {hasActual && (
+                    <span className="text-3xl sm:text-4xl font-black font-mono tabular-nums leading-none"
+                      style={{ color: accent.from, backgroundImage: `linear-gradient(135deg, ${accent.from}, ${accent.to})`, WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                      {r.actual}
+                    </span>
+                  )}
+                  {unavailable && (
+                    <span className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-mono font-bold text-muted-foreground"
+                      style={{ border: '1px dashed rgba(148,163,184,0.5)', background: 'rgba(148,163,184,0.07)' }}>
+                      <Emoji className="text-sm">{CONTEXT_EMOJI.unavailable}</Emoji>indisponível
+                    </span>
+                  )}
+                  {!official && (
+                    <span className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-mono text-muted-foreground animate-pulse motion-reduce:animate-none"
+                      style={{ border: '1px dashed rgba(148,163,184,0.5)', background: 'rgba(148,163,184,0.07)' }}>
+                      <Emoji className="text-sm">{CONTEXT_EMOJI.waiting}</Emoji>aguardando
+                    </span>
+                  )}
+                </dd>
+              </div>
+              {(dir || diff) && (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pb-0.5">
+                  {dir && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-mono font-bold"
+                      style={{ background: alpha(accent.from, 0.16), border: `1px solid ${alpha(accent.from, 0.45)}`, color: accent.from }}>
+                      <dir.Icon className="w-3.5 h-3.5" aria-hidden="true" />
+                      {dir.text}
+                    </span>
+                  )}
+                  {diff && <span className="text-11px font-mono text-muted-foreground">{diff}</span>}
+                </div>
+              )}
+            </dl>
+            {r.revised && <p className="text-10px font-mono text-muted-foreground">Anterior revisado para <span className="font-bold text-foreground">{r.revised}</span>.</p>}
+          </div>
+        );
+      })}
     </section>
   );
 }
@@ -470,12 +541,21 @@ export function ResultCard({ e, now, checkedAtMs, btc }) {
               O número: anterior e atual
             </h4>
             {/* Com o painel do BTC ao lado a coluna é estreita: as fichas empilham (cada uma com a largura toda). Sem ele, lado a lado. */}
-            {/* O PCE tem 4 fichas (cheio e núcleo, no mês e em 12 meses): em 2 colunas, para a coluna não ficar muito mais alta que a do BTC. */}
-            <div className={hasBtc
-              ? (rows.length > 2 ? 'grid gap-3 sm:grid-cols-2 auto-rows-fr lg:col-span-7 lg:col-start-1 lg:row-start-2' : 'flex flex-col gap-3 lg:col-span-7 lg:col-start-1 lg:row-start-2')
-              : (rows.length > 1 ? 'grid gap-3 sm:grid-cols-2' : 'grid gap-3')}>
-              {rows.map((r) => <MeasureTile key={r.key} r={r} official={official} accent={accent} />)}
-            </div>
+            {e.kind === 'PCE' ? (
+              /* PCE: 1 cartão por medida (cheio e núcleo), cada um com "no mês" e "em 12 meses". Com o painel do BTC ao lado empilham; sem ele, lado a lado. */
+              <div className={hasBtc ? 'flex flex-col gap-3 lg:col-span-7 lg:col-start-1 lg:row-start-2' : 'grid gap-3 sm:grid-cols-2'}>
+                {['headline', 'core'].filter((g) => rows.some((r) => r.group === g)).map((g) => (
+                  <MeasureGroup key={g} group={g} rows={rows.filter((r) => r.group === g)} official={official} accent={accent} />
+                ))}
+              </div>
+            ) : (
+              /* Com o painel do BTC ao lado a coluna é estreita: as fichas empilham (cada uma com a largura toda). Sem ele, lado a lado. */
+              <div className={hasBtc
+                ? 'flex flex-col gap-3 lg:col-span-7 lg:col-start-1 lg:row-start-2'
+                : (rows.length > 1 ? 'grid gap-3 sm:grid-cols-2' : 'grid gap-3')}>
+                {rows.map((r) => <MeasureTile key={r.key} r={r} official={official} accent={accent} />)}
+              </div>
+            )}
           </section>
           {hasBtc && (
             <div className="flex flex-col gap-3 lg:contents">

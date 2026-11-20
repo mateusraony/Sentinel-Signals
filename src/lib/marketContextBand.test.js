@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   STALE_AFTER_MS, JUST_RELEASED_MS, MAX_EVENTS_SHOWN, APPROACH_HORIZON_MS, BAND_STATES, EVENT_LABELS, EVENT_META, IMPACT_LABELS,
-  CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, MOVE_COLORS, parseEventValues, eventValueSlots, eventResultRows, agencyOf, hasResultValues,
+  CATEGORY_META, CATEGORY_ACCENTS, BTC_ACCENT, MOVE_COLORS, parseEventValues, eventValueSlots, eventResultRows, agencyOf, hasResultValues, PCE_GROUPS,
   RESULT_CARD_MS, RESULT_KINDS, HISTORY_SHOWN, splitValueText, valueNumber, compareValues, resultRows, resultEvents, releaseHistory,
   parseEvents, parseCheckedAt, upcomingEvents, bandState, formatCountdown, formatCountdownBare, formatEventWhen, formatAge,
   isBandEnabled, setBandEnabled, parseAlt, shiftMonth, GAP_REASONS, KIND_EMOJI, CONTEXT_EMOJI,
@@ -707,6 +707,13 @@ describe('PCE com números da BEA: o leitor guarda o núcleo e a tela mostra che
       ['core-mom', 'Núcleo · no mês', '+0,3%', '+0,2%', 'abaixo'],
       ['core-yoy', 'Núcleo · em 12 meses', '+3,0%', '+3,1%', 'acima'],
     ]);
+  });
+
+  it('eventResultRows do PCE: cada linha diz de que medida é (group) e o nome curto (measure); PCE_GROUPS explica as duas', () => {
+    const rows = eventResultRows(pce);
+    expect(rows.map((r) => [r.group, r.measure])).toEqual([['headline', 'No mês'], ['headline', 'Em 12 meses'], ['core', 'No mês'], ['core', 'Em 12 meses']]);
+    expect(PCE_GROUPS.headline).toEqual({ title: 'PCE cheio', hint: 'todos os itens' });
+    expect(PCE_GROUPS.core).toEqual({ title: 'Núcleo', hint: 'sem alimentos e energia' });
   });
 
   it('eventResultRows do PCE: sem núcleo não há linha de núcleo; só núcleo não inventa o cheio; "Revisado" do núcleo fica no núcleo', () => {
