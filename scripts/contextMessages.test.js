@@ -175,6 +175,45 @@ describe('buildPreEventBriefing: completo, mas só fatos e medições', () => {
     expect(buildPreEventBriefing({ ...CPI, kind: 'PCE', values: undefined }, AT)).toContain('indisponível agora (a BEA não respondeu');
   });
 
+  // Addendum 42: o "Anterior" oficial do FOMC é a faixa-alvo atual dos juros, lida do NY Fed; a atribuição pedida pelos termos de uso vai junto.
+  describe('FOMC com a faixa-alvo do NY Fed (addendum 42)', () => {
+    const FOMC = { ...CPI, kind: 'FOMC', values: undefined };
+    const RATE = { date: '2026-11-18', from: 3.75, to: 4, effective: 3.88 };
+
+    it('traz a faixa-alvo e a taxa efetiva como "Anterior" e a linha de atribuição do NY Fed; sem a taxa, nada disso', () => {
+      const com = buildPreEventBriefing(FOMC, AT, { policyRate: RATE });
+      expect(com).toContain('<b>Anterior (faixa-alvo dos juros, NY Fed):</b> 3,75% a 4,00% · taxa efetiva 3,88% (em 18/11)');
+      expect(com).toContain('Juros: Federal Reserve Bank of New York — dado sujeito aos Termos de Uso publicados em newyorkfed.org.');
+      expect(com).not.toContain('sem fonte oficial automática');
+      const sem = buildPreEventBriefing(FOMC, AT, {});
+      expect(sem).toContain('sem fonte oficial automática');
+      expect(sem).not.toContain('NY Fed');
+      expect(sem).not.toContain('newyorkfed.org');
+      expect(com).not.toMatch(PROIBIDO);
+    });
+
+    it('só o FOMC usa a taxa: CPI/PPI/Payroll/PCE ignoram o parâmetro e não ganham a atribuição', () => {
+      for (const kind of ['CPI', 'PPI', 'NFP', 'PCE']) {
+        const m = buildPreEventBriefing({ ...CPI, kind, values: undefined }, AT, { policyRate: RATE });
+        expect(m, kind).not.toContain('NY Fed');
+        expect(m, kind).not.toContain('newyorkfed.org');
+      }
+    });
+
+    it('a projeção do usuário é comparada com o limite superior da faixa (e a mensagem diz isso); com o "Anterior" digitado, vale o dele', () => {
+      const semPrev = buildPreEventBriefing(FOMC, AT, { policyRate: RATE, consensus: { projection: '3,75%' } });
+      expect(semPrev).toContain('corte de 0,25 p.p. (de 4,00% para 3,75%) (contra o limite superior da faixa atual)');
+      const manter = buildPreEventBriefing(FOMC, AT, { policyRate: RATE, consensus: { projection: '4,00%' } });
+      expect(manter).toContain('manter em 4,00% (contra o limite superior da faixa atual)');
+      // o "Anterior" digitado VENCE o limite da faixa (aqui 3,50%, diferente do 4,00% do NY Fed, para provar de quem é a conta)
+      const comPrev = buildPreEventBriefing(FOMC, AT, { policyRate: RATE, consensus: { projection: '3,75%', previous: '3,50%' } });
+      expect(comPrev).toContain('alta de 0,25 p.p. (de 3,50% para 3,75%)');
+      expect(comPrev).not.toContain('contra o limite superior');
+      // sem a taxa e sem o "Anterior" digitado, a projeção fica sozinha (como era)
+      expect(buildPreEventBriefing(FOMC, AT, { consensus: { projection: '3,75%' } })).not.toContain('p.p.');
+    });
+  });
+
   it('importância: alta para CPI, Payroll e FOMC; média para PPI e PCE', () => {
     for (const kind of ['CPI', 'NFP', 'FOMC']) expect(buildPreEventBriefing({ ...CPI, kind }, AT)).toContain('importância alta');
     for (const kind of ['PPI', 'PCE']) expect(buildPreEventBriefing({ ...CPI, kind }, AT)).toContain('importância média');

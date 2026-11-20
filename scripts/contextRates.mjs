@@ -1,10 +1,11 @@
 // Contexto de Mercado — a taxa de juros ATUAL do Fed (faixa-alvo dos fundos federais), para o "Anterior" do FOMC (docs/known-risks.md item 285, addendum 36).
 //
-// FASE DE OBSERVAÇÃO: lê a API pública do NY Fed (taxa efetiva dos fundos federais; a resposta traz também a faixa-alvo) e só MOSTRA no resumo do coletor.
-// Nada vai para o `events.json` nem para o Telegram até o formato real ser conferido no log de uma coleta (esta sessão não alcança o site do NY Fed) e os termos de
-// uso do NY Fed serem conferidos. Mesma disciplina do calendário do Fed (`contextFed.mjs`): observar, conferir, só então usar.
+// Lê a API pública do NY Fed (taxa efetiva dos fundos federais; a resposta traz também a faixa-alvo). Observada pelo coletor desde 19/11; o formato real foi
+// CONFERIDO no log da coleta de 20/11 (faixa-alvo de 3,75% a 4,00%, taxa efetiva 3,88%) e os termos de uso foram lidos: quem republica a taxa precisa avisar que o
+// dado está sujeito aos Termos de Uso do NY Fed (newyorkfed.org) — o aviso do Telegram traz essa linha (`POLICY_RATE_SOURCE_NOTE`, addendum 42).
+// USO: só o aviso de ANTES do FOMC no Telegram (`context-alert.mjs`), lido na hora; NUNCA entra no `events.json` (a regra pública de formato não muda).
 //
-// Formato esperado (pesquisa de 19/11, NÃO verificado no JSON bruto): { refRates: [{ effectiveDate: 'AAAA-MM-DD', percentRate: 3.83, targetRateFrom: 3.75, targetRateTo: 4.0 }] }.
+// Formato (conferido): { refRates: [{ effectiveDate: 'AAAA-MM-DD', percentRate: 3.88, targetRateFrom: 3.75, targetRateTo: 4.0 }] }.
 // Validação: faixa de 0,25 ponto, em passos de 0,25, entre 0 e 10; data recente. Qualquer coisa fora disso = null (nunca um número duvidoso).
 // Módulo puro + `fetch` injetável. Sem chave, sem banco, sem Telegram.
 import { buildUserAgent, MAX_BODY_BYTES } from './contextProbe.mjs';
@@ -16,7 +17,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const MAX_AGE_DAYS = 10;
 
 const isQuarter = (x) => Number.isFinite(x) && Math.abs(x * 4 - Math.round(x * 4)) < 1e-9;
-const fmt = (x) => `${x.toFixed(2).replace('.', ',')}%`;
+export const fmt = (x) => `${x.toFixed(2).replace('.', ',')}%`;
+
+/** A linha de atribuição que os termos de uso do NY Fed pedem para quem republica a taxa (vai no aviso do Telegram, sempre que a taxa aparece). */
+export const POLICY_RATE_SOURCE_NOTE = 'Juros: Federal Reserve Bank of New York — dado sujeito aos Termos de Uso publicados em newyorkfed.org.';
 
 /**
  * A faixa-alvo da resposta do NY Fed. `{ date, from, to, effective }` (números em %) ou null se o corpo não serve ou foge das conferências.
@@ -61,7 +65,7 @@ export async function fetchPolicyRate({ fetchImpl = fetch, env = {}, nowMs = Dat
 /** A linha do resumo do coletor (observação). */
 export function describePolicyRate(result) {
   if (!result) return null;
-  const head = 'Juros do Fed (NY Fed, só observação: ainda NÃO entra no events.json nem no Telegram):';
+  const head = 'Juros do Fed (NY Fed; usados só no aviso do Telegram antes do FOMC, nunca no events.json):';
   if (!result.rate) {
     const why = { http: 'a API não respondeu', formato: 'a resposta não está no formato esperado', rede: 'erro de rede' }[result.reason] ?? 'falhou';
     return `${head} ${why}.`;

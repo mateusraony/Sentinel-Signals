@@ -18,6 +18,7 @@ import { pathToFileURL } from 'node:url';
 import { isCategoryEnabled, readEvents, buildPreEventBriefing, buildResultMessage, buildDaySummary } from './contextMessages.mjs';
 import { loadReactions, loadMovesSince, loadBtcDay, summarizeReactions, readHistoryFile } from './contextBtcHistory.mjs';
 import { CONSENSUS_FILE, parseConsensus, consensusFor } from './contextConsensus.mjs';
+import { fetchPolicyRate } from './contextRates.mjs';
 import { sendTelegram, describeSendFailure } from './contextTelegram.mjs';
 import { SENT_FILE, pickDueEvents, pickDueResults, pickDueSummary, dayBoundsBrt, parseSent, markSent, serializeSent, alertKey } from './contextAlert.mjs';
 
@@ -108,7 +109,11 @@ export async function main(argv = process.argv.slice(2), env = process.env, { fe
     }
     const rows = await loadReactions({ kind: event.kind, history, fetchImpl, env: {}, sleep });
     const consensus = consensusOf(event);
-    if (phase === 'pre') return buildPreEventBriefing(event, nowMs, { reactions: rows, consensus });
+    if (phase === 'pre') {
+      // FOMC (addendum 42): o "Anterior" oficial é a faixa-alvo atual dos juros, lida do NY Fed na hora (sem chave). Falha vira "sem fonte automática" no aviso; nunca impede o envio.
+      const policyRate = event.kind === 'FOMC' ? (await fetchPolicyRate({ fetchImpl, env: {}, nowMs })).rate : null;
+      return buildPreEventBriefing(event, nowMs, { reactions: rows, consensus, policyRate });
+    }
     const moves = await loadMovesSince({ t0Ms: event.startMs, nowMs, fetchImpl, env: {}, sleep });
     return buildResultMessage(event, nowMs, { moves, typical: rows.length ? summarizeReactions(rows) : null, consensus });
   };

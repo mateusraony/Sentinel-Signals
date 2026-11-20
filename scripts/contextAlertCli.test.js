@@ -456,3 +456,55 @@ describe('o resumo do dia (fase 4c): executável de ponta a ponta', () => {
     expect(fs.existsSync(sentFile())).toBe(false);
   });
 });
+
+// Addendum 42: o aviso de antes do FOMC lê a faixa-alvo do NY Fed na hora (sem chave) e a mostra como "Anterior", com a atribuição dos termos de uso.
+describe('o aviso de antes do FOMC com a faixa-alvo do NY Fed (addendum 42)', () => {
+  const FOMC_AT = Date.parse('2026-12-09T19:00:00.000Z');
+  const NY = JSON.stringify({ refRates: [{ effectiveDate: '2026-12-08', percentRate: 3.88, targetRateFrom: 3.75, targetRateTo: 4.0 }] });
+  const SEM_ESPERA = async () => {};
+  const router = ({ ny = 'ok' } = {}) => vi.fn(async (url) => {
+    const u = String(url);
+    if (u.startsWith('https://api.telegram.org/')) return { ok: true, status: 200 };
+    if (u.startsWith('https://markets.newyorkfed.org/')) {
+      if (ny === 'ok') return { status: 200, text: async () => NY };
+      if (ny === 'http') return { status: 503, text: async () => '' };
+      throw new Error('rede caiu: https://markets.newyorkfed.org/segredo');
+    }
+    return { ok: false, status: 500, text: async () => '' }; // Binance fora: o aviso sai igual
+  });
+  const enviado = (fetchImpl) => {
+    const envio = fetchImpl.mock.calls.find(([u]) => String(u).startsWith('https://api.telegram.org/'));
+    return envio ? JSON.parse(envio[1].body).text : null;
+  };
+  const rodar = (fetchImpl) => { saida = []; return main(['--dir', dir, '--enviar', '--categorias-ligadas', ''], ENV, { fetchImpl, now: () => FOMC_AT - 60 * 60 * 1000, sleep: SEM_ESPERA }).then((code) => ({ code, texto: saida.join('\n') })); };
+
+  it('FOMC: a mensagem enviada traz a faixa-alvo, a taxa efetiva e a atribuição do NY Fed', async () => {
+    const f = router();
+    const r = await rodar(f);
+    expect(r.code).toBe(0);
+    const texto = enviado(f);
+    expect(texto).toContain('Anterior (faixa-alvo dos juros, NY Fed):</b> 3,75% a 4,00% · taxa efetiva 3,88% (em 08/12)');
+    expect(texto).toContain('Termos de Uso publicados em newyorkfed.org');
+    expect(f.mock.calls.some(([u]) => String(u).startsWith('https://markets.newyorkfed.org/'))).toBe(true);
+  });
+
+  it('NY Fed fora do ar (erro HTTP ou de rede): o aviso SAI do mesmo jeito, sem a faixa e sem a atribuição, e o relatório não traz o texto do erro', async () => {
+    for (const ny of ['http', 'rede']) {
+      const f = router({ ny });
+      fs.rmSync(sentFile(), { force: true });
+      const r = await rodar(f);
+      expect(r.code, ny).toBe(0);
+      const texto = enviado(f);
+      expect(texto, ny).toContain('sem fonte oficial automática');
+      expect(texto, ny).not.toContain('newyorkfed.org');
+      expect(r.texto, ny).not.toMatch(/segredo|markets\.newyorkfed/);
+    }
+  });
+
+  it('um evento que NÃO é FOMC nem consulta o NY Fed', async () => {
+    const f = router();
+    saida = [];
+    await main(['--dir', dir, '--enviar', '--categorias-ligadas', ''], ENV, { fetchImpl: f, now: () => NOW, sleep: SEM_ESPERA });
+    expect(f.mock.calls.some(([u]) => String(u).startsWith('https://markets.newyorkfed.org/'))).toBe(false);
+  });
+});
