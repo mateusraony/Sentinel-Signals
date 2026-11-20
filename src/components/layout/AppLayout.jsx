@@ -3,7 +3,6 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import TickerBar from './TickerBar';
-import AuroraBg from './AuroraBg';
 import DebugLogButton from './DebugLogButton';
 import DbQuotaBanner from './DbQuotaBanner';
 import LastUpdateChip from './LastUpdateChip';
@@ -21,7 +20,6 @@ export default function AppLayout() {
   const location = useLocation();
   return (
     <div className="min-h-screen bg-background relative">
-      <AuroraBg />
       <AutoScanRunner />
       <div className="relative z-10">
         <Sidebar />

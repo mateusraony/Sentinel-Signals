@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Clock, Radar, BellRing, KeyRound } from 'lucide-react';
 import { scanAllAssets } from '@/lib/scanner';
 import { useQueryClient } from '@tanstack/react-query';
-import { cn } from '@/lib/utils';
 import { isTelegramConfigured } from '@/lib/telegram';
 import { isOwnerKeyConfigured } from '@/lib/ownerKey';
 import TelegramSettings from '@/components/settings/TelegramSettings';
@@ -141,10 +140,7 @@ export default function TopBar() {
           onClick={handleScan}
           disabled={scanning}
           size="sm"
-          className={cn(
-            "relative font-mono text-xs h-8 px-4 transition-all duration-300",
-            !scanning && "btn-scan-pulse"
-          )}
+          className="relative font-mono text-xs h-8 px-4 transition-all duration-300"
           style={{
             background: scanning
               ? 'rgba(0,255,128,0.1)'

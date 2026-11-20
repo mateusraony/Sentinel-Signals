@@ -477,7 +477,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
         role="button"
         tabIndex={0}
         aria-label={`${asset.display_name} — abrir detalhes`}
-        className={`rounded-xl p-4 relative overflow-hidden transition-all duration-300 cursor-pointer hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${flashStyle} ${pulseStyle}`}
+        className={`rounded-xl p-4 relative overflow-hidden transition-all duration-300 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${flashStyle} ${pulseStyle}`}
         onClick={onClick}
         onKeyDown={(e) => {
           // Achado A-8 do Raio-X de UI/UX: card só abria por clique de
