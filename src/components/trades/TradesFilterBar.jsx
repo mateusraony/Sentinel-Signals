@@ -54,7 +54,7 @@ export default function TradesFilterBar({ filters, onChange, onClear, showDetail
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" aria-hidden="true" />
           <input type="text" placeholder="Buscar operação..." aria-label="Buscar pela moeda" value={filters.search}
             onChange={(e) => onChange({ search: e.target.value })}
-            className="pl-7 pr-3 h-8 w-44 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="pl-7 pr-3 h-8 w-44 rounded-md text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }} />
         </div>
 
@@ -62,7 +62,7 @@ export default function TradesFilterBar({ filters, onChange, onClear, showDetail
           <Calendar className="w-3 h-3 text-muted-foreground shrink-0" aria-hidden="true" />
           <span className="text-xs" style={{ color: 'rgba(255,255,255,0.62)' }}>Período</span>
           <select value={filters.period} onChange={(e) => onChange({ period: e.target.value })}
-            className="h-8 px-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="h-8 px-2 rounded-md text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={filters.period !== 'all' ? { ...ON, colorScheme: 'dark' } : { ...OFF, color: 'rgba(255,255,255,0.75)', colorScheme: 'dark' }}>
             {PERIOD_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>

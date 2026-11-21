@@ -60,7 +60,7 @@ const CustomTooltip = ({ active, payload }) => {
   if (!d) return null;
   const isEntry = d.type === 'entry';
   return (
-    <div className="rounded-lg px-3 py-2.5 text-11px font-mono space-y-1"
+    <div className="rounded-md px-3 py-2.5 text-11px font-mono space-y-1"
       style={{ background: 'rgba(18,17,15,0.97)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 180, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
       <div className="font-bold flex items-center gap-1.5" style={{ color: d.side === 'BUY' ? '#5db586' : '#e06a5b' }}>
         {isEntry ? '▲ ENTRADA' : '● SAÍDA'} — {d.side} <TokenIcon symbol={d.symbol} size={14} />{d.symbol}
@@ -239,7 +239,7 @@ export default function TradeEntryMarkers({ history }) {
         {chartData.filter(d => d.type === 'exit').slice(-12).map((d, i) => {
           const color = d.pnl >= 0 ? '#5db586' : '#e06a5b';
           return (
-            <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg text-11px font-mono"
+            <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-md text-11px font-mono"
               style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${color}22` }}>
               <span style={{ color: d.side === 'BUY' ? '#5db586' : '#e06a5b' }}>{d.side === 'BUY' ? '▲' : '▼'}</span>
               <TokenIcon symbol={d.symbol} size={12} />

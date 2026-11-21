@@ -57,6 +57,14 @@ global do usuário (ver `docs/claude/global-CLAUDE.md.example`).
   PENDENTE: tarefa parada à espera de aprovação ou de passo do usuário
   aparece no roadmap como tal, com o que falta. Tarefa sem o roadmap
   atualizado não está concluída.
+- **Mudança visual: ver TUDO, inclusive o que fica escondido (pedido explícito
+  do usuário, 2026-11-21: "não esqueça das abas que ficam ocultas… sempre tem que
+  ver tudo").** Antes de dar uma tela por pronta e de mostrar o antes/depois, abra
+  e confira TODOS os estados escondidos dela: seções recolhidas ("mostrar/esconder"),
+  acordeões, "Detalhes técnicos", abas, gavetas e janelas (editar etc.), modo
+  compacto, estados vazios e a largura de celular. Se os dados de exemplo não
+  mostram um estado (ex.: observações de mercado), crie o dado de exemplo para vê-lo.
+  Mostre ao usuário esses estados nas imagens, não só a tela fechada.
 - **Fato × hipótese × recomendação.** Sempre separe o que você observou no
   código do que é plausível e do que é opinião. Sem "parece bom" — traga
   evidência (`arquivo:linha`).

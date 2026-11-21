@@ -93,7 +93,7 @@ const PHASE_COPY = Object.freeze({
   [SIGNAL_PHASE.INFO]: Object.freeze({
     badge: 'Só informação',
     icon: 'ℹ',
-    color: '#60a5fa',
+    color: '#8db4e2',
     reassurance: 'Isto é só uma observação de mercado — este aviso não vira operação. Operações nascem só dos avisos do Range Filter de 4 horas e, nos ativos com a cascata SMC ligada, dos avisos SMC de 1 hora. Pode ignorar.',
   }),
 });

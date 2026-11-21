@@ -431,7 +431,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
     // Preço a <1% da linha do Range Filter. Item 277: contorno neutro e
     // parado — antes pulsava na cor do lado (BUY/SELL), como se um sinal
     // fosse sair; a distância não diz isso (ver ProximityBar).
-    cardBorder = 'rgba(96,165,250,0.4)';
+    cardBorder = 'rgba(141,180,226,0.4)';
   } else if (isStale) {
     cardBorder = healthReason === 'persistent_error' ? 'rgba(224,106,91,0.22)' : 'rgba(221,154,74,0.22)';
   }

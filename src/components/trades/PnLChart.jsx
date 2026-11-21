@@ -10,7 +10,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   const d = payload[0].payload;
   const isWin = d.pnl >= 0;
   return (
-    <div className="rounded-lg px-3 py-2"
+    <div className="rounded-md px-3 py-2"
       style={{ background: 'rgba(20,19,17,0.95)', border: '1px solid rgba(255,255,255,0.08)', minWidth: 140 }}>
       <div className="text-11px font-mono text-muted-foreground mb-1">{label}</div>
       <div className="text-11px font-mono font-bold" style={{ color: isWin ? '#5db586' : '#e06a5b' }}>

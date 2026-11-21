@@ -57,7 +57,7 @@ describe('reasonColor', () => {
     expect(reasonColor(REASON_KIND.WAITING)).toBe('#e3b45a');
     expect(reasonColor(REASON_KIND.WORSE)).toBe('#dd9a4a');
     expect(reasonColor(REASON_KIND.APP)).toBe('#94a3b8');
-    expect(reasonColor(REASON_KIND.INFO)).toBe('#60a5fa');
+    expect(reasonColor(REASON_KIND.INFO)).toBe('#8db4e2');
     expect(Object.keys(REASON_COLORS).sort()).toEqual(Object.values(REASON_KIND).sort());
   });
   it('família desconhecida cai no amarelo de "esperando" (nunca undefined)', () => {
