@@ -149,8 +149,8 @@ export default function MonthlyReport() {
   const outcomePie = useMemo(() => {
     if (!metrics) return [];
     return [
-      { name: 'Vitórias', value: metrics.wins, color: '#00ff80' },
-      { name: 'Derrotas', value: metrics.losses, color: '#ff1478' },
+      { name: 'Vitórias', value: metrics.wins, color: '#5db586' },
+      { name: 'Derrotas', value: metrics.losses, color: '#e06a5b' },
       { name: 'Empate (BE)', value: metrics.be, color: '#64748b' },
     ].filter(d => d.value > 0);
   }, [metrics]);
@@ -328,14 +328,14 @@ export default function MonthlyReport() {
           <button onClick={handleCopyText} disabled={!metrics || monthOps.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-11px font-mono transition-all disabled:opacity-40"
             style={copied
-              ? { background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }
+              ? { background: 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.25)', color: '#5db586' }
               : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
             {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
             {copied ? 'Copiado!' : 'Copiar'}
           </button>
           <button onClick={handleExportPDF} disabled={exporting || !metrics || monthOps.length === 0}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-11px font-mono font-bold transition-all hover:opacity-90 disabled:opacity-40"
-            style={{ background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }}>
+            style={{ background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }}>
             {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
             Exportar PDF
           </button>
@@ -347,7 +347,7 @@ export default function MonthlyReport() {
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : !metrics || monthOps.length === 0 ? (
-        <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <FileText className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhuma operação fechada neste mês.</p>
           <p className="text-xs text-muted-foreground mt-1">Selecione outro mês ou aguarde novas operações serem encerradas.</p>
@@ -356,48 +356,48 @@ export default function MonthlyReport() {
         <>
           {/* Summary metrics */}
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-            <MetricSummaryCard icon={TrendingUp} label="P&L Acumulado" value={fmtPct(metrics.totalPnl)} sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`} color={metrics.totalPnl >= 0 ? '#00ff80' : '#ff1478'} glowColor={metrics.totalPnl >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'} />
+            <MetricSummaryCard icon={TrendingUp} label="P&L Acumulado" value={fmtPct(metrics.totalPnl)} sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`} color={metrics.totalPnl >= 0 ? '#5db586' : '#e06a5b'} glowColor={metrics.totalPnl >= 0 ? 'rgba(93,181,134,0.4)' : 'rgba(224,106,91,0.4)'} />
             <MetricSummaryCard icon={Target} label="Taxa de Acerto" value={`${metrics.winRate.toFixed(1)}%`} sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`} color={winRateColor(metrics.winRate)} glowColor={metricGlow(winRateColor(metrics.winRate))} />
-            <MetricSummaryCard icon={FileText} label="Total de Trades" value={`${metrics.totalTrades}`} sublabel="operações fechadas" color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
-            <MetricSummaryCard icon={TrendingUp} label="Vitórias" value={`${metrics.wins}`} sublabel="trades lucrativos" color="#00ff80" glowColor="rgba(0,255,128,0.4)" />
-            <MetricSummaryCard icon={TrendingDown} label="Derrotas" value={`${metrics.losses}`} sublabel="trades em perda" color="#ff1478" glowColor="rgba(255,20,120,0.4)" />
+            <MetricSummaryCard icon={FileText} label="Total de Trades" value={`${metrics.totalTrades}`} sublabel="operações fechadas" color="#8db4e2" glowColor="rgba(141,180,226,0.4)" />
+            <MetricSummaryCard icon={TrendingUp} label="Vitórias" value={`${metrics.wins}`} sublabel="trades lucrativos" color="#5db586" glowColor="rgba(93,181,134,0.4)" />
+            <MetricSummaryCard icon={TrendingDown} label="Derrotas" value={`${metrics.losses}`} sublabel="trades em perda" color="#e06a5b" glowColor="rgba(224,106,91,0.4)" />
             <MetricSummaryCard icon={Award} label="Profit Factor" value={metrics.profitFactor === null ? (metrics.wins > 0 ? '∞' : '—') : metrics.profitFactor.toFixed(2)} sublabel={profitFactorLabel(metrics.profitFactor, metrics.wins > 0)} color={profitFactorColor(metrics.profitFactor, metrics.wins > 0)} glowColor={metricGlow(profitFactorColor(metrics.profitFactor, metrics.wins > 0))}
               tooltip="Soma dos ganhos ÷ soma das perdas (valor absoluto). Acima de 1 = ganhos superam perdas no total; ≥ 1,5 é o piso considerado saudável aqui. '∞' quando não houve nenhuma perda no mês." />
           </div>
 
           {/* Additional metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <MiniMetric label="Melhor Trade" value={fmtPct(metrics.bestTrade)} color="#00ff80" />
-            <MiniMetric label="Pior Trade" value={fmtPct(metrics.worstTrade)} color="#ff1478" />
-            <MiniMetric label="Ganho Médio" value={fmtPct(metrics.avgWin)} color="#00ff80" />
-            <MiniMetric label="Perda Média" value={fmtPct(-metrics.avgLoss)} color="#ff1478" />
+            <MiniMetric label="Melhor Trade" value={fmtPct(metrics.bestTrade)} color="#5db586" />
+            <MiniMetric label="Pior Trade" value={fmtPct(metrics.worstTrade)} color="#e06a5b" />
+            <MiniMetric label="Ganho Médio" value={fmtPct(metrics.avgWin)} color="#5db586" />
+            <MiniMetric label="Perda Média" value={fmtPct(-metrics.avgLoss)} color="#e06a5b" />
           </div>
 
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2 rounded-xl p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="lg:col-span-2 rounded-md p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <h2 className="text-sm font-bold text-foreground">Evolução de P&L (acumulado + diário)</h2>
               <div style={{ height: 240 }} role="img"
                 aria-label={`Gráfico combinado de barras e linha da evolução de P&L diário e acumulado no mês: ${dailyPnlData.map(d => `${d.day} ${fmtPct(d.pnlPct)} no dia, ${fmtPct(d.cumulativePct)} acumulado`).join('; ')}`}>
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dailyPnlData} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                    <XAxis dataKey="day" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
-                    <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
+                    <XAxis dataKey="day" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} />
+                    <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} />
                     <Tooltip
                       contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                       formatter={(value, name) => [`${value}%`, name === 'pnlPct' ? 'P&L do dia' : 'Acumulado']}
                     />
                     <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'monospace' }} />
                     <Bar dataKey="pnlPct" name="P&L do dia" radius={[3, 3, 0, 0]}>
-                      {dailyPnlData.map((d, i) => <Cell key={i} fill={d.pnlPct >= 0 ? '#00ff80' : '#ff1478'} />)}
+                      {dailyPnlData.map((d, i) => <Cell key={i} fill={d.pnlPct >= 0 ? '#5db586' : '#e06a5b'} />)}
                     </Bar>
-                    <Line type="monotone" dataKey="cumulativePct" name="Acumulado" stroke="#00e5ff" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="cumulativePct" name="Acumulado" stroke="#8db4e2" strokeWidth={2} dot={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
             </div>
-            <div className="rounded-xl p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="rounded-md p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <h2 className="text-sm font-bold text-foreground">Taxa de acerto</h2>
               <div style={{ height: 110 }} role="img"
                 aria-label={`Gráfico de pizza da taxa de acerto do mês: ${outcomePie.map(d => `${d.name} ${d.value}`).join(', ')}`}>
@@ -448,9 +448,9 @@ export default function MonthlyReport() {
           </div>
 
           {/* Trade table */}
-          <div className="rounded-xl overflow-hidden" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="rounded-md overflow-hidden" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-              <FileText className="w-4 h-4" style={{ color: '#00e5ff' }} />
+              <FileText className="w-4 h-4" style={{ color: '#8db4e2' }} />
               <h2 className="text-sm font-bold text-foreground">Operações do Mês</h2>
               <span className="text-10px font-mono text-muted-foreground">({monthOps.length} trades)</span>
             </div>
@@ -476,10 +476,10 @@ export default function MonthlyReport() {
                       <tr key={op.id} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
                         <td className="px-4 py-2 text-muted-foreground">{moment(op.created_date).format('DD/MM HH:mm')}</td>
                         <td className="px-4 py-2 text-foreground font-semibold"><TokenIcon symbol={op.symbol} size={16} className="mr-2" />{op.symbol?.replace('USDT', '/USDT')}</td>
-                        <td className="px-4 py-2" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</td>
+                        <td className="px-4 py-2" style={{ color: isBuy ? '#5db586' : '#e06a5b' }}>{op.side}</td>
                         <td className="px-4 py-2 text-right text-muted-foreground">${formatPrice(op.entry_price)}</td>
                         <td className="px-4 py-2 text-right text-muted-foreground">{exitPrice ? `$${formatPrice(exitPrice)}` : '—'}</td>
-                        <td className="px-4 py-2 text-right font-bold" style={{ color: pnl >= 0 ? '#00ff80' : '#ff1478' }}>{pnl !== null ? fmtPct(pnl) : '—'}</td>
+                        <td className="px-4 py-2 text-right font-bold" style={{ color: pnl >= 0 ? '#5db586' : '#e06a5b' }}>{pnl !== null ? fmtPct(pnl) : '—'}</td>
                         <td className="px-4 py-2" style={{ color: statusColor(op) }}>{statusLabel(op)}</td>
                       </tr>
                     );

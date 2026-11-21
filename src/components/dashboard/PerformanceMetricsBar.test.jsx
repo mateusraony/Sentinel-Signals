@@ -46,7 +46,7 @@ describe('PerformanceMetricsBar — Win Rate usa a faixa de 2 níveis/50% compar
     ];
     renderBar(ops);
     const wrValue = await screen.findByText('50%');
-    expect(wrValue.style.color).toBe('rgb(0, 255, 128)');
+    expect(wrValue.style.color).toBe('rgb(93, 181, 134)');
   });
 
   it('winRate=40% (abaixo de 50%) continua laranja', async () => {
@@ -56,6 +56,6 @@ describe('PerformanceMetricsBar — Win Rate usa a faixa de 2 níveis/50% compar
     ];
     renderBar(ops);
     const wrValue = await screen.findByText('40%');
-    expect(wrValue.style.color).toBe('rgb(255, 159, 67)');
+    expect(wrValue.style.color).toBe('rgb(221, 154, 74)');
   });
 });

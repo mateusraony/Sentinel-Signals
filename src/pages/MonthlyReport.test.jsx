@@ -112,7 +112,7 @@ describe('MonthlyReport — cor de status por operação reflete o outcome real 
     const { container } = renderPage(<MonthlyReport />);
     await screen.findByText('💰 Stop (lucro)');
     const statusCell = [...container.querySelectorAll('td')].find(td => td.textContent === '💰 Stop (lucro)');
-    expect(statusCell.style.color).toBe('rgb(0, 255, 128)');
+    expect(statusCell.style.color).toBe('rgb(93, 181, 134)');
   });
 });
 
@@ -141,7 +141,7 @@ describe('MonthlyReport — Profit Factor com estado "Marginal" (Round 4 pós-Ra
     const pfValue = await screen.findByText('1.17');
     expect(screen.getByText('⚠ Marginal')).toBeTruthy();
     expect(screen.queryByText('⚠ Baixo')).toBeNull();
-    expect(pfValue.style.color).toBe('rgb(255, 159, 67)');
+    expect(pfValue.style.color).toBe('rgb(221, 154, 74)');
   });
 });
 

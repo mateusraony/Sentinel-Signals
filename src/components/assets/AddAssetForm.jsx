@@ -104,9 +104,9 @@ export default function AddAssetForm({ onSuccess }) {
             <button key={pair.symbol} onClick={() => handleQuickAdd(pair)}
               className="text-10px font-mono px-2 py-1 rounded transition-all duration-200"
               style={{
-                background: symbol === pair.symbol ? 'rgba(0,255,128,0.12)' : 'rgba(255,255,255,0.04)',
-                border: symbol === pair.symbol ? '1px solid rgba(0,255,128,0.35)' : '1px solid rgba(255,255,255,0.07)',
-                color: symbol === pair.symbol ? '#00ff80' : 'rgba(255,255,255,0.5)',
+                background: symbol === pair.symbol ? 'rgba(93,181,134,0.12)' : 'rgba(255,255,255,0.04)',
+                border: symbol === pair.symbol ? '1px solid rgba(93,181,134,0.35)' : '1px solid rgba(255,255,255,0.07)',
+                color: symbol === pair.symbol ? '#5db586' : 'rgba(255,255,255,0.5)',
               }}
             ><TokenIcon symbol={pair.symbol} size={14} className="mr-1.5" />{pair.name}</button>
           ))}
@@ -127,7 +127,7 @@ export default function AddAssetForm({ onSuccess }) {
             />
             <Button variant="outline" size="sm" onClick={handleValidate} disabled={validating || !symbol.trim()}
               className="shrink-0 font-mono text-xs"
-              style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(0,229,255,0.8)' }}
+              style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(141,180,226,0.8)' }}
             >
               {validating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Validar'}
             </Button>
@@ -143,13 +143,13 @@ export default function AddAssetForm({ onSuccess }) {
         </div>
 
         {error && (
-          <div className="flex items-center gap-2 text-xs font-mono" style={{ color: '#ff1478' }}>
+          <div className="flex items-center gap-2 text-xs font-mono" style={{ color: '#e06a5b' }}>
             <AlertCircle className="w-3.5 h-3.5" />{error}
           </div>
         )}
         {validated && (
           <div className="space-y-1">
-            <div className="flex items-center gap-2 text-xs font-mono" style={{ color: '#00ff80' }}>
+            <div className="flex items-center gap-2 text-xs font-mono" style={{ color: '#5db586' }}>
               <CheckCircle2 className="w-3.5 h-3.5" />Símbolo válido na Binance
             </div>
             {/* Logo do token (11/11/2026): com logo na pasta, ele aparece; sem logo, o painel mostra a bolinha com a inicial. */}
@@ -163,10 +163,10 @@ export default function AddAssetForm({ onSuccess }) {
         <button onClick={handleSave} disabled={saving || !validated}
           className="w-full py-2.5 rounded-lg font-mono text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-40"
           style={{
-            background: 'linear-gradient(135deg, rgba(0,255,128,0.15), rgba(0,200,255,0.1))',
-            border: '1px solid rgba(0,255,128,0.35)',
-            color: '#00ff80',
-            boxShadow: validated ? '0 0 20px rgba(0,255,128,0.1)' : 'none',
+            background: 'linear-gradient(135deg, rgba(93,181,134,0.15), rgba(0,200,255,0.1))',
+            border: '1px solid rgba(93,181,134,0.35)',
+            color: '#5db586',
+            boxShadow: validated ? '0 0 20px rgba(93,181,134,0.1)' : 'none',
           }}
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}

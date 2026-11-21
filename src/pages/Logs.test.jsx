@@ -51,7 +51,7 @@ describe('Logs — timestamp de cada linha tem contraste maior (Refinamentos)', 
     ]);
     renderLogs();
     const timestamp = await screen.findByText(/^\d{2}:\d{2}:\d{2}$/);
-    expect(timestamp.style.color).toBe('rgba(255, 255, 255, 0.45)');
+    expect(timestamp.style.color).toBe('rgba(255, 255, 255, 0.62)');
   });
 });
 
@@ -66,7 +66,7 @@ describe('Logs — "ver detalhes →" tem contraste suficiente (achado do Codex,
     ]);
     renderLogs();
     const summary = await screen.findByText('ver detalhes →');
-    expect(summary.style.color).toBe('rgba(255, 255, 255, 0.45)');
+    expect(summary.style.color).toBe('rgba(255, 255, 255, 0.62)');
   });
 });
 

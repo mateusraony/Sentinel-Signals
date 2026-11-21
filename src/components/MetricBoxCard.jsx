@@ -8,7 +8,7 @@ import React from 'react';
 // do usuário: 2 componentes, não 1 unificado, pra zero mudança visual.
 export function MetricBoxCard({ icon: Icon, label, value, sub, color, glowColor = undefined }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl px-4 py-3 flex-1 min-w-0"
+    <div className="flex items-center gap-3 rounded-md px-4 py-3 flex-1 min-w-0"
       style={{
         background: 'rgba(10,13,22,0.85)',
         border: `1px solid ${glowColor ?? 'rgba(255,255,255,0.06)'}`,
@@ -22,7 +22,7 @@ export function MetricBoxCard({ icon: Icon, label, value, sub, color, glowColor 
       <div className="min-w-0">
         <div className="text-9px font-mono uppercase tracking-widest text-muted-foreground leading-none mb-1">{label}</div>
         <div className="text-lg font-bold font-mono leading-none truncate" style={{ color }}>{value}</div>
-        {sub && <div className="text-9px font-mono mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.3)' }}>{sub}</div>}
+        {sub && <div className="text-9px font-mono mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.55)' }}>{sub}</div>}
       </div>
     </div>
   );

@@ -54,7 +54,7 @@ describe('PerformanceReport — Profit Factor com 3 cores distintas (Round 4 pó
     const pfValue = await screen.findByText('1.17');
     const marginalText = screen.getByText('⚠ Marginal');
     expect(marginalText).toBeTruthy();
-    expect(pfValue.style.color).toBe('rgb(255, 159, 67)');
+    expect(pfValue.style.color).toBe('rgb(221, 154, 74)');
   });
 
   it('REGRESSÃO: pf abaixo de 1 mostra "✗ Baixo" em vermelho, não mais o mesmo laranja de Marginal', async () => {
@@ -65,7 +65,7 @@ describe('PerformanceReport — Profit Factor com 3 cores distintas (Round 4 pó
     const pfValue = await screen.findByText('0.00');
     const baixoText = screen.getByText('✗ Baixo');
     expect(baixoText).toBeTruthy();
-    expect(pfValue.style.color).toBe('rgb(255, 20, 120)');
+    expect(pfValue.style.color).toBe('rgb(224, 106, 91)');
   });
 });
 

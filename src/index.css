@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,128 +6,57 @@
 
 @layer base {
   :root {
-    --font-sans: 'Inter', sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'IBM Plex Sans', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
 
-    --background: 222 47% 4%;
-    --foreground: 210 40% 96%;
-    --card: 222 40% 6%;
-    --card-foreground: 210 40% 96%;
-    --popover: 222 40% 6%;
-    --popover-foreground: 210 40% 96%;
-    --primary: 152 100% 50%;
-    --primary-foreground: 222 47% 4%;
-    --secondary: 222 30% 10%;
-    --secondary-foreground: 210 20% 75%;
-    --muted: 222 30% 10%;
-    --muted-foreground: 215 15% 45%;
+    --background: 40 8% 7%;
+    --foreground: 40 14% 90%;
+    --card: 40 7% 9%;
+    --card-foreground: 40 14% 90%;
+    --popover: 40 7% 9%;
+    --popover-foreground: 40 14% 90%;
+    --primary: 213 52% 68%;
+    --primary-foreground: 40 8% 7%;
+    --secondary: 40 7% 13%;
+    --secondary-foreground: 40 10% 78%;
+    --muted: 40 7% 13%;
+    --muted-foreground: 40 6% 62%;
     /* `accent` só pinta passar o mouse / foco / selecionado dos componentes shadcn (menus, selects, botões outline/ghost, toggles,
        calendário). Era o rosa-choque (325 100% 55%) com texto branco — contraste ~3,7:1, cansativo e difícil de ler (item 305).
        Agora é um cinza-azulado de superfície (contraste com o texto ~12:1) que ainda se destaca do fundo do menu. */
-    --accent: 222 28% 20%;
+    --accent: 40 7% 19%;
     /* Dicas (tooltips): superfície "elevada" em cinza-azulado suave, borda fina e texto off-white (~13:1). Sem cor saturada atrás do
        texto: em fundo escuro, cor viva vibra e cansa (Material Design: tons dessaturados; WCAG AA >= 4,5:1). Item 305. */
-    --surface-raised: 222 22% 15%;
-    --surface-raised-border: 222 18% 30%;
-    --surface-raised-foreground: 210 30% 92%;
-    --accent-foreground: 210 40% 98%;
+    --surface-raised: 40 7% 16%;
+    --surface-raised-border: 40 7% 28%;
+    --surface-raised-foreground: 40 12% 90%;
+    --accent-foreground: 40 14% 96%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 222 25% 12%;
-    --input: 222 25% 12%;
-    --ring: 152 100% 50%;
-    --radius: 0.75rem;
+    --border: 40 8% 17%;
+    --input: 40 8% 17%;
+    --ring: 213 52% 68%;
+    --radius: 0.5rem;
 
-    --sidebar-background: 222 47% 3%;
-    --sidebar-foreground: 210 20% 75%;
-    --sidebar-primary: 152 100% 50%;
-    --sidebar-primary-foreground: 222 47% 4%;
-    --sidebar-accent: 222 30% 8%;
-    --sidebar-accent-foreground: 210 20% 75%;
-    --sidebar-border: 222 25% 10%;
-    --sidebar-ring: 152 100% 50%;
+    --sidebar-background: 40 8% 6%;
+    --sidebar-foreground: 40 10% 78%;
+    --sidebar-primary: 213 52% 68%;
+    --sidebar-primary-foreground: 40 8% 7%;
+    --sidebar-accent: 40 7% 11%;
+    --sidebar-accent-foreground: 40 10% 78%;
+    --sidebar-border: 40 8% 14%;
+    --sidebar-ring: 213 52% 68%;
 
     /* Custom signal colors */
-    --buy-color: 152 100% 50%;
-    --sell-color: 325 100% 55%;
+    --buy-color: 148 37% 55%;
+    --sell-color: 6 64% 62%;
     --neutral-color: 215 15% 45%;
-
-    /* Aurora colors */
-    --aurora-1: 152 100% 50%;
-    --aurora-2: 280 100% 60%;
-    --aurora-3: 200 100% 55%;
-    --aurora-4: 325 100% 55%;
   }
 }
 
 @layer base {
   * { @apply border-border outline-ring/50; }
   body { @apply bg-background text-foreground font-sans; }
-}
-
-/* =============================================
-   AURORA BACKGROUND
-   ============================================= */
-.aurora-bg {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.aurora-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.12;
-  animation: aurora-drift 20s ease-in-out infinite;
-}
-
-.aurora-orb-1 {
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, hsl(152, 100%, 50%), transparent 70%);
-  top: -200px;
-  left: -100px;
-  animation-delay: 0s;
-}
-
-.aurora-orb-2 {
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, hsl(280, 100%, 60%), transparent 70%);
-  top: 20%;
-  right: -150px;
-  animation-delay: -7s;
-  animation-duration: 25s;
-}
-
-.aurora-orb-3 {
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, hsl(200, 100%, 55%), transparent 70%);
-  bottom: 10%;
-  left: 30%;
-  animation-delay: -14s;
-  animation-duration: 18s;
-}
-
-.aurora-orb-4 {
-  width: 350px;
-  height: 350px;
-  background: radial-gradient(circle, hsl(325, 100%, 55%), transparent 70%);
-  bottom: -100px;
-  right: 20%;
-  animation-delay: -5s;
-  animation-duration: 22s;
-}
-
-@keyframes aurora-drift {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  25% { transform: translate(30px, -40px) scale(1.05); }
-  50% { transform: translate(-20px, 30px) scale(0.95); }
-  75% { transform: translate(40px, 20px) scale(1.02); }
 }
 
 /* =============================================
@@ -139,8 +68,8 @@
   z-index: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(152, 255, 152, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(152, 255, 152, 0.03) 1px, transparent 1px);
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
@@ -148,48 +77,39 @@
    GLASSMORPHISM CARDS
    ============================================= */
 .glass-card {
-  background: rgba(20, 25, 40, 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
 }
 
 .glass-card-glow-buy {
-  border-color: rgba(0, 255, 128, 0.2) !important;
-  box-shadow: 0 0 20px rgba(0, 255, 128, 0.08), 0 4px 24px rgba(0, 0, 0, 0.3) !important;
+  border-color: rgba(93, 181, 134, 0.5) !important;
 }
 
 .glass-card-glow-sell {
-  border-color: rgba(255, 20, 120, 0.2) !important;
-  box-shadow: 0 0 20px rgba(255, 20, 120, 0.08), 0 4px 24px rgba(0, 0, 0, 0.3) !important;
+  border-color: rgba(224, 106, 91, 0.5) !important;
 }
 
 /* =============================================
    SIGNAL GLOWS
    ============================================= */
 .buy-glow {
-  color: #00ff80;
-  text-shadow: 0 0 10px rgba(0, 255, 128, 0.8), 0 0 20px rgba(0, 255, 128, 0.4);
+  color: #5db586;
 }
 
 .sell-glow {
-  color: #ff1478;
-  text-shadow: 0 0 10px rgba(255, 20, 120, 0.8), 0 0 20px rgba(255, 20, 120, 0.4);
+  color: #e06a5b;
 }
 
 .buy-badge-glow {
-  background: rgba(0, 255, 128, 0.12);
-  border: 1px solid rgba(0, 255, 128, 0.35);
-  color: #00ff80;
-  box-shadow: 0 0 12px rgba(0, 255, 128, 0.25), inset 0 0 8px rgba(0, 255, 128, 0.05);
+  background: rgba(93, 181, 134, 0.12);
+  border: 1px solid rgba(93, 181, 134, 0.35);
+  color: #5db586;
 }
 
 .sell-badge-glow {
-  background: rgba(255, 20, 120, 0.12);
-  border: 1px solid rgba(255, 20, 120, 0.35);
-  color: #ff1478;
-  box-shadow: 0 0 12px rgba(255, 20, 120, 0.25), inset 0 0 8px rgba(255, 20, 120, 0.05);
+  background: rgba(224, 106, 91, 0.12);
+  border: 1px solid rgba(224, 106, 91, 0.35);
+  color: #e06a5b;
 }
 
 /* =============================================
@@ -198,24 +118,9 @@
 .live-dot {
   width: 8px;
   height: 8px;
-  background: #00ff80;
+  background: #5db586;
   border-radius: 50%;
   position: relative;
-  box-shadow: 0 0 6px #00ff80;
-}
-
-.live-dot::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  background: rgba(0, 255, 128, 0.3);
-  animation: ping 1.5s ease-in-out infinite;
-}
-
-@keyframes ping {
-  0% { transform: scale(1); opacity: 0.8; }
-  100% { transform: scale(2.5); opacity: 0; }
 }
 
 /* =============================================
@@ -226,7 +131,7 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, #00ff80, transparent);
+  background: linear-gradient(90deg, transparent, #5db586, transparent);
   animation: scan 3s linear infinite;
   opacity: 0.6;
 }
@@ -249,23 +154,21 @@
    DIRECTION ARROW PULSE
    ============================================= */
 .arrow-up-glow {
-  color: #00ff80;
-  filter: drop-shadow(0 0 4px rgba(0, 255, 128, 0.8));
+  color: #5db586;
 }
 
 .arrow-down-glow {
-  color: #ff1478;
-  filter: drop-shadow(0 0 4px rgba(255, 20, 120, 0.8));
+  color: #e06a5b;
 }
 
 /* =============================================
    SIDEBAR ACTIVE GLOW
    ============================================= */
 .nav-active {
-  background: rgba(0, 255, 128, 0.08);
-  color: #00ff80;
-  border-left: 2px solid #00ff80;
-  box-shadow: inset 0 0 20px rgba(0, 255, 128, 0.05);
+  background: hsl(var(--sidebar-accent));
+  color: hsl(var(--foreground));
+  border-left: 2px solid hsl(var(--primary));
+  box-shadow: inset 0 0 20px rgba(93, 181, 134, 0.05);
 }
 
 /* =============================================
@@ -324,10 +227,10 @@
   pointer-events: none;
   background: linear-gradient(
     135deg,
-    rgba(0, 255, 128, 0.4),
+    rgba(93, 181, 134, 0.4),
     rgba(130, 0, 255, 0.2),
     rgba(0, 200, 255, 0.3),
-    rgba(255, 20, 120, 0.2)
+    rgba(224, 106, 91, 0.2)
   );
   background-size: 300% 300%;
   animation: gradient-border 4s ease infinite;
@@ -347,26 +250,15 @@
    ============================================= */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(0, 255, 128, 0.2); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(0, 255, 128, 0.4); }
+::-webkit-scrollbar-thumb { background: rgba(93, 181, 134, 0.2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(93, 181, 134, 0.4); }
 
 /* =============================================
    RSI / MACD VALUE COLORS
    ============================================= */
-.value-positive { color: #00ff80; }
-.value-negative { color: #ff1478; }
+.value-positive { color: #5db586; }
+.value-negative { color: #e06a5b; }
 .value-neutral { color: #94a3b8; }
-
-/* =============================================
-   TOPBAR SCAN BUTTON PULSE
-   ============================================= */
-@keyframes btn-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 255, 128, 0.4); }
-  50% { box-shadow: 0 0 0 6px rgba(0, 255, 128, 0); }
-}
-.btn-scan-pulse {
-  animation: btn-pulse 2s ease-in-out infinite;
-}
 
 /* =============================================
    ERROR BOUNDARY — "SIGNAL LOST" RADAR
@@ -375,7 +267,7 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 1px solid rgba(255, 20, 120, 0.5);
+  border: 1px solid rgba(224, 106, 91, 0.5);
   animation: signal-lost-ping 2.4s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
 }
 .signal-lost-ring:nth-child(2) { animation-delay: 0.8s; }
@@ -399,10 +291,10 @@
 /* Glitchy title flicker — quick RGB-split style jitter, settles most of
    the time (feels like a corrupted terminal, not a constant annoyance). */
 @keyframes glitch-flicker {
-  0%, 88%, 100% { transform: translate(0, 0); opacity: 1; text-shadow: 0 0 12px rgba(255, 20, 120, 0.5); }
-  90% { transform: translate(-2px, 1px); opacity: 0.85; text-shadow: -2px 0 #00e5ff, 2px 0 #ff1478; }
-  92% { transform: translate(2px, -1px); opacity: 1; text-shadow: 2px 0 #00e5ff, -2px 0 #ff1478; }
-  94% { transform: translate(0, 0); opacity: 1; text-shadow: 0 0 12px rgba(255, 20, 120, 0.5); }
+  0%, 88%, 100% { transform: translate(0, 0); opacity: 1; text-shadow: 0 0 12px rgba(224, 106, 91, 0.5); }
+  90% { transform: translate(-2px, 1px); opacity: 0.85; text-shadow: -2px 0 #8db4e2, 2px 0 #e06a5b; }
+  92% { transform: translate(2px, -1px); opacity: 1; text-shadow: 2px 0 #8db4e2, -2px 0 #e06a5b; }
+  94% { transform: translate(0, 0); opacity: 1; text-shadow: 0 0 12px rgba(224, 106, 91, 0.5); }
 }
 .glitch-title {
   animation: glitch-flicker 5s ease-in-out infinite;

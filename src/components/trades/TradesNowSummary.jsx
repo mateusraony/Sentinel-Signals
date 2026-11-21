@@ -21,7 +21,7 @@ import { formatSignedR } from '@/lib/stopGuarantee';
  */
 export default function TradesNowSummary({ active, analysisCount, closed, filtered = false }) {
   const sumR = active.stopSumR;
-  const sumColor = sumR === null ? 'rgba(255,255,255,0.55)' : sumR > 0 ? '#00ff80' : sumR < 0 ? '#ff1478' : '#ffd166';
+  const sumColor = sumR === null ? 'rgba(255,255,255,0.55)' : sumR > 0 ? '#5db586' : sumR < 0 ? '#e06a5b' : '#e3b45a';
   const sumNote = active.total === 0
     ? 'sem operação aberta'
     : sumR === null
@@ -36,8 +36,8 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
         label={`Operações ativas${suffix}`}
         value={String(active.total)}
         sublabel={describeActiveSummary(active) || 'nenhuma aberta agora'}
-        color={active.total > 0 ? '#00ff80' : 'rgba(255,255,255,0.55)'}
-        glowColor="rgba(0,255,128,0.4)"
+        color={active.total > 0 ? '#5db586' : 'rgba(255,255,255,0.55)'}
+        glowColor="rgba(93,181,134,0.4)"
         valueClassName="text-2xl"
       />
       <MetricSummaryCard
@@ -46,7 +46,7 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
         value={formatSignedR(sumR) ?? '—'}
         sublabel={sumNote}
         color={sumColor}
-        glowColor={sumR !== null && sumR < 0 ? 'rgba(255,20,120,0.4)' : 'rgba(0,255,128,0.4)'}
+        glowColor={sumR !== null && sumR < 0 ? 'rgba(224,106,91,0.4)' : 'rgba(93,181,134,0.4)'}
         valueClassName="text-2xl"
         tooltip="Soma, em R, do resultado de cada operação ativa se o preço voltasse e batesse no stop agora. R = quantas vezes o risco inicial da operação (a distância da entrada ao stop inicial). A soma supõe o mesmo risco em todas as operações (o painel não guarda o tamanho de cada posição), é bruta (sem taxas) e supõe saída exatamente no preço do stop."
       />
@@ -55,8 +55,8 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
         label={`Avisos em análise${suffix}`}
         value={String(analysisCount)}
         sublabel={analysisCount > 0 ? 'viram operação sozinhos, se confirmarem' : 'nenhum agora'}
-        color={analysisCount > 0 ? '#ffd166' : 'rgba(255,255,255,0.55)'}
-        glowColor="rgba(255,209,102,0.4)"
+        color={analysisCount > 0 ? '#e3b45a' : 'rgba(255,255,255,0.55)'}
+        glowColor="rgba(227,180,90,0.4)"
         valueClassName="text-2xl"
       />
       <MetricSummaryCard
@@ -65,7 +65,7 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
         value={String(closed.total)}
         sublabel={closed.total > 0 ? `${closed.wins} ganhos · ${closed.be} empates · ${closed.losses} perdas` : 'nenhuma no período'}
         color="rgba(255,255,255,0.85)"
-        glowColor="rgba(255,255,255,0.25)"
+        glowColor="rgba(255,255,255,0.55)"
         valueClassName="text-2xl"
       />
     </div>

@@ -7,17 +7,17 @@ import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 // Auditoria do Telegram (2026-09-29), Fase 2 item 2.4 — erro de sistema
-// reaproveitava a MESMA cor (#ff1478, rosa/magenta) usada pra SELL/direção
+// reaproveitava a MESMA cor (#e06a5b, rosa/magenta) usada pra SELL/direção
 // em outras telas, sem nenhuma relação entre os dois conceitos. Escopo
 // reduzido do item original da auditoria (ver plano): não uma reescrita
 // completa de 2 escalas de cor — só este ponto específico de sobreposição
 // sem propósito. #ef4444 é um vermelho "puro", visualmente distinto do
 // rosa/magenta de SELL/loss.
 const LEVEL_CONFIG = {
-  info:  { icon: Info,          color: 'rgba(0,229,255,0.8)',   bg: 'rgba(0,229,255,0.08)',   border: 'rgba(0,229,255,0.2)',   label: 'INFO' },
-  warn:  { icon: AlertTriangle, color: '#ff9f43',               bg: 'rgba(255,159,67,0.08)',  border: 'rgba(255,159,67,0.25)', label: 'WARN' },
+  info:  { icon: Info,          color: 'rgba(141,180,226,0.8)',   bg: 'rgba(141,180,226,0.08)',   border: 'rgba(141,180,226,0.2)',   label: 'INFO' },
+  warn:  { icon: AlertTriangle, color: '#dd9a4a',               bg: 'rgba(221,154,74,0.08)',  border: 'rgba(221,154,74,0.25)', label: 'WARN' },
   error: { icon: AlertCircle,   color: '#ef4444',               bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.25)',  label: 'ERR'  },
-  debug: { icon: Bug,           color: 'rgba(255,255,255,0.3)', bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.07)',label: 'DBG'  },
+  debug: { icon: Bug,           color: 'rgba(255,255,255,0.55)', bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.07)',label: 'DBG'  },
 };
 
 export default function Logs() {
@@ -102,14 +102,14 @@ export default function Logs() {
           <button onClick={handleCopy} disabled={filtered.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all disabled:opacity-40"
             style={copied
-              ? { background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }
-              : { background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)', color: '#00e5ff' }}>
+              ? { background: 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.25)', color: '#5db586' }
+              : { background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.15)', color: '#8db4e2' }}>
             {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
             {copied ? 'Copiado!' : `Copiar (${filtered.length})`}
           </button>
           <button onClick={() => clearLogsMutation.mutate()} disabled={clearLogsMutation.isPending}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-80"
-            style={{ background: 'rgba(255,159,67,0.06)', border: '1px solid rgba(255,159,67,0.15)', color: '#ff9f43' }}>
+            style={{ background: 'rgba(221,154,74,0.06)', border: '1px solid rgba(221,154,74,0.15)', color: '#dd9a4a' }}>
             <Trash2 className="w-3 h-3" />Limpar antigos
           </button>
         </div>
@@ -118,12 +118,12 @@ export default function Logs() {
       {/* Stats */}
       <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
         {[
-          { label: 'Total', value: logs.length, color: '#00e5ff', icon: ScrollText },
+          { label: 'Total', value: logs.length, color: '#8db4e2', icon: ScrollText },
           { label: 'Erros', value: errorCount, color: '#ef4444', icon: AlertCircle },
-          { label: 'Warnings', value: warnCount, color: '#ff9f43', icon: AlertTriangle },
-          { label: 'Info', value: logs.filter(l => l.level === 'info').length, color: 'rgba(0,229,255,0.7)', icon: Info },
+          { label: 'Warnings', value: warnCount, color: '#dd9a4a', icon: AlertTriangle },
+          { label: 'Info', value: logs.filter(l => l.level === 'info').length, color: 'rgba(141,180,226,0.7)', icon: Info },
         ].map(({ label, value, color, icon: Icon }) => (
-          <div key={label} className="rounded-xl px-4 py-3 flex items-center gap-3"
+          <div key={label} className="rounded-md px-4 py-3 flex items-center gap-3"
             style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <Icon className="w-4 h-4 shrink-0" style={{ color }} />
             <div>
@@ -135,7 +135,7 @@ export default function Logs() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-xl p-3" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="rounded-md p-3" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-center gap-2 flex-wrap">
           <Filter className="w-3 h-3 text-muted-foreground shrink-0" />
 
@@ -153,7 +153,7 @@ export default function Logs() {
               addendum) sem digitar/selecionar os 3 filtros na mão toda vez. */}
           <button onClick={() => { setSearch('Failed to fetch'); setFilterLevel('error'); setFilterModule('scanner'); }}
             className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all"
-            style={{ background: 'rgba(255,20,120,0.06)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
+            style={{ background: 'rgba(224,106,91,0.06)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
             📡 Falhas de rede (Failed to fetch)
           </button>
 
@@ -165,8 +165,8 @@ export default function Logs() {
               <button key={level} onClick={() => setFilterLevel(level)}
                 className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all"
                 style={filterLevel === level
-                  ? { background: cfg ? cfg.bg : 'rgba(0,229,255,0.12)', border: `1px solid ${cfg ? cfg.border : 'rgba(0,229,255,0.3)'}`, color: cfg ? cfg.color : '#00e5ff' }
-                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+                  ? { background: cfg ? cfg.bg : 'rgba(141,180,226,0.12)', border: `1px solid ${cfg ? cfg.border : 'rgba(141,180,226,0.3)'}`, color: cfg ? cfg.color : '#8db4e2' }
+                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
                 {level === 'all' ? 'Todos' : cfg?.label || level.toUpperCase()}
               </button>
             );
@@ -184,7 +184,7 @@ export default function Logs() {
           {hasActiveFilters && (
             <button onClick={() => { setSearch(''); setFilterLevel('all'); setFilterModule('all'); }}
               className="ml-auto text-9px font-mono px-2 py-1.5 rounded-lg flex items-center gap-1 transition-all"
-              style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
+              style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
               <X className="w-3 h-3" />Limpar
             </button>
           )}
@@ -199,16 +199,16 @@ export default function Logs() {
           <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       ) : isError && logs.length === 0 ? (
-        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar os logs agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <ScrollText className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhum log encontrado.</p>
         </div>
       ) : (
-        <div className="rounded-xl overflow-hidden font-mono" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md overflow-hidden font-mono" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
           {filtered.map((log, i) => {
             const cfg = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.info;
             return (
@@ -226,18 +226,18 @@ export default function Logs() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-9px px-1.5 py-0.5 rounded"
-                      style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.4)' }}>
+                      style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.62)' }}>
                       {log.module}
                     </span>
-                    {log.symbol && <span className="text-9px" style={{ color: 'rgba(0,229,255,0.6)' }}>{log.symbol}</span>}
-                    {log.timeframe && <span className="text-9px" style={{ color: 'rgba(255,255,255,0.3)' }}>{log.timeframe}</span>}
+                    {log.symbol && <span className="text-9px" style={{ color: 'rgba(141,180,226,0.6)' }}>{log.symbol}</span>}
+                    {log.timeframe && <span className="text-9px" style={{ color: 'rgba(255,255,255,0.55)' }}>{log.timeframe}</span>}
                     {log.duration_ms && <span className="text-9px" style={{ color: 'rgba(255,255,255,0.2)' }}>{log.duration_ms}ms</span>}
                     {/* item 197 addendum — o PR #393 passou a gravar executor
                         ('cron'/'browser') em todo SystemLog de erro do scanner,
                         mas o campo é de 1º nível (fora de `details`) e nunca
                         aparecia na tela — a peça que faltava pra decidir cron×
                         navegador sem inferência indireta. */}
-                    {log.executor && <span className="text-9px px-1 rounded" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)' }}>{log.executor}</span>}
+                    {log.executor && <span className="text-9px px-1 rounded" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.55)' }}>{log.executor}</span>}
                     {/* item 253 — classe do erro e id da passada (details). O
                         scan_id aparece abreviado; o valor inteiro está no
                         title e na busca acima. Contraste >= 4.5:1 (mesma
@@ -253,15 +253,15 @@ export default function Logs() {
                       o payload. */}
                   {log.details && (
                     <details className="mt-1">
-                      <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.45)' }}>ver detalhes →</summary>
-                      <pre className="mt-1 text-10px overflow-x-auto py-1 rounded" style={{ color: 'rgba(0,255,128,0.6)', background: 'rgba(0,0,0,0.3)', padding: '4px 8px' }}>
+                      <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.62)' }}>ver detalhes →</summary>
+                      <pre className="mt-1 text-10px overflow-x-auto py-1 rounded" style={{ color: 'rgba(93,181,134,0.6)', background: 'rgba(0,0,0,0.3)', padding: '4px 8px' }}>
                         {JSON.stringify(log.details, null, 2)}
                       </pre>
                     </details>
                   )}
                 </div>
 
-                <span className="text-9px shrink-0 pt-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                <span className="text-9px shrink-0 pt-0.5" style={{ color: 'rgba(255,255,255,0.62)' }}>
                   {moment(log.created_date).format('HH:mm:ss')}
                 </span>
               </div>

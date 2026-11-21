@@ -10,8 +10,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { agreementLabel } from '@/lib/ruleAgreement';
 
 function dirCfg(dir) {
-  if (dir === 1) return { icon: '▲', color: '#00ff80', label: 'Bull' };
-  if (dir === -1) return { icon: '▼', color: '#ff1478', label: 'Bear' };
+  if (dir === 1) return { icon: '▲', color: '#5db586', label: 'Bull' };
+  if (dir === -1) return { icon: '▼', color: '#e06a5b', label: 'Bear' };
   return { icon: '—', color: '#64748b', label: 'Neu' };
 }
 
@@ -53,16 +53,16 @@ function MetricRow({ label, value, color, tooltip }) {
       {tooltip ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="text-9px font-mono text-muted-foreground uppercase tracking-wider cursor-help" tabIndex={0}>{label}</span>
+            <span className="text-11px font-mono text-muted-foreground uppercase tracking-wider cursor-help" tabIndex={0}>{label}</span>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
             {tooltip}
           </TooltipContent>
         </Tooltip>
       ) : (
-        <span className="text-9px font-mono text-muted-foreground uppercase tracking-wider">{label}</span>
+        <span className="text-11px font-mono text-muted-foreground uppercase tracking-wider">{label}</span>
       )}
-      <span className="text-10px font-mono font-semibold" style={{ color: color || 'rgba(255,255,255,0.7)' }}>
+      <span className="text-11px font-mono font-semibold" style={{ color: color || 'rgba(255,255,255,0.7)' }}>
         {value}
       </span>
     </div>
@@ -78,25 +78,25 @@ function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, i
   const score = signal?.context?.score || tradeOp?.score || 0;
   const sigSide = signal?.signal_type || tradeOp?.side;
 
-  const winnerBorder = isWinner ? 'rgba(0,255,128,0.35)' : 'rgba(255,255,255,0.06)';
-  const winnerGlow = isWinner ? '0 0 20px rgba(0,255,128,0.08)' : 'none';
+  const winnerBorder = isWinner ? 'rgba(93,181,134,0.35)' : 'rgba(255,255,255,0.06)';
+  const winnerGlow = isWinner ? '0 0 20px rgba(93,181,134,0.08)' : 'none';
 
   return (
-    <div className="rounded-xl p-4 relative overflow-hidden transition-all"
-      style={{ background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: `1px solid ${winnerBorder}`, boxShadow: winnerGlow }}>
+    <div className="rounded-md p-4 relative overflow-hidden transition-all"
+      style={{ background: 'rgba(10,13,22,0.82)', border: `1px solid ${winnerBorder}`, boxShadow: winnerGlow }}>
 
       {isWinner && (
         <div className="absolute top-0 right-0 px-2.5 py-1 rounded-bl-lg flex items-center gap-1"
-          style={{ background: 'rgba(0,255,128,0.12)', borderLeft: '1px solid rgba(0,255,128,0.25)', borderBottom: '1px solid rgba(0,255,128,0.25)' }}>
-          <Crown className="w-3 h-3" style={{ color: '#00ff80' }} />
-          <span className="text-9px font-mono font-bold" style={{ color: '#00ff80' }}>Melhor</span>
+          style={{ background: 'rgba(93,181,134,0.12)', borderLeft: '1px solid rgba(93,181,134,0.25)', borderBottom: '1px solid rgba(93,181,134,0.25)' }}>
+          <Crown className="w-3 h-3" style={{ color: '#5db586' }} />
+          <span className="text-11px font-mono font-bold" style={{ color: '#5db586' }}>Melhor</span>
         </div>
       )}
 
       {/* Header */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-9px font-mono px-1.5 py-0.5 rounded"
-          style={{ background: 'rgba(0,229,255,0.1)', color: '#00e5ff', border: '1px solid rgba(0,229,255,0.2)' }}>
+        <span className="text-11px font-mono px-1.5 py-0.5 rounded"
+          style={{ background: 'rgba(141,180,226,0.1)', color: '#8db4e2', border: '1px solid rgba(141,180,226,0.2)' }}>
           {label}
         </span>
         <TokenIcon symbol={asset.symbol} size={18} />
@@ -108,7 +108,7 @@ function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, i
         <div>
           <div className="text-lg font-bold font-mono text-foreground">
             ${formatPrice(priceView.price)}
-            {priceView.isCandle && <span className="text-9px font-normal text-muted-foreground"> fech. 1h</span>}
+            {priceView.isCandle && <span className="text-11px font-normal text-muted-foreground"> fech. 1h</span>}
           </div>
           {/* Item 279: rótulo e fonte; sem dado, "% 24h indisponível" (nunca NaN). */}
           <div className="text-11px font-mono" style={{ color: CHANGE_TONE_COLOR[priceView.tone] }}>
@@ -118,8 +118,8 @@ function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, i
         {sigSide && (
           <span className="flex items-center gap-1 text-xs font-mono font-bold px-3 py-1.5 rounded-lg"
             style={sigSide === 'BUY'
-              ? { background: 'rgba(0,255,128,0.15)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.4)' }
-              : { background: 'rgba(255,20,120,0.15)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.4)' }}>
+              ? { background: 'rgba(93,181,134,0.15)', color: '#5db586', border: '1px solid rgba(93,181,134,0.4)' }
+              : { background: 'rgba(224,106,91,0.15)', color: '#e06a5b', border: '1px solid rgba(224,106,91,0.4)' }}>
             {sigSide === 'BUY' ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
             {sigSide}
           </span>
@@ -128,7 +128,7 @@ function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, i
 
       {/* TF Alignment */}
       <div className="mb-3">
-        <div className="text-9px font-mono text-muted-foreground uppercase tracking-wider mb-1.5">Tendência Multi-TF</div>
+        <div className="text-11px font-mono text-muted-foreground uppercase tracking-wider mb-1.5">Tendência Multi-TF</div>
         <div className="flex items-center gap-2">
           {['1h', '4h', '1d'].map(tf => {
             const s = states.find(st => st.timeframe === tf);
@@ -136,9 +136,9 @@ function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, i
             return (
               <div key={tf} className="flex-1 text-center rounded-lg py-2"
                 style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                <div className="text-8px font-mono text-muted-foreground">{tf.toUpperCase()}</div>
+                <div className="text-11px font-mono text-muted-foreground">{tf.toUpperCase()}</div>
                 <div className="text-sm font-mono font-bold" style={{ color: d.color }}>{d.icon}</div>
-                <div className="text-8px font-mono" style={{ color: d.color }}>{d.label}</div>
+                <div className="text-11px font-mono" style={{ color: d.color }}>{d.label}</div>
               </div>
             );
           })}
@@ -152,23 +152,23 @@ function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, i
           const s4h = states.find(s => s.timeframe === '4h');
           return (
             <>
-              <MetricRow label="RF Valor (4h)" value={s4h ? `$${formatPrice(s4h.rf_filter_value)}` : '—'} color="rgba(0,229,255,0.7)" />
+              <MetricRow label="RF Valor (4h)" value={s4h ? `$${formatPrice(s4h.rf_filter_value)}` : '—'} color="rgba(141,180,226,0.7)" />
               <MetricRow label="RSI (1h)" value={Number.isFinite(s1h?.rsi_value) ? s1h.rsi_value.toFixed(0) : '—'}
-                color={s1h?.rsi_zone === 'overbought' ? '#ff1478' : s1h?.rsi_zone === 'oversold' ? '#00ff80' : 'rgba(255,255,255,0.7)'}
+                color={s1h?.rsi_zone === 'overbought' ? '#e06a5b' : s1h?.rsi_zone === 'oversold' ? '#5db586' : 'rgba(255,255,255,0.7)'}
                 tooltip="Índice de Força Relativa: mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui, só confirmação, nunca sinal sozinho." />
               <MetricRow label="MACD Hist" value={s1h?.macd_histogram !== undefined ? (s1h.macd_histogram > 0 ? '▲ Pos' : '▼ Neg') : '—'}
-                color={s1h?.macd_histogram > 0 ? '#00ff80' : s1h?.macd_histogram < 0 ? '#ff1478' : '#64748b'}
+                color={s1h?.macd_histogram > 0 ? '#5db586' : s1h?.macd_histogram < 0 ? '#e06a5b' : '#64748b'}
                 tooltip="Compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo." />
               <MetricRow label="EMA Trend" value={s1h?.trend_ema === 'bullish' ? '▲ Bull' : s1h?.trend_ema === 'bearish' ? '▼ Bear' : '— Neu'}
-                color={s1h?.trend_ema === 'bullish' ? '#00ff80' : s1h?.trend_ema === 'bearish' ? '#ff1478' : '#64748b'}
+                color={s1h?.trend_ema === 'bullish' ? '#5db586' : s1h?.trend_ema === 'bearish' ? '#e06a5b' : '#64748b'}
                 tooltip="Média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência." />
               <MetricRow label="Regras" value={score > 0 ? agreementLabel({ score }) : '—'}
-                color={score >= 85 ? '#00ff80' : score >= 75 ? '#ffd166' : 'rgba(255,255,255,0.5)'} />
+                color={score >= 85 ? '#5db586' : score >= 75 ? '#e3b45a' : 'rgba(255,255,255,0.5)'} />
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }} />
               <MetricRow
                 label="Trade"
                 value={hasActive ? `${tradeOp.status}` : signal ? 'Aguardando' : dataUnavailable ? 'Não verificado' : 'Livre'}
-                color={hasActive ? '#00e5ff' : signal ? '#ffd166' : dataUnavailable ? '#ff9f43' : '#64748b'}
+                color={hasActive ? '#8db4e2' : signal ? '#e3b45a' : dataUnavailable ? '#dd9a4a' : '#64748b'}
               />
             </>
           );
@@ -176,24 +176,24 @@ function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, i
       </div>
 
       {/* Opportunity score */}
-      <div className="rounded-lg px-3 py-2.5" style={{ background: isWinner ? 'rgba(0,255,128,0.06)' : 'rgba(255,255,255,0.02)', border: `1px solid ${isWinner ? 'rgba(0,255,128,0.15)' : 'rgba(255,255,255,0.04)'}` }}>
+      <div className="rounded-lg px-3 py-2.5" style={{ background: isWinner ? 'rgba(93,181,134,0.06)' : 'rgba(255,255,255,0.02)', border: `1px solid ${isWinner ? 'rgba(93,181,134,0.15)' : 'rgba(255,255,255,0.04)'}` }}>
         <div className="flex items-center justify-between mb-1">
-          <span className="text-9px font-mono text-muted-foreground uppercase tracking-wider">Oportunidade</span>
-          <span className="text-lg font-bold font-mono" style={{ color: opp.score >= 50 ? '#00ff80' : opp.score >= 25 ? '#ffd166' : '#64748b' }}>
+          <span className="text-11px font-mono text-muted-foreground uppercase tracking-wider">Oportunidade</span>
+          <span className="text-lg font-bold font-mono" style={{ color: opp.score >= 50 ? '#5db586' : opp.score >= 25 ? '#e3b45a' : '#64748b' }}>
             {opp.score}
           </span>
         </div>
         {opp.reasons.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
             {opp.reasons.map((r, i) => (
-              <span key={i} className="text-8px font-mono px-1.5 py-0.5 rounded"
-                style={{ background: 'rgba(0,255,128,0.08)', color: 'rgba(0,255,128,0.7)', border: '1px solid rgba(0,255,128,0.12)' }}>
+              <span key={i} className="text-11px font-mono px-1.5 py-0.5 rounded"
+                style={{ background: 'rgba(93,181,134,0.08)', color: 'rgba(93,181,134,0.7)', border: '1px solid rgba(93,181,134,0.12)' }}>
                 {r}
               </span>
             ))}
           </div>
         )}
-        <p className="text-7px font-mono text-muted-foreground/70 mt-1.5">
+        <p className="text-10px font-mono text-muted-foreground/70 mt-1.5">
           Regras alinhadas e Oportunidade são pontuações das regras atuais — não são probabilidade de acerto.
         </p>
       </div>
@@ -225,11 +225,11 @@ export default function ComparePanel({ assetA, assetB, statesA, statesB, signalA
     <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center gap-2">
-        <Swords className="w-4 h-4" style={{ color: '#00e5ff' }} />
+        <Swords className="w-4 h-4" style={{ color: '#8db4e2' }} />
         <h2 className="text-base font-bold text-foreground">Comparação Lado-a-Lado</h2>
         {winner && (
-          <span className="text-10px font-mono px-2.5 py-1 rounded-lg flex items-center gap-1"
-            style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }}>
+          <span className="text-11px font-mono px-2.5 py-1 rounded-lg flex items-center gap-1"
+            style={{ background: 'rgba(93,181,134,0.1)', border: '1px solid rgba(93,181,134,0.25)', color: '#5db586' }}>
             <Crown className="w-3 h-3" />
             <TokenIcon symbol={(winner === 'A' ? assetA : assetB).symbol} size={14} />
             {winner === 'A' ? assetA.display_name : assetB.display_name}

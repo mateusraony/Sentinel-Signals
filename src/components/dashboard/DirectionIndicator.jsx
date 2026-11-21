@@ -7,26 +7,26 @@ export default function DirectionIndicator({ direction, label }) {
 
   return (
     <div className="flex flex-col items-center gap-0.5">
-      <span className="text-9px font-mono tracking-widest uppercase"
-        style={{ color: 'rgba(255,255,255,0.3)' }}
+      <span className="text-11px font-mono tracking-widest uppercase"
+        style={{ color: 'rgba(255,255,255,0.55)' }}
       >{label}</span>
       <div
         className="w-7 h-7 rounded-lg flex items-center justify-center"
         style={{
           background: isUp
-            ? 'rgba(0,255,128,0.1)'
+            ? 'rgba(93,181,134,0.1)'
             : isDown
-            ? 'rgba(255,20,120,0.1)'
+            ? 'rgba(224,106,91,0.1)'
             : 'rgba(255,255,255,0.04)',
           border: isUp
-            ? '1px solid rgba(0,255,128,0.3)'
+            ? '1px solid rgba(93,181,134,0.3)'
             : isDown
-            ? '1px solid rgba(255,20,120,0.3)'
+            ? '1px solid rgba(224,106,91,0.3)'
             : '1px solid rgba(255,255,255,0.08)',
           boxShadow: isUp
-            ? '0 0 8px rgba(0,255,128,0.15)'
+            ? '0 0 8px rgba(93,181,134,0.15)'
             : isDown
-            ? '0 0 8px rgba(255,20,120,0.15)'
+            ? '0 0 8px rgba(224,106,91,0.15)'
             : 'none',
         }}
       >

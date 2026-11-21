@@ -9,9 +9,9 @@
 // os outros 3 arquivos usavam vermelho fixo, sem relação com o tamanho do
 // drawdown.
 export function drawdownColor(maxDrawdownPct) {
-  if (maxDrawdownPct > 15) return '#ff1478';
-  if (maxDrawdownPct > 8) return '#ff9f43';
-  return '#00ff80';
+  if (maxDrawdownPct > 15) return '#e06a5b';
+  if (maxDrawdownPct > 8) return '#dd9a4a';
+  return '#5db586';
 }
 
 // Decisão do usuário (AskUserQuestion, 2026-09-27): 2 níveis/50% vira o
@@ -22,7 +22,7 @@ export function drawdownColor(maxDrawdownPct) {
 // neutro À PARTE, antes de chamar esta função (decisão intencional de
 // rodada anterior — não é responsabilidade desta função).
 export function winRateColor(winRatePct) {
-  return winRatePct >= 50 ? '#00ff80' : '#ff9f43';
+  return winRatePct >= 50 ? '#5db586' : '#dd9a4a';
 }
 
 // pf: profit factor (null quando a amostra não teve nenhuma perda —
@@ -36,10 +36,10 @@ export function winRateColor(winRatePct) {
 // e, com isso, ganham a 3ª cor que o levantamento original já pedia pro
 // estado "Baixo" (antes Marginal e Baixo dividiam a mesma cor laranja).
 export function profitFactorColor(pf, hasWins = false) {
-  if (pf === null) return hasWins ? '#00ff80' : '#ff1478';
-  if (pf >= 1.5) return '#00ff80';
-  if (pf >= 1) return '#ff9f43';
-  return '#ff1478';
+  if (pf === null) return hasWins ? '#5db586' : '#e06a5b';
+  if (pf >= 1.5) return '#5db586';
+  if (pf >= 1) return '#dd9a4a';
+  return '#e06a5b';
 }
 
 export function profitFactorLabel(pf, hasWins = false) {
@@ -50,9 +50,9 @@ export function profitFactorLabel(pf, hasWins = false) {
 }
 
 const GLOW_04 = {
-  '#00ff80': 'rgba(0,255,128,0.4)',
-  '#ff9f43': 'rgba(255,159,67,0.4)',
-  '#ff1478': 'rgba(255,20,120,0.4)',
+  '#5db586': 'rgba(93,181,134,0.4)',
+  '#dd9a4a': 'rgba(221,154,74,0.4)',
+  '#e06a5b': 'rgba(224,106,91,0.4)',
 };
 
 // Glow (opacidade 0.4) pareado com as 3 cores acima — usado pelos cards da

@@ -122,8 +122,8 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
 
   if (candidates.length === 0 && signalsUnavailable) {
     return (
-      <div className="glass-card rounded-xl p-8 text-center">
-        <AlertTriangle className="w-8 h-8 mx-auto mb-3" style={{ color: '#ff9f43', opacity: 0.6 }} />
+      <div className="glass-card rounded-md p-8 text-center">
+        <AlertTriangle className="w-8 h-8 mx-auto mb-3" style={{ color: '#dd9a4a', opacity: 0.6 }} />
         <p className="text-muted-foreground text-sm">Não foi possível carregar os sinais recentes agora — falha ao atualizar.</p>
       </div>
     );
@@ -131,7 +131,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
 
   if (candidates.length === 0) {
     return (
-      <div className="glass-card rounded-xl p-8 text-center">
+      <div className="glass-card rounded-md p-8 text-center">
         <Sparkles className="w-8 h-8 mx-auto mb-3 text-muted-foreground opacity-30" />
         <p className="text-muted-foreground text-sm">Nenhum sinal recente do Range Filter para analisar.</p>
         <p className="text-xs text-muted-foreground mt-1">Assim que um sinal for detectado, ele aparece aqui comparado ao histórico.</p>
@@ -146,21 +146,21 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
   const enoughSample = Boolean(headline) && headline.rCounted >= minTrades;
   const ci = headline?.expectancyRCI95;
   const conclusive = Boolean(headline?.conclusive);
-  const signColor = headline?.expectancyR >= 0 ? '#00ff80' : '#ff1478';
-  const badgeColor = conclusive ? signColor : '#ffd166';
+  const signColor = headline?.expectancyR >= 0 ? '#5db586' : '#e06a5b';
+  const badgeColor = conclusive ? signColor : '#e3b45a';
   const badgeLabel = conclusive ? (headline.expectancyR >= 0 ? 'CONCLUSIVO +' : 'CONCLUSIVO −') : 'INCONCLUSIVO';
 
   return (
     <div className="space-y-4">
       {/* Selector */}
       <div className="flex items-center gap-2 flex-wrap">
-        <Sparkles className="w-4 h-4" style={{ color: '#00e5ff' }} />
+        <Sparkles className="w-4 h-4" style={{ color: '#8db4e2' }} />
         <span className="text-11px font-mono text-muted-foreground">Analisando:</span>
         <select
           value={selected?.id || ''}
           onChange={e => setSelectedId(e.target.value)}
           className="px-2.5 py-1.5 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.85)' }}>
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.85)' }}>
           {candidates.map(c => (
             <option key={c.id} value={c.id}>
               {c.symbol?.replace('USDT', '/USDT')} · {c.timeframe?.toUpperCase()} · {c.signal_type} · {agreementLabel({ score: c.context?.score }) ?? '🧩 —/100'}
@@ -172,27 +172,27 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
       {selected && (
         <>
           {/* Gauge */}
-          <div className="glass-card rounded-xl p-5">
+          <div className="glass-card rounded-md p-5">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 {selected.signal_type === 'BUY'
-                  ? <TrendingUp className="w-4 h-4" style={{ color: '#00ff80' }} />
-                  : <TrendingDown className="w-4 h-4" style={{ color: '#ff1478' }} />}
+                  ? <TrendingUp className="w-4 h-4" style={{ color: '#5db586' }} />
+                  : <TrendingDown className="w-4 h-4" style={{ color: '#e06a5b' }} />}
                 <TokenIcon symbol={selected.symbol} size={16} />
                 <span className="text-sm font-bold text-foreground">
                   {selected.symbol?.replace('USDT', '/USDT')} — {selected.signal_type} {selected.timeframe?.toUpperCase()}
                 </span>
               </div>
-              <span className="text-10px font-mono text-muted-foreground">
+              <span className="text-11px font-mono text-muted-foreground">
                 {matches.length} operaç{matches.length === 1 ? 'ão' : 'ões'} similar{matches.length === 1 ? '' : 'es'}
               </span>
             </div>
             {exclusionText && (
-              <p className="text-9px font-mono text-muted-foreground">{exclusionText}</p>
+              <p className="text-11px font-mono text-muted-foreground">{exclusionText}</p>
             )}
 
             {!enoughSample ? (
-              <div className="flex items-center gap-2 py-3 text-11px font-mono" style={{ color: 'rgba(255,209,102,0.85)' }}>
+              <div className="flex items-center gap-2 py-3 text-11px font-mono" style={{ color: 'rgba(227,180,90,0.85)' }}>
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                 Amostra insuficiente ({headline?.rCounted ?? 0}/{minTrades} operações fechadas com R calculável, direção, timeframe
                 {Number.isFinite(selected.context?.tf_4h_direction) ? ', alinhamento 4h' : ''} e score ±{SCORE_TOLERANCE} similares) —
@@ -205,12 +205,12 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
                     {`${headline.expectancyR >= 0 ? '+' : ''}${headline.expectancyR.toFixed(3)}R`}
                   </span>
                   <span className="text-11px font-mono text-muted-foreground">expectância histórica em padrões similares</span>
-                  <span className="text-8px font-mono px-1.5 py-0.5 rounded"
+                  <span className="text-11px font-mono px-1.5 py-0.5 rounded"
                     style={{ background: `${badgeColor}18`, border: `1px solid ${badgeColor}40`, color: badgeColor }}>
                     {badgeLabel}
                   </span>
                 </div>
-                <p className="text-10px font-mono text-muted-foreground mb-3">
+                <p className="text-11px font-mono text-muted-foreground mb-3">
                   {headline.rCounted} operações{ci ? ` · IC95 [${ci[0].toFixed(3)}; ${ci[1].toFixed(3)}]` : ''} · taxa de acerto {headline.winRate.toFixed(0)}%
                   {' '}(taxa de acerto não é expectância — com TP1 parcial ela pode ser alta com R líquido negativo)
                 </p>
@@ -218,21 +218,21 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
             )}
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
-              <div className="rounded-lg p-2.5" style={{ background: 'rgba(0,255,128,0.06)', border: '1px solid rgba(0,255,128,0.15)' }}>
-                <div className="text-9px font-mono text-muted-foreground mb-0.5">Vitórias</div>
-                <div className="text-base font-bold" style={{ color: '#00ff80' }}>{headline?.wins ?? 0}</div>
+              <div className="rounded-lg p-2.5" style={{ background: 'rgba(93,181,134,0.06)', border: '1px solid rgba(93,181,134,0.15)' }}>
+                <div className="text-11px font-mono text-muted-foreground mb-0.5">Vitórias</div>
+                <div className="text-base font-bold" style={{ color: '#5db586' }}>{headline?.wins ?? 0}</div>
               </div>
-              <div className="rounded-lg p-2.5" style={{ background: 'rgba(255,20,120,0.06)', border: '1px solid rgba(255,20,120,0.15)' }}>
-                <div className="text-9px font-mono text-muted-foreground mb-0.5">Derrotas</div>
-                <div className="text-base font-bold" style={{ color: '#ff1478' }}>{headline?.losses ?? 0}</div>
+              <div className="rounded-lg p-2.5" style={{ background: 'rgba(224,106,91,0.06)', border: '1px solid rgba(224,106,91,0.15)' }}>
+                <div className="text-11px font-mono text-muted-foreground mb-0.5">Derrotas</div>
+                <div className="text-base font-bold" style={{ color: '#e06a5b' }}>{headline?.losses ?? 0}</div>
               </div>
               <div className="rounded-lg p-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div className="text-9px font-mono text-muted-foreground mb-0.5 flex items-center gap-1"><Minus className="w-2.5 h-2.5" />Breakeven</div>
+                <div className="text-11px font-mono text-muted-foreground mb-0.5 flex items-center gap-1"><Minus className="w-2.5 h-2.5" />Breakeven</div>
                 <div className="text-base font-bold text-foreground">{headline?.be ?? 0}</div>
               </div>
-              <div className="rounded-lg p-2.5" style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)' }}>
-                <div className="text-9px font-mono text-muted-foreground mb-0.5">R médio</div>
-                <div className="text-base font-bold" style={{ color: '#00e5ff' }}>
+              <div className="rounded-lg p-2.5" style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.15)' }}>
+                <div className="text-11px font-mono text-muted-foreground mb-0.5">R médio</div>
+                <div className="text-base font-bold" style={{ color: '#8db4e2' }}>
                   {Number.isFinite(headline?.expectancyR) ? `${headline.expectancyR >= 0 ? '+' : ''}${headline.expectancyR.toFixed(2)}R` : '—'}
                 </div>
               </div>
@@ -241,33 +241,33 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
 
           {/* Score bucket chart */}
           {scoreBuckets.length > 0 && (
-            <div className="glass-card rounded-xl p-4">
+            <div className="glass-card rounded-md p-4">
               <h3 className="text-xs font-bold text-foreground mb-3">Taxa de acerto por faixa de score — {selected.signal_type} {selected.timeframe?.toUpperCase()}</h3>
               <div role="img" aria-label={`Gráfico de barras da taxa de acerto por faixa de score, para ${selected.signal_type} ${selected.timeframe?.toUpperCase()}: ${scoreBuckets.map(b => `faixa ${b.label} pontos, ${b.winRate.toFixed(0)}% de acerto em ${b.n} operaç${b.n === 1 ? 'ão' : 'ões'}`).join('; ')}`}>
                 <ResponsiveContainer width="100%" height={180}>
                   <BarChart data={scoreBuckets} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
-                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.62)' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.62)' }} axisLine={false} tickLine={false} />
                     <Tooltip
                       contentStyle={{ background: 'rgba(6,8,15,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }}
                       formatter={(value, name, props) => [`${Number(value).toFixed(0)}% (${props.payload.n} op.)`, 'Taxa de acerto']}
                     />
                     <Bar dataKey="winRate" radius={[4, 4, 0, 0]}>
                       {scoreBuckets.map((b, i) => (
-                        <Cell key={i} fill="#00e5ff" fillOpacity={b.n >= b.minTrades ? 0.85 : 0.3} />
+                        <Cell key={i} fill="#8db4e2" fillOpacity={b.n >= b.minTrades ? 0.85 : 0.3} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <p className="text-10px font-mono text-muted-foreground mt-1">
+              <p className="text-11px font-mono text-muted-foreground mt-1">
                 Cada barra é uma faixa de score de {SCORE_BUCKET_SIZE} pontos, entre operações fechadas com a mesma direção/timeframe do sinal selecionado.
                 Barras apagadas têm menos de {scoreBuckets[0]?.minTrades ?? 30} operações — indicativo, não conclusivo.
               </p>
             </div>
           )}
 
-          <p className="text-10px font-mono text-muted-foreground">
+          <p className="text-11px font-mono text-muted-foreground">
             Estimativa baseada em confluência de indicadores e desempenho histórico de padrões similares — não é garantia de resultado. Histórico, não calibrado: mostra o que já aconteceu em casos parecidos, não uma probabilidade calibrada.
           </p>
         </>

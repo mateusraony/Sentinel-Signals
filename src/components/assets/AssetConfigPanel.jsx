@@ -279,7 +279,7 @@ export default function AssetConfigPanel({ asset, onSave }) {
       {errors.length > 0 && (
         <div className="space-y-1">
           {errors.map(err => (
-            <div key={err} className="flex items-center gap-2 text-xs font-mono" style={{ color: '#ff1478' }}>
+            <div key={err} className="flex items-center gap-2 text-xs font-mono" style={{ color: '#e06a5b' }}>
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />{err}
             </div>
           ))}

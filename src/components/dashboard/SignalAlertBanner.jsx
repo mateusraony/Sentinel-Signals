@@ -55,47 +55,47 @@ export default function SignalAlertBanner({ signals = [] }) {
         const isBuy = sig.signal_type === 'BUY';
         const symbol = sig.symbol?.replace('USDT', '/USDT') || sig.symbol;
         const score = Number.isFinite(sig.context?.score) ? sig.context.score : 0;
-        const borderColor = isBuy ? 'rgba(0,255,128,0.45)' : 'rgba(255,20,120,0.45)';
-        const bgColor = isBuy ? 'rgba(0,255,128,0.06)' : 'rgba(255,20,120,0.06)';
-        const textColor = isBuy ? '#00ff80' : '#ff1478';
+        const borderColor = isBuy ? 'rgba(93,181,134,0.45)' : 'rgba(224,106,91,0.45)';
+        const bgColor = isBuy ? 'rgba(93,181,134,0.06)' : 'rgba(224,106,91,0.06)';
+        const textColor = isBuy ? '#5db586' : '#e06a5b';
 
         return (
           <div key={sig.id}
-            className="flex items-center gap-3 px-4 py-2.5 rounded-xl"
-            style={{ background: bgColor, border: `1px solid ${borderColor}`, boxShadow: `0 0 16px ${isBuy ? 'rgba(0,255,128,0.08)' : 'rgba(255,20,120,0.08)'}` }}>
+            className="flex items-center gap-3 px-4 py-2.5 rounded-md"
+            style={{ background: bgColor, border: `1px solid ${borderColor}`, boxShadow: 'none' }}>
             {/* Fase 5 da auditoria do Telegram (2026-10-02), item 5.2 — achado
                 real de acessibilidade: único animate-pulse do Dashboard sem o
                 guard motion-reduce que AssetCard.jsx/SignalToast.jsx/
                 TradeCard.jsx/index.css já têm. */}
             <Bell className="w-3.5 h-3.5 shrink-0 animate-pulse motion-reduce:animate-none" style={{ color: textColor }} />
             <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
-              <span className="text-10px font-mono font-bold" style={{ color: textColor }}>
+              <span className="text-11px font-mono font-bold" style={{ color: textColor }}>
                 {NOTIFICATION_STAGES.SIGNAL_DETECTED.emoji} SINAL {sig.signal_type}
               </span>
               <TokenIcon symbol={sig.symbol} size={16} />
               <span className="font-bold text-xs text-foreground">{symbol}</span>
-              <span className="text-9px font-mono px-1.5 py-0.5 rounded"
+              <span className="text-11px font-mono px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}>
                 {sig.timeframe?.toUpperCase()}
               </span>
               {score > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="text-9px font-mono cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                    <span className="text-11px font-mono cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#e3b45a' : 'rgba(255,255,255,0.62)' }}>
                       {agreementLabel({ score })}
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                  <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                     {AGREEMENT_HINT}
                   </TooltipContent>
                 </Tooltip>
               )}
               {sig.priority && (
-                <span className="text-9px font-mono" style={{ color: sig.priority === 'high' ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
+                <span className="text-11px font-mono" style={{ color: sig.priority === 'high' ? '#dd9a4a' : 'rgba(255,255,255,0.55)' }}>
                   {priorityLabel(sig.priority)} prioridade
                 </span>
               )}
-              <span className="text-9px font-mono text-muted-foreground">{moment(sig.created_date).fromNow()}</span>
+              <span className="text-11px font-mono text-muted-foreground">{moment(sig.created_date).fromNow()}</span>
             </div>
             <button onClick={() => dismiss(sig.id)}
               className="shrink-0 p-1 rounded hover:bg-white/[0.06] transition-colors">

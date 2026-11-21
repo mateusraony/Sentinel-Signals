@@ -54,8 +54,8 @@ export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
 
   const { totalPnl, maxDrawdown, winRate, wins, losses, be, total, avgWin, avgLoss, expectancyR, rr } = metrics;
 
-  const pnlColor = totalPnl >= 0 ? '#00ff80' : '#ff1478';
-  const pnlGlow = totalPnl >= 0 ? 'rgba(0,255,128,0.06)' : 'rgba(255,20,120,0.06)';
+  const pnlColor = totalPnl >= 0 ? '#5db586' : '#e06a5b';
+  const pnlGlow = totalPnl >= 0 ? 'rgba(93,181,134,0.06)' : 'rgba(224,106,91,0.06)';
   // Round 4 da nova varredura pós-Raio-X (2026-09-27): Win Rate passou a usar
   // a mesma faixa de 2 níveis/50% do resto do app (decisão do usuário) —
   // perdeu o nível intermediário próprio que só existia aqui (45/60%).
@@ -63,19 +63,19 @@ export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
   const ddColor = drawdownColor(maxDrawdown);
 
   return (
-    <div className="rounded-2xl p-4"
-      style={{ background: 'rgba(6,8,15,0.7)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(20px)' }}>
+    <div className="rounded-lg p-4"
+      style={{ background: 'rgba(6,8,15,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}>
       {/* Section label */}
       <div className="flex items-center gap-2 mb-3">
-        <BarChart2 className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
-        <span className="text-10px font-mono uppercase tracking-widest text-muted-foreground">Performance Real</span>
-        <span className="text-9px font-mono px-1.5 py-0.5 rounded"
-          style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
+        <BarChart2 className="w-3.5 h-3.5" style={{ color: '#8db4e2' }} />
+        <span className="text-11px font-mono uppercase tracking-widest text-muted-foreground">Performance Real</span>
+        <span className="text-11px font-mono px-1.5 py-0.5 rounded"
+          style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
           {total} trades fechados
         </span>
         {activeOpsCount > 0 && (
-          <span className="text-9px font-mono px-1.5 py-0.5 rounded flex items-center gap-1"
-            style={{ background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.2)', color: '#00ff80' }}>
+          <span className="text-11px font-mono px-1.5 py-0.5 rounded flex items-center gap-1"
+            style={{ background: 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.2)', color: '#5db586' }}>
             <Zap className="w-2.5 h-2.5" />{activeOpsCount} ativas
           </span>
         )}
@@ -99,7 +99,7 @@ export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
             ? `Expectância ${expectancyR >= 0 ? '+' : ''}${expectancyR.toFixed(2)}R · +${avgWin.toFixed(1)}%/-${avgLoss.toFixed(1)}%`
             : `Avg win +${avgWin.toFixed(1)}% / loss -${avgLoss.toFixed(1)}%`}
           color={wrColor}
-          glowColor={winRate >= 50 ? 'rgba(0,255,128,0.05)' : undefined}
+          glowColor={winRate >= 50 ? 'rgba(93,181,134,0.05)' : undefined}
         />
         <MetricBoxCard
           icon={Shield}
@@ -107,14 +107,14 @@ export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
           value={`-${maxDrawdown.toFixed(2)}%`}
           sub={maxDrawdown < 5 ? 'Risco controlado ✓' : maxDrawdown < 15 ? 'Atenção moderada' : 'Drawdown alto ⚠️'}
           color={ddColor}
-          glowColor={maxDrawdown > 15 ? 'rgba(255,20,120,0.06)' : undefined}
+          glowColor={maxDrawdown > 15 ? 'rgba(224,106,91,0.06)' : undefined}
         />
         <MetricBoxCard
           icon={BarChart2}
           label="Risk/Reward"
           value={rr !== null ? `${rr.toFixed(2)}:1` : '—'}
           sub={rr !== null ? (rr >= 2 ? 'Excelente R:R ✓' : rr >= 1.5 ? 'Bom R:R' : 'R:R abaixo do ideal') : 'Dados insuficientes'}
-          color={rr !== null ? (rr >= 2 ? '#00ff80' : rr >= 1.5 ? '#ffd166' : '#ff9f43') : '#64748b'}
+          color={rr !== null ? (rr >= 2 ? '#5db586' : rr >= 1.5 ? '#e3b45a' : '#dd9a4a') : '#64748b'}
         />
       </div>
     </div>

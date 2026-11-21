@@ -80,7 +80,7 @@ function CustomTooltip({ active, payload, marketLabel }) {
             <span className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
             {entry.name === 'portfolio' ? 'Minha Carteira' : entry.name === 'market' ? <>{marketLabel === 'BTC' && <TokenIcon symbol="BTC" size={12} className="mr-1" />}{`${marketLabel} (Mercado)`}</> : entry.name}
           </span>
-          <span className="font-bold" style={{ color: entry.value >= 0 ? '#00ff80' : '#ff1478' }}>
+          <span className="font-bold" style={{ color: entry.value >= 0 ? '#5db586' : '#e06a5b' }}>
             {fmtPct(entry.value)}
           </span>
         </div>
@@ -134,7 +134,7 @@ export default function PortfolioVsMarket({ trades }) {
 
   if (portfolioCurve.length < 2) {
     return (
-      <div className="glass-card rounded-xl p-8 text-center">
+      <div className="glass-card rounded-md p-8 text-center">
         <Activity className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
         <p className="text-sm text-muted-foreground">
           Dados insuficientes para o gráfico comparativo.
@@ -159,12 +159,12 @@ export default function PortfolioVsMarket({ trades }) {
   const outperform = hasMarketData && finalPnl > finalMarket;
 
   return (
-    <div className="rounded-xl p-4"
+    <div className="rounded-md p-4"
       style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <Activity className="w-4 h-4 shrink-0" style={{ color: '#00e5ff' }} />
+          <Activity className="w-4 h-4 shrink-0" style={{ color: '#8db4e2' }} />
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-foreground">Carteira vs Mercado ({benchmarkOption.label})</h3>
             <p className="text-9px font-mono text-muted-foreground/60 leading-tight">
@@ -174,28 +174,28 @@ export default function PortfolioVsMarket({ trades }) {
         </div>
         <div className="flex items-center gap-3 text-10px font-mono">
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full" style={{ background: '#00ff80' }} />
+            <span className="w-2 h-2 rounded-full" style={{ background: '#5db586' }} />
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>Carteira</span>
-            <span className="font-bold" style={{ color: finalPnl >= 0 ? '#00ff80' : '#ff1478' }}>
+            <span className="font-bold" style={{ color: finalPnl >= 0 ? '#5db586' : '#e06a5b' }}>
               {fmtPct(finalPnl)}
             </span>
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full" style={{ background: '#ff9f43' }} />
+            <span className="w-2 h-2 rounded-full" style={{ background: '#dd9a4a' }} />
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>{benchmarkOption.key === 'BTC' && <TokenIcon symbol="BTC" size={12} className="mr-1" />}{benchmarkOption.label}</span>
-            <span className="font-bold" style={{ color: !hasMarketData ? 'rgba(255,255,255,0.3)' : finalMarket >= 0 ? '#00ff80' : '#ff1478' }}>
+            <span className="font-bold" style={{ color: !hasMarketData ? 'rgba(255,255,255,0.55)' : finalMarket >= 0 ? '#5db586' : '#e06a5b' }}>
               {marketFetching ? '…' : hasMarketData ? fmtPct(finalMarket) : '—'}
             </span>
           </span>
           {outperform && (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded"
-              style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }}>
+              style={{ background: 'rgba(93,181,134,0.1)', border: '1px solid rgba(93,181,134,0.25)', color: '#5db586' }}>
               <TrendingUp className="w-3 h-3" /> Superando
             </span>
           )}
           {hasMarketData && !outperform && (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded"
-              style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.25)', color: '#ff1478' }}>
+              style={{ background: 'rgba(224,106,91,0.1)', border: '1px solid rgba(224,106,91,0.25)', color: '#e06a5b' }}>
               <TrendingDown className="w-3 h-3" /> Atrás
             </span>
           )}
@@ -208,8 +208,8 @@ export default function PortfolioVsMarket({ trades }) {
           <button key={option.key} onClick={() => setBenchmarkKey(option.key)}
             className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
             style={benchmarkKey === option.key
-              ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
-              : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+              ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: 'rgba(141,180,226,0.9)' }
+              : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
             {option.label}
           </button>
         ))}
@@ -222,20 +222,20 @@ export default function PortfolioVsMarket({ trades }) {
           <ComposedChart data={mergedData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
             <defs>
               <linearGradient id="portfolioGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#00ff80" stopOpacity={0.25} />
-                <stop offset="100%" stopColor="#00ff80" stopOpacity={0} />
+                <stop offset="0%" stopColor="#5db586" stopOpacity={0.25} />
+                <stop offset="100%" stopColor="#5db586" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
             <XAxis
               dataKey="date"
-              tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9, fontFamily: 'monospace' }}
+              tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 9, fontFamily: 'monospace' }}
               tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
               axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
               minTickGap={40}
             />
             <YAxis
-              tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9, fontFamily: 'monospace' }}
+              tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 9, fontFamily: 'monospace' }}
               tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
               axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
               tickFormatter={(v) => `${v.toFixed(1)}%`}
@@ -248,21 +248,21 @@ export default function PortfolioVsMarket({ trades }) {
               type="monotone"
               dataKey="portfolio"
               name="portfolio"
-              stroke="#00ff80"
+              stroke="#5db586"
               strokeWidth={2}
               fill="url(#portfolioGrad)"
-              dot={{ fill: '#00ff80', r: 3 }}
-              activeDot={{ r: 5, fill: '#00ff80' }}
+              dot={{ fill: '#5db586', r: 3 }}
+              activeDot={{ r: 5, fill: '#5db586' }}
             />
             <Line
               type="monotone"
               dataKey="market"
               name="market"
-              stroke="#ff9f43"
+              stroke="#dd9a4a"
               strokeWidth={1.5}
               strokeDasharray="5 3"
               dot={false}
-              activeDot={{ r: 4, fill: '#ff9f43' }}
+              activeDot={{ r: 4, fill: '#dd9a4a' }}
             />
           </ComposedChart>
         </ResponsiveContainer>
@@ -292,10 +292,10 @@ export default function PortfolioVsMarket({ trades }) {
       {/* Summary bar */}
       <div className="flex items-center justify-between mt-3 pt-3 text-10px font-mono"
         style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-        <span style={{ color: 'rgba(255,255,255,0.35)' }}>
+        <span style={{ color: 'rgba(255,255,255,0.55)' }}>
           {portfolioCurve.length} trades fechados · {portfolioCurve[0]?.date} → {portfolioCurve[portfolioCurve.length - 1]?.date}
         </span>
-        <span style={{ color: outperform ? '#00ff80' : 'rgba(255,255,255,0.35)' }}>
+        <span style={{ color: outperform ? '#5db586' : 'rgba(255,255,255,0.55)' }}>
           Diferença: {fmtPct(finalPnl - finalMarket)}
         </span>
       </div>

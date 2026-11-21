@@ -7,7 +7,7 @@
 // "Alertas Recentes" agora vem ANTES da seção "Ativos" no DOM, não depois.
 //
 // Achado M-16 (Média Prioridade): o StatsCard "Alta Prioridade" recebia
-// `color="#ff9f43"` (laranja de atenção) fixo, independente de
+// `color="#dd9a4a"` (laranja de atenção) fixo, independente de
 // `highPriorityCount` — mesmo com 0 sinais/operações de alta prioridade, o
 // card continuava na cor de alerta. `priorityOverride` abaixo permite cada
 // teste controlar `SignalEvent`/`TradeOperation` sem afetar os demais.
@@ -120,7 +120,7 @@ describe('Dashboard — cor do StatsCard "Alta Prioridade" reflete a contagem (a
 
     const label = await screen.findByText('Alta Prioridade');
     const numberEl = label.nextElementSibling;
-    await waitFor(() => expect(numberEl.style.color).toBe('rgb(0, 229, 255)'));
+    await waitFor(() => expect(numberEl.style.color).toBe('rgb(141, 180, 226)'));
   });
 
   it('com highPriorityCount > 0, o card usa a cor de atenção', async () => {
@@ -137,7 +137,7 @@ describe('Dashboard — cor do StatsCard "Alta Prioridade" reflete a contagem (a
 
     const label = await screen.findByText('Alta Prioridade');
     const numberEl = label.nextElementSibling;
-    await waitFor(() => expect(numberEl.style.color).toBe('rgb(255, 159, 67)'));
+    await waitFor(() => expect(numberEl.style.color).toBe('rgb(221, 154, 74)'));
   });
 });
 

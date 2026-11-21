@@ -16,7 +16,7 @@ import { SlidersHorizontal, Save, CheckCircle2, RotateCcw, AlertTriangle, BarCha
 // (mesmo doc que a aba "Parâmetros Ativos" do Pine Script lê).
 const GROUPS = [
   {
-    id: 'range_filter', label: 'Range Filter', icon: BarChart3, color: '#00ff80',
+    id: 'range_filter', label: 'Range Filter', icon: BarChart3, color: '#5db586',
     fields: [
       { key: 'rng_per', label: 'Swing Period', target: 'assets', min: 5, max: 50, step: 1, suffix: '',
         help: 'Janela (em candles) do Range Filter. Maior = menos sensível a ruído e mais atraso pra detectar mudança de tendência; menor = reage mais rápido, mas com mais falso sinal.' },
@@ -25,7 +25,7 @@ const GROUPS = [
     ],
   },
   {
-    id: 'risk', label: 'Gestão de Risco', icon: ShieldAlert, color: '#ff1478',
+    id: 'risk', label: 'Gestão de Risco', icon: ShieldAlert, color: '#e06a5b',
     fields: [
       { key: 'trailAtrMult', label: 'ATR Multiplicador (Stop)', target: 'strategyConfig', min: 0.5, max: 5, step: 0.1, suffix: 'x',
         help: 'Distância do stop/trailing em múltiplos de ATR. Maior = stop mais largo (menos chance de ser varrido por ruído, mas perde mais se a operação errar).' },
@@ -36,7 +36,7 @@ const GROUPS = [
     ],
   },
   {
-    id: 'confirmation', label: 'Confirmação', icon: Zap, color: '#ffd166',
+    id: 'confirmation', label: 'Confirmação', icon: Zap, color: '#e3b45a',
     fields: [
       { key: 'minScore', label: 'Score Mínimo', target: 'strategyConfig', min: 50, max: 100, step: 1, suffix: '',
         help: 'Score mínimo de confluência (0–100) exigido para confirmar um sinal. Maior = mais seletivo, menos sinais confirmados.' },
@@ -184,15 +184,15 @@ export default function Settings() {
           </p>
         </div>
         <div className="flex items-center gap-1.5 text-9px font-mono px-2.5 py-1.5 rounded-lg"
-          style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
+          style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
           <SlidersHorizontal className="w-3 h-3" />Aplicado instantaneamente no próximo scan
         </div>
       </div>
 
-      <div className="rounded-xl p-5 space-y-5" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="rounded-md p-5 space-y-5" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-center justify-between flex-wrap gap-3 pb-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div className="flex items-center gap-2">
-            <SlidersHorizontal className="w-4 h-4" style={{ color: '#00e5ff' }} />
+            <SlidersHorizontal className="w-4 h-4" style={{ color: '#8db4e2' }} />
             <div>
               <h2 className="text-sm font-bold text-foreground">Ajuste Fino de Parâmetros</h2>
               <p className="text-9px font-mono text-muted-foreground">Otimize o motor para diferentes níveis de risco</p>
@@ -201,14 +201,14 @@ export default function Settings() {
           <div className="flex items-center gap-2">
             <button onClick={handleReset}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
-              style={{ background: 'rgba(255,159,67,0.07)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+              style={{ background: 'rgba(221,154,74,0.07)', border: '1px solid rgba(221,154,74,0.2)', color: '#dd9a4a' }}>
               <RotateCcw className="w-3 h-3" />Restaurar
             </button>
             <button onClick={handleSave} disabled={saveStatus === 'saving'}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-10px font-mono font-bold transition-all disabled:opacity-50"
               style={{
-                background: saveStatus === 'saved' ? 'rgba(0,255,128,0.15)' : 'rgba(0,255,128,0.08)',
-                border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80',
+                background: saveStatus === 'saved' ? 'rgba(93,181,134,0.15)' : 'rgba(93,181,134,0.08)',
+                border: '1px solid rgba(93,181,134,0.3)', color: '#5db586',
               }}>
               {saveStatus === 'saved' ? <CheckCircle2 className="w-3 h-3" /> : <Save className="w-3 h-3" />}
               {saveStatus === 'saving' ? 'Salvando...' : saveStatus === 'saved' ? 'Salvo!' : saveStatus === 'error' ? 'Erro ao salvar' : 'Salvar & Sincronizar'}
@@ -220,12 +220,12 @@ export default function Settings() {
             desaparecia em 3s sem dizer por quê nem o que fazer — mesmo
             padrão de causa/reassurance já usado em QueryErrorState.jsx. */}
         {saveStatus === 'error' && (
-          <p className="text-9px font-mono -mt-1" style={{ color: '#ff9f43' }}>
+          <p className="text-9px font-mono -mt-1" style={{ color: '#dd9a4a' }}>
             Não foi possível salvar — verifique sua conexão e tente de novo.
           </p>
         )}
 
-        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-10px font-mono" style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-10px font-mono" style={{ background: 'rgba(221,154,74,0.08)', border: '1px solid rgba(221,154,74,0.2)', color: '#dd9a4a' }}>
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>
             Alterações são aplicadas instantaneamente ao scanner no próximo scan. Use o{' '}
@@ -238,7 +238,7 @@ export default function Settings() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {GROUPS.map(group => (
-            <div key={group.id} className="rounded-xl p-4 space-y-4" style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${group.color}25` }}>
+            <div key={group.id} className="rounded-md p-4 space-y-4" style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${group.color}25` }}>
               <div className="flex items-center gap-1.5">
                 <group.icon className="w-3.5 h-3.5" style={{ color: group.color }} />
                 <span className="text-10px font-mono font-bold uppercase tracking-wider" style={{ color: group.color }}>{group.label}</span>
@@ -273,8 +273,8 @@ export default function Settings() {
 
         <div className="space-y-3 pt-1">
           {BOOL_FIELDS.map(field => (
-            <div key={field.key} className="flex items-center justify-between gap-4 rounded-xl p-4"
-              style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,209,102,0.2)' }}>
+            <div key={field.key} className="flex items-center justify-between gap-4 rounded-md p-4"
+              style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(227,180,90,0.2)' }}>
               <div className="space-y-0.5">
                 <p className="text-10px font-mono font-bold text-foreground">{field.label}</p>
                 <p className="text-9px font-mono text-muted-foreground">{field.help}</p>

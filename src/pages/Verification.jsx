@@ -20,8 +20,8 @@ import { useAllMonitoredAssets } from '@/hooks/useAllMonitoredAssets';
 // processados (rsi_zone/trend_ema) que AssetState tem — por isso a
 // zona é recalculada aqui, reaproveitando as mesmas funções/thresholds
 // do motor (getRSIZone, default 70/30) em vez de inventar uma nova.
-const ZONE_GREEN = '#00ff80';
-const ZONE_RED = '#ff1478';
+const ZONE_GREEN = '#5db586';
+const ZONE_RED = '#e06a5b';
 const ZONE_NEUTRAL = 'rgba(255,255,255,0.6)';
 
 function rsiColor(value) {
@@ -62,21 +62,21 @@ const PRIORITY_FILTERS = [
 ];
 
 const STATUS_BADGE = {
-  pending: { label: 'Pendente', color: '#ffd166', bg: 'rgba(255,209,102,0.1)', border: 'rgba(255,209,102,0.25)' },
-  reviewed: { label: 'Revisada', color: '#00ff80', bg: 'rgba(0,255,128,0.08)', border: 'rgba(0,255,128,0.2)' },
-  skipped: { label: 'Pulada', color: 'rgba(255,255,255,0.4)', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)' },
+  pending: { label: 'Pendente', color: '#e3b45a', bg: 'rgba(227,180,90,0.1)', border: 'rgba(227,180,90,0.25)' },
+  reviewed: { label: 'Revisada', color: '#5db586', bg: 'rgba(93,181,134,0.08)', border: 'rgba(93,181,134,0.2)' },
+  skipped: { label: 'Pulada', color: 'rgba(255,255,255,0.62)', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)' },
   // Marcado automaticamente pelo scanner, não pelo usuário (item 76) — cor
   // própria pra não parecer uma revisão manual que nunca aconteceu.
-  superseded: { label: 'Superada por sinal novo', color: '#00e5ff', bg: 'rgba(0,229,255,0.06)', border: 'rgba(0,229,255,0.18)' },
+  superseded: { label: 'Superada por sinal novo', color: '#8db4e2', bg: 'rgba(141,180,226,0.06)', border: 'rgba(141,180,226,0.18)' },
 };
 
 // Same age-urgency cue as VerificationWidget — duplicated (not shared) since
 // it's a handful of lines and the two components have no other coupling.
 function ageColor(createdDate) {
   const hours = (Date.now() - new Date(createdDate).getTime()) / 3600000;
-  if (hours >= 6) return '#ff1478';
-  if (hours >= 2) return '#ff9f43';
-  return 'rgba(255,255,255,0.4)';
+  if (hours >= 6) return '#e06a5b';
+  if (hours >= 2) return '#dd9a4a';
+  return 'rgba(255,255,255,0.62)';
 }
 
 function NotesField({ task, onSave }) {
@@ -259,16 +259,16 @@ export default function Verification() {
       <div>
         <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Revisão de Sinais</p>
         <div className="flex items-center gap-2">
-          <ClipboardCheck className="w-6 h-6" style={{ color: '#ffd166' }} />
+          <ClipboardCheck className="w-6 h-6" style={{ color: '#e3b45a' }} />
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Verificação</h1>
           {pendingCountUnknown ? (
             <span className="text-11px font-mono px-2 py-0.5 rounded-full"
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.4)' }}>
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.62)' }}>
               pendentes: não verificado
             </span>
           ) : pendingCount > 0 && (
             <span className="text-11px font-mono px-2 py-0.5 rounded-full"
-              style={{ background: 'rgba(255,209,102,0.1)', border: '1px solid rgba(255,209,102,0.25)', color: '#ffd166' }}>
+              style={{ background: 'rgba(227,180,90,0.1)', border: '1px solid rgba(227,180,90,0.25)', color: '#e3b45a' }}>
               {pendingCount} pendente{pendingCount === 1 ? '' : 's'}
             </span>
           )}
@@ -283,7 +283,7 @@ export default function Verification() {
 
       {assetsError && (
         <div className="flex items-start gap-2 px-3 py-2 rounded-lg text-10px font-mono"
-          style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+          style={{ background: 'rgba(221,154,74,0.08)', border: '1px solid rgba(221,154,74,0.2)', color: '#dd9a4a' }}>
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
           <span>Não foi possível carregar os ativos monitorados agora — o "Reenviar" foi desativado (o filtro por ativo do Telegram não pode ser confirmado) até a próxima atualização.</span>
         </div>
@@ -308,8 +308,8 @@ export default function Verification() {
             <button key={f.id} onClick={() => setStatusFilter(f.id)}
               className="text-9px font-mono px-2 py-1 rounded-md transition-all"
               style={statusFilter === f.id
-                ? { background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.4)', color: '#00e5ff' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
+                ? { background: 'rgba(141,180,226,0.15)', border: '1px solid rgba(141,180,226,0.4)', color: '#8db4e2' }
+                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
               {f.label}
             </button>
           ))}
@@ -318,8 +318,8 @@ export default function Verification() {
             <button key={f.id} onClick={() => setPriorityFilter(f.id)}
               className="text-9px font-mono px-2 py-1 rounded-md transition-all"
               style={priorityFilter === f.id
-                ? { background: 'rgba(255,159,67,0.15)', border: '1px solid rgba(255,159,67,0.4)', color: '#ff9f43' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
+                ? { background: 'rgba(221,154,74,0.15)', border: '1px solid rgba(221,154,74,0.4)', color: '#dd9a4a' }
+                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
               {f.label}
             </button>
           ))}
@@ -331,8 +331,8 @@ export default function Verification() {
             <button key={s.id} onClick={() => setSortBy(s.id)}
               className="text-9px font-mono px-2 py-1 rounded-md transition-all"
               style={sortBy === s.id
-                ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
+                ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: 'rgba(141,180,226,0.9)' }
+                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
               {s.label}
             </button>
           ))}
@@ -342,14 +342,14 @@ export default function Verification() {
       {/* List */}
       {isLoading ? (
         <div className="space-y-3">
-          {[1, 2, 3].map(i => <div key={i} className="glass-card rounded-xl h-28 shimmer" />)}
+          {[1, 2, 3].map(i => <div key={i} className="glass-card rounded-md h-28 shimmer" />)}
         </div>
       ) : isError && tasks.length === 0 ? (
-        <div className="glass-card rounded-xl p-8">
+        <div className="glass-card rounded-md p-8">
           <QueryErrorState message="Não foi possível carregar as tarefas de verificação agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="glass-card rounded-xl p-12 text-center">
+        <div className="glass-card rounded-md p-12 text-center">
           <ClipboardCheck className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhuma tarefa de verificação encontrada.</p>
           {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): filtro
@@ -360,7 +360,7 @@ export default function Verification() {
           {(search || statusFilter !== 'all' || priorityFilter !== 'all') && (
             <button onClick={() => { setSearch(''); setStatusFilter('all'); setPriorityFilter('all'); }}
               className="mt-3 text-9px font-mono px-2.5 py-1.5 rounded-lg transition-all"
-              style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
+              style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
               ✕ Limpar filtros
             </button>
           )}
@@ -371,8 +371,8 @@ export default function Verification() {
             const badge = STATUS_BADGE[task.status] || STATUS_BADGE.pending;
             const asset = assets.find(a => a.id === task.asset_id);
             return (
-              <div key={task.id} id={`verification-task-${task.id}`} className="glass-card rounded-xl p-4 transition-shadow duration-500"
-                style={highlightedTaskId === task.id ? { boxShadow: '0 0 0 2px rgba(0,229,255,0.5)' } : undefined}>
+              <div key={task.id} id={`verification-task-${task.id}`} className="glass-card rounded-md p-4 transition-shadow duration-500"
+                style={highlightedTaskId === task.id ? { boxShadow: '0 0 0 2px rgba(141,180,226,0.5)' } : undefined}>
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -381,18 +381,18 @@ export default function Verification() {
                       <span className="text-9px font-mono px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)' }}>
                         {task.timeframe?.toUpperCase()}
                       </span>
-                      <span className="text-10px font-mono font-bold" style={{ color: task.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>
+                      <span className="text-10px font-mono font-bold" style={{ color: task.signal_type === 'BUY' ? '#5db586' : '#e06a5b' }}>
                         {task.signal_type === 'BUY' ? '↑ BUY' : '↓ SELL'}
                       </span>
                       {Number.isFinite(task.score) && (
-                        <span className="text-10px font-mono" style={{ color: task.score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                        <span className="text-10px font-mono" style={{ color: task.score >= 85 ? '#e3b45a' : 'rgba(255,255,255,0.62)' }}>
                           {agreementLabel({ score: task.score })}
                         </span>
                       )}
                       <span className="text-9px font-mono px-1.5 py-0.5 rounded-full" style={{ background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
                         {badge.label}
                       </span>
-                      <span className="text-9px font-mono" style={{ color: task.status === 'pending' ? ageColor(task.created_date) : 'rgba(255,255,255,0.35)' }}>
+                      <span className="text-9px font-mono" style={{ color: task.status === 'pending' ? ageColor(task.created_date) : 'rgba(255,255,255,0.55)' }}>
                         {moment(task.created_date).fromNow()}
                       </span>
                     </div>
@@ -419,8 +419,8 @@ export default function Verification() {
                             aria-label="Marcar como revisado (OK)"
                             disabled={updateMutation.isPending}
                             className="p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
-                            style={{ background: task.status === 'reviewed' ? 'rgba(0,255,128,0.1)' : 'transparent' }}>
-                            <Check className="w-4 h-4" style={{ color: '#00ff80' }} />
+                            style={{ background: task.status === 'reviewed' ? 'rgba(93,181,134,0.1)' : 'transparent' }}>
+                            <Check className="w-4 h-4" style={{ color: '#5db586' }} />
                           </button>
                         </TooltipTrigger>
                         <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
@@ -451,7 +451,7 @@ export default function Verification() {
                         <button onClick={() => resend(task)}
                           disabled={resendDisabled}
                           className="flex items-center gap-1 text-9px font-mono px-2 py-1 rounded-md transition-all disabled:opacity-40"
-                          style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)', color: '#00e5ff' }}>
+                          style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.15)', color: '#8db4e2' }}>
                           {resendingId === task.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                           Reenviar
                         </button>

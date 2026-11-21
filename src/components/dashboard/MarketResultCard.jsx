@@ -45,12 +45,12 @@ function releasedWhen(e, now) {
 function Bar({ label, geo, zero = 0, background }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-16 shrink-0 text-10px font-mono text-muted-foreground">{label}</span>
+      <span className="w-16 shrink-0 text-11px font-mono text-muted-foreground">{label}</span>
       <div className="relative h-2.5 flex-1 rounded-full" style={{ background: 'rgba(255,255,255,0.07)' }}>
         {geo && geo.width > 0 && (
           <span className="absolute top-0 bottom-0 rounded-full" style={{ left: `${geo.left}%`, width: `${geo.width}%`, background }} />
         )}
-        {zero > 0 && <span className="absolute -top-0.5 -bottom-0.5 w-px" style={{ left: `${zero}%`, background: 'rgba(255,255,255,0.4)' }} />}
+        {zero > 0 && <span className="absolute -top-0.5 -bottom-0.5 w-px" style={{ left: `${zero}%`, background: 'rgba(255,255,255,0.62)' }} />}
       </div>
     </div>
   );
@@ -89,7 +89,7 @@ function Summary({ rows, official, accent, agency }) {
   if (items.length === 0) return null;
   const hot = { color: accent.from };
   return (
-    <div role="group" aria-label="Resumo do resultado" className="rounded-xl px-4 py-3 space-y-1.5"
+    <div role="group" aria-label="Resumo do resultado" className="rounded-md px-4 py-3 space-y-1.5"
       style={{ background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.08)' }}>
       {items.map((it) => (
         <p key={it.key} className="text-sm sm:text-base leading-snug text-foreground/90">
@@ -128,13 +128,13 @@ function AltWindow({ alt, accent }) {
   const t = altWindowText(alt);
   if (!t) return null;
   return (
-    <div role="group" aria-label="Janela alternativa" className="rounded-xl p-3 space-y-2"
+    <div role="group" aria-label="Janela alternativa" className="rounded-md p-3 space-y-2"
       style={{ background: 'rgba(255,255,255,0.05)', border: `1px dashed ${alpha(accent.from, 0.5)}` }}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <span className="text-10px font-mono font-bold uppercase tracking-wider" style={{ color: accent.from }}>
+        <span className="text-11px font-mono font-bold uppercase tracking-wider" style={{ color: accent.from }}>
           <Emoji className="mr-1">{CONTEXT_EMOJI.window}</Emoji>Janela alternativa · {t.title}
         </span>
-        <span className="text-10px font-mono text-muted-foreground">não é o número oficial em 12 meses</span>
+        <span className="text-11px font-mono text-muted-foreground">não é o número oficial em 12 meses</span>
       </div>
       <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
         <span className="text-3xl sm:text-4xl font-black font-mono tabular-nums leading-none"
@@ -150,9 +150,9 @@ function AltWindow({ alt, accent }) {
 /** A caixa "Por que não há número em 12 meses?": largura toda, embaixo do par de colunas (não alonga a coluna das fichas). Só informação; nada estimado. */
 function GapNote({ row }) {
   return (
-    <aside aria-label="Por que não há número em 12 meses" className="rounded-xl px-4 py-3 space-y-1.5"
+    <aside aria-label="Por que não há número em 12 meses" className="rounded-md px-4 py-3 space-y-1.5"
       style={{ background: 'rgba(148,163,184,0.10)', border: '1px dashed rgba(148,163,184,0.45)' }}>
-      <h4 className="text-10px font-mono font-bold uppercase tracking-wider text-muted-foreground">
+      <h4 className="text-11px font-mono font-bold uppercase tracking-wider text-muted-foreground">
         <Emoji className="mr-1.5 text-base">{CONTEXT_EMOJI.unavailable}</Emoji>Por que não há número em 12 meses?
       </h4>
       <p className="text-sm leading-relaxed text-foreground/90">{gapExplanation(row).join(' ')}</p>
@@ -168,20 +168,20 @@ function MeasureTile({ r, official, accent }) {
   const dir = DIRECTION[r.direction];
   const diff = hasActual ? deltaText(r.previous, r.actual) : null;
   return (
-    <section aria-label={r.label} className="relative overflow-hidden rounded-2xl p-4 space-y-3.5 flex-auto"
+    <section aria-label={r.label} className="relative overflow-hidden rounded-lg p-4 space-y-3.5 flex-auto"
       style={{ background: 'rgba(255,255,255,0.045)', border: `1px solid ${alpha(accent.from, 0.3)}` }}>
       <span className="absolute inset-x-0 top-0 h-1" style={{ background: `linear-gradient(90deg, ${accent.from}, ${accent.to})` }} aria-hidden="true" />
       <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 pt-1">
         <h4 className="text-xs font-mono font-bold uppercase tracking-wider" style={{ color: accent.from }}>{r.label}</h4>
-        <span className="text-10px font-mono text-muted-foreground">compara com a divulgação anterior</span>
+        <span className="text-11px font-mono text-muted-foreground">compara com a divulgação anterior</span>
       </header>
       <dl className="flex flex-wrap items-end gap-x-8 gap-y-3">
         <div className="space-y-1 min-w-0">
-          <dt className="text-10px font-mono uppercase tracking-wider text-muted-foreground">Anterior</dt>
+          <dt className="text-11px font-mono uppercase tracking-wider text-muted-foreground">Anterior</dt>
           <dd className="text-2xl sm:text-3xl font-bold font-mono tabular-nums leading-none" style={{ color: PREVIOUS }}>{r.previous ?? '—'}</dd>
         </div>
         <div className="space-y-1 min-w-0">
-          <dt className="text-10px font-mono uppercase tracking-wider text-muted-foreground">Atual</dt>
+          <dt className="text-11px font-mono uppercase tracking-wider text-muted-foreground">Atual</dt>
           <dd>
             {hasActual && (
               <span className="text-4xl sm:text-5xl font-black font-mono tabular-nums leading-none"
@@ -208,7 +208,7 @@ function MeasureTile({ r, official, accent }) {
       </dl>
       {unavailable && r.gap && r.alt && <AltWindow alt={r.alt} accent={accent} />}
       {r.revised && (
-        <p className="text-10px font-mono text-muted-foreground">Anterior revisado para <span className="font-bold text-foreground">{r.revised}</span>.</p>
+        <p className="text-11px font-mono text-muted-foreground">Anterior revisado para <span className="font-bold text-foreground">{r.revised}</span>.</p>
       )}
       {bars && (
         <div aria-hidden="true" className="space-y-1.5">
@@ -239,12 +239,12 @@ function MeasureTile({ r, official, accent }) {
 function MeasureGroup({ group, rows, official, accent }) {
   const meta = PCE_GROUPS[group];
   return (
-    <section aria-label={meta.title} className="relative overflow-hidden rounded-2xl p-4 space-y-1 flex-auto"
+    <section aria-label={meta.title} className="relative overflow-hidden rounded-lg p-4 space-y-1 flex-auto"
       style={{ background: 'rgba(255,255,255,0.045)', border: `1px solid ${alpha(accent.from, 0.3)}` }}>
       <span className="absolute inset-x-0 top-0 h-1" style={{ background: `linear-gradient(90deg, ${accent.from}, ${accent.to})` }} aria-hidden="true" />
       <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 pt-1 pb-1">
         <h4 className="text-xs font-mono font-bold uppercase tracking-wider" style={{ color: accent.from }}>{meta.title}</h4>
-        <span className="text-10px font-mono text-muted-foreground">{meta.hint}</span>
+        <span className="text-11px font-mono text-muted-foreground">{meta.hint}</span>
       </header>
       {rows.map((r, i) => {
         const hasActual = r.actual !== null;
@@ -253,14 +253,14 @@ function MeasureGroup({ group, rows, official, accent }) {
         const diff = hasActual ? deltaText(r.previous, r.actual) : null;
         return (
           <div key={r.key} role="group" aria-label={r.label} className="py-2.5 space-y-2" style={i > 0 ? { borderTop: '1px solid rgba(255,255,255,0.08)' } : undefined}>
-            <p className="text-10px font-mono uppercase tracking-wider text-muted-foreground">{r.measure}</p>
+            <p className="text-11px font-mono uppercase tracking-wider text-muted-foreground">{r.measure}</p>
             <dl className="flex flex-wrap items-end gap-x-6 gap-y-2">
               <div className="space-y-0.5 min-w-0">
-                <dt className="text-10px font-mono uppercase tracking-wider text-muted-foreground">Anterior</dt>
+                <dt className="text-11px font-mono uppercase tracking-wider text-muted-foreground">Anterior</dt>
                 <dd className="text-xl sm:text-2xl font-bold font-mono tabular-nums leading-none" style={{ color: PREVIOUS }}>{r.previous ?? '—'}</dd>
               </div>
               <div className="space-y-0.5 min-w-0">
-                <dt className="text-10px font-mono uppercase tracking-wider text-muted-foreground">Atual</dt>
+                <dt className="text-11px font-mono uppercase tracking-wider text-muted-foreground">Atual</dt>
                 <dd>
                   {hasActual && (
                     <span className="text-3xl sm:text-4xl font-black font-mono tabular-nums leading-none"
@@ -295,7 +295,7 @@ function MeasureGroup({ group, rows, official, accent }) {
                 </div>
               )}
             </dl>
-            {r.revised && <p className="text-10px font-mono text-muted-foreground">Anterior revisado para <span className="font-bold text-foreground">{r.revised}</span>.</p>}
+            {r.revised && <p className="text-11px font-mono text-muted-foreground">Anterior revisado para <span className="font-bold text-foreground">{r.revised}</span>.</p>}
           </div>
         );
       })}
@@ -351,7 +351,7 @@ function Spark({ geo }) {
             <stop offset="100%" stopColor={BTC.from} stopOpacity="0.02" />
           </linearGradient>
         </defs>
-        <line x1={geo.pad} x2={geo.width - geo.pad} y1={geo.zeroY} y2={geo.zeroY} stroke="rgba(255,255,255,0.3)" strokeDasharray="3 4" />
+        <line x1={geo.pad} x2={geo.width - geo.pad} y1={geo.zeroY} y2={geo.zeroY} stroke="rgba(255,255,255,0.55)" strokeDasharray="3 4" />
         <path d={geo.area} fill={`url(#${uid}-area)`} />
         <path d={geo.line} fill="none" stroke={BTC.from} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {HORIZONS_MIN.map((n) => {
@@ -360,7 +360,7 @@ function Spark({ geo }) {
         })}
         {hp && (
           <>
-            <line x1={hp.x} x2={hp.x} y1={geo.pad} y2={geo.height - geo.pad + 4} stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+            <line x1={hp.x} x2={hp.x} y1={geo.pad} y2={geo.height - geo.pad + 4} stroke="rgba(255,255,255,0.62)" strokeWidth="1" />
             <circle cx={hp.x} cy={hp.y} r="5" fill={BTC.from} stroke="#0b1220" strokeWidth="2" />
           </>
         )}
@@ -379,7 +379,7 @@ function Spark({ geo }) {
             background: 'rgba(8,12,22,0.96)', border: `1px solid ${BTC.from}`, boxShadow: '0 8px 24px -8px rgba(0,0,0,0.85)',
           }}>
           <span className="block text-sm font-black leading-none" style={{ color: moveColor(hp.pct) }}>{formatMove(hp.pct)}</span>
-          <span className="block text-10px text-muted-foreground mt-1">{hp.m === 0 ? 'na divulgação' : `aos ${hp.m} min`}</span>
+          <span className="block text-11px text-muted-foreground mt-1">{hp.m === 0 ? 'na divulgação' : `aos ${hp.m} min`}</span>
         </div>
       )}
     </div>
@@ -396,11 +396,11 @@ function HorizonTiles({ e, now, moves }) {
           const v = moves[n];
           const has = Number.isFinite(v);
           return (
-            <li key={n} className="rounded-xl p-2 sm:p-2.5 space-y-1.5"
+            <li key={n} className="rounded-md p-2 sm:p-2.5 space-y-1.5"
               style={has
                 ? { background: 'rgba(34,211,238,0.09)', border: '1px solid rgba(34,211,238,0.34)' }
                 : { background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.2)' }}>
-              <p className="text-10px font-mono text-muted-foreground whitespace-nowrap">
+              <p className="text-11px font-mono text-muted-foreground whitespace-nowrap">
                 <Emoji className="mr-1">{CONTEXT_EMOJI.horizon}</Emoji>Em {horizonLabel(n)}
               </p>
               <p className="text-lg sm:text-2xl font-black font-mono tabular-nums leading-none" style={{ color: has ? moveColor(v) : 'rgba(248,250,252,0.35)' }}>
@@ -415,7 +415,7 @@ function HorizonTiles({ e, now, moves }) {
                   <div aria-hidden="true" className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
                     <div className="h-full rounded-full" style={{ width: `${Math.round(st.fraction * 100)}%`, background: 'rgba(148,163,184,0.7)' }} />
                   </div>
-                  <p className="text-10px font-mono text-muted-foreground whitespace-nowrap">{st.closed ? 'sem vela' : `faltam ${st.remainingMin} min`}</p>
+                  <p className="text-11px font-mono text-muted-foreground whitespace-nowrap">{st.closed ? 'sem vela' : `faltam ${st.remainingMin} min`}</p>
                 </>
               )}
             </li>
@@ -437,7 +437,7 @@ function BtcHeading({ e, now, className = '' }) {
         O BTC depois da divulgação
       </h4>
       {btcPending(e, now) && (
-        <span className="inline-flex items-center gap-1.5 text-10px font-mono" style={{ color: BTC.from }}>
+        <span className="inline-flex items-center gap-1.5 text-11px font-mono" style={{ color: BTC.from }}>
           <span className="w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none" style={{ background: BTC.from }} aria-hidden="true" />
           atualiza a cada minuto
         </span>
@@ -456,7 +456,7 @@ function BtcPanel({ e, now, btc, className = '' }) {
   const geo = sparkGeometry(btc.series);
   const ext = seriesExtremes(btc.series);
   return (
-    <aside aria-label="O BTC depois da divulgação" className={`relative overflow-hidden rounded-2xl p-4 flex flex-col gap-3.5 ${className}`}
+    <aside aria-label="O BTC depois da divulgação" className={`relative overflow-hidden rounded-lg p-4 flex flex-col gap-3.5 ${className}`}
       style={{ background: 'linear-gradient(165deg, rgba(34,211,238,0.14), rgba(255,255,255,0.02) 58%)', border: '1px solid rgba(34,211,238,0.32)' }}>
       {/* O minigráfico fica com a altura que sobrar (centralizado): quando a coluna ao lado é mais alta, o vão é um só, em volta do desenho, e não três espalhados. */}
       {geo && <div className="flex-1 flex items-center"><div className="w-full"><Spark geo={geo} /></div></div>}
@@ -473,7 +473,7 @@ function BtcPanel({ e, now, btc, className = '' }) {
           </div>
         </dl>
       )}
-      <p className="text-10px font-mono text-muted-foreground leading-relaxed">
+      <p className="text-11px font-mono text-muted-foreground leading-relaxed">
         Velas de 1 minuto do BTC na Binance. Mostra o que aconteceu depois; não prova que a divulgação causou o movimento.
       </p>
     </aside>
@@ -497,7 +497,7 @@ export function ResultCard({ e, now, checkedAtMs, btc }) {
   const age = formatAge(checkedAtMs, now);
   const hasBtc = Boolean(btc?.moves) && Object.values(btc.moves).some((v) => Number.isFinite(v));
   return (
-    <article aria-label="Resultado" className="relative overflow-hidden rounded-2xl p-4 sm:p-5"
+    <article aria-label="Resultado" className="relative overflow-hidden rounded-lg p-4 sm:p-5"
       style={{
         background: `linear-gradient(135deg, ${alpha(accent.from, 0.16)} 0%, rgba(255,255,255,0.035) 42%, rgba(255,255,255,0.02) 100%)`,
         border: `1px solid ${alpha(accent.from, 0.4)}`,
@@ -508,14 +508,14 @@ export function ResultCard({ e, now, checkedAtMs, btc }) {
       <div className="relative space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
           <div className="flex items-start gap-3.5 min-w-0 flex-1 basis-64">
-            <span aria-hidden="true" className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-2xl p-0.5 select-none"
+            <span aria-hidden="true" className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-lg p-0.5 select-none"
               style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`, boxShadow: `0 10px 28px -10px ${accent.from}` }}>
               <span className="w-full h-full rounded-[0.9rem] flex items-center justify-center text-3xl sm:text-4xl" style={{ background: '#0f1522' }}>
                 {KIND_EMOJI[e.kind]}
               </span>
             </span>
             <div className="min-w-0 space-y-1">
-              <span className="text-10px font-mono font-bold uppercase tracking-wider" style={{ color: accent.from }}>{CATEGORY_META[meta.category].label}</span>
+              <span className="text-11px font-mono font-bold uppercase tracking-wider" style={{ color: accent.from }}>{CATEGORY_META[meta.category].label}</span>
               <h3 className="text-lg sm:text-2xl font-extrabold text-foreground leading-tight tracking-tight">
                 {meta.title}
                 <span className="ml-2 text-xs font-mono font-normal text-muted-foreground">({meta.short})</span>
@@ -568,7 +568,7 @@ export function ResultCard({ e, now, checkedAtMs, btc }) {
         {gapRow && <GapNote row={gapRow} />}
 
         <footer className="pt-3 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <p className="text-10px font-mono text-muted-foreground leading-relaxed min-w-0 flex-1 basis-80">
+          <p className="text-11px font-mono text-muted-foreground leading-relaxed min-w-0 flex-1 basis-80">
             <Emoji className="mr-1">{CONTEXT_EMOJI.howto}</Emoji>
             Como ler:{' '}
             {official
@@ -576,7 +576,7 @@ export function ResultCard({ e, now, checkedAtMs, btc }) {
               : `o número entra na próxima coleta${age ? ` (última checagem ${age})` : ''}.`}
           </p>
           {e.values?.source && (
-            <p className="text-10px font-mono text-muted-foreground">
+            <p className="text-11px font-mono text-muted-foreground">
               Fonte: {sourceLine({ source: e.values.source, percent: hasPercentValues(e.values), btc: hasBtc })}
             </p>
           )}
@@ -600,28 +600,28 @@ export function HistoryCard({ e, now, moves = null }) {
   const items = resultSummary(rows, true, agencyOf(e.kind));
   const hasBtc = Boolean(moves) && Object.values(moves).some((v) => Number.isFinite(v));
   return (
-    <li className="relative overflow-hidden rounded-2xl p-3.5 sm:p-4"
+    <li className="relative overflow-hidden rounded-lg p-3.5 sm:p-4"
       style={{ background: `linear-gradient(135deg, ${alpha(accent.from, 0.12)} 0%, rgba(255,255,255,0.03) 45%, rgba(255,255,255,0.02) 100%)`, border: `1px solid ${alpha(accent.from, 0.3)}` }}>
       <div className={hasBtc ? 'grid gap-x-5 gap-y-3 lg:grid-cols-12' : 'grid gap-3'}>
         <div className={`space-y-2.5 min-w-0 ${hasBtc ? 'lg:col-span-7' : ''}`}>
           <div className="flex items-center gap-3">
-            <span aria-hidden="true" className="w-11 h-11 shrink-0 rounded-xl p-0.5 select-none"
+            <span aria-hidden="true" className="w-11 h-11 shrink-0 rounded-md p-0.5 select-none"
               style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}>
               <span className="w-full h-full rounded-[0.6rem] flex items-center justify-center text-2xl" style={{ background: '#0f1522' }}>{KIND_EMOJI[e.kind]}</span>
             </span>
             <div className="min-w-0">
-              <p className="text-10px font-mono font-bold tracking-wider whitespace-nowrap" style={{ color: accent.from }}>
+              <p className="text-11px font-mono font-bold tracking-wider whitespace-nowrap" style={{ color: accent.from }}>
                 {g.weekday} {g.dayMonth}
                 <span className="ml-2 font-normal text-muted-foreground">{formatEventClock(e.startsAtUtc)} · {relativeDayLabel(brtDayDiff(e.startMs, now)).toLowerCase()}</span>
               </p>
               <h4 className="text-sm sm:text-base font-extrabold text-foreground leading-tight">
                 {meta.title}
-                <span className="ml-1.5 text-10px font-mono font-normal text-muted-foreground">({meta.short})</span>
+                <span className="ml-1.5 text-11px font-mono font-normal text-muted-foreground">({meta.short})</span>
               </h4>
             </div>
           </div>
-          <div role="group" aria-label="O que aconteceu" className="rounded-xl px-3.5 py-2.5 space-y-1" style={{ background: 'rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.07)' }}>
-            <p aria-hidden="true" className="text-10px font-mono uppercase tracking-wider text-muted-foreground">O que aconteceu</p>
+          <div role="group" aria-label="O que aconteceu" className="rounded-md px-3.5 py-2.5 space-y-1" style={{ background: 'rgba(0,0,0,0.22)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <p aria-hidden="true" className="text-11px font-mono uppercase tracking-wider text-muted-foreground">O que aconteceu</p>
             {items.map((it) => (
               <p key={it.key} className="text-xs sm:text-sm leading-snug text-foreground/90">
                 {it.kind === 'gap' || it.kind === 'unavailable'
@@ -640,7 +640,7 @@ export function HistoryCard({ e, now, moves = null }) {
         </div>
         {hasBtc && (
           <div className="lg:col-span-5 space-y-2 min-w-0">
-            <h5 className="flex items-center gap-2 text-10px font-mono font-bold uppercase tracking-wider" style={{ color: BTC.from }}>
+            <h5 className="flex items-center gap-2 text-11px font-mono font-bold uppercase tracking-wider" style={{ color: BTC.from }}>
               <TokenIcon symbol="BTC" size={16} />
               O BTC depois da divulgação
             </h5>
@@ -656,8 +656,8 @@ export function HistoryCard({ e, now, moves = null }) {
 function Gauge({ label, m, accent, showTimes = false }) {
   const bars = gaugeBars(m.value, m.normal);
   return (
-    <div className="rounded-xl p-3.5 space-y-2.5" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.1)' }}>
-      <p className="text-10px font-mono uppercase tracking-wider text-muted-foreground">
+    <div className="rounded-md p-3.5 space-y-2.5" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.1)' }}>
+      <p className="text-11px font-mono uppercase tracking-wider text-muted-foreground">
         <Emoji className="mr-1">{CONTEXT_EMOJI.horizon}</Emoji>{label}
       </p>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -677,7 +677,7 @@ function Gauge({ label, m, accent, showTimes = false }) {
           <Bar label="dia normal" geo={{ left: 0, width: bars.normal * 100 }} background={PREVIOUS} />
         </div>
       )}
-      <p className="text-10px font-mono text-muted-foreground">dia normal: {m.normal}</p>
+      <p className="text-11px font-mono text-muted-foreground">dia normal: {m.normal}</p>
     </div>
   );
 }
@@ -693,7 +693,7 @@ export function ReactionPanel({ kind }) {
   const accent = ACCENTS[EVENT_META[kind].category];
   const strong = n.verdict === 'maior';
   return (
-    <aside aria-label="Como o BTC se mexeu nas últimas divulgações" className="relative overflow-hidden rounded-2xl p-4 sm:p-5 space-y-4"
+    <aside aria-label="Como o BTC se mexeu nas últimas divulgações" className="relative overflow-hidden rounded-lg p-4 sm:p-5 space-y-4"
       style={{ background: `linear-gradient(135deg, ${alpha(accent.from, 0.13)}, rgba(255,255,255,0.025) 58%)`, border: `1px solid ${alpha(accent.from, 0.32)}` }}>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <h4 className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-foreground">
@@ -711,7 +711,7 @@ export function ReactionPanel({ kind }) {
         <Gauge label="Na 1ª hora (mediana)" m={n.hour} accent={accent} showTimes />
         <Gauge label="Nos 5 primeiros minutos" m={n.first5} accent={accent} />
       </div>
-      <p className="text-10px font-mono text-muted-foreground leading-relaxed">
+      <p className="text-11px font-mono text-muted-foreground leading-relaxed">
         {n.cases} · medido em {n.measuredAt}. Tamanho do movimento, sem direção: um retrato do passado, que não indica para onde o BTC vai.
         O mercado reage ao que surpreende, e este painel não tem a expectativa.
       </p>

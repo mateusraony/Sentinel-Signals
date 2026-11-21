@@ -85,7 +85,7 @@ describe('prova do guard (usos antigos voltando)', () => {
 
   it.each([
     ["const o = { id: 'be', label: '🟡 BE' };"],
-    ["const X = () => <span style={{ color: '#ffd166' }}>🟡 {be} BE</span>;"],
+    ["const X = () => <span style={{ color: '#e3b45a' }}>🟡 {be} BE</span>;"],
     ["statusLabel = '🏃 Runner Ativo';"],
     ["const PRIORITY_LABEL = { high: '⭐ Alta' };"],
     ["const t = `<i>⚡ Sentinel Signals</i>`;"],

@@ -15,7 +15,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 // única divergência de pixel sem forçar um valor igual pros 3.
 export function MetricSummaryCard({ icon: Icon, label, value, sublabel = undefined, color, glowColor, tooltip = undefined, valueClassName = 'text-xl' }) {
   return (
-    <div className="rounded-xl p-4 relative overflow-hidden"
+    <div className="rounded-md p-4 relative overflow-hidden"
       style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="absolute top-0 right-0 w-24 h-24 rounded-full opacity-10"
         style={{ background: `radial-gradient(circle, ${glowColor}, transparent 70%)`, transform: 'translate(30%, -30%)' }} />

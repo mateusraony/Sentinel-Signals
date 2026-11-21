@@ -34,10 +34,10 @@ describe('OutcomeBreakdown', () => {
     renderOps([STOP_LOSS, TP2, STOP_LOSS, STOP_LOSS]);
     const perda = screen.getByTestId('outcome-bar-stop_loss');
     expect(parseFloat(perda.style.width)).toBeCloseTo(75, 6);
-    expect(perda.getAttribute('style')).toMatch(/#ff1478|rgb\(255, 20, 120\)/i);
+    expect(perda.getAttribute('style')).toMatch(/#e06a5b|rgb\(224, 106, 91\)/i);
     const alvo = screen.getByTestId('outcome-bar-tp2');
     expect(parseFloat(alvo.style.width)).toBeCloseTo(25, 6);
-    expect(alvo.getAttribute('style')).toMatch(/#00ff80|rgb\(0, 255, 128\)/i);
+    expect(alvo.getAttribute('style')).toMatch(/#5db586|rgb\(93, 181, 134\)/i);
   });
 
   it('o rótulo é um gatilho focável com a explicação (Tooltip), não só cor', () => {

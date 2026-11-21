@@ -81,7 +81,7 @@ const PHASE_COPY = Object.freeze({
   [SIGNAL_PHASE.WAITING]: Object.freeze({
     badge: 'Esperando confirmação',
     icon: '⏳',
-    color: '#ffd166',
+    color: '#e3b45a',
     reassurance: 'Você não precisa fazer nada. Se virar operação, o app abre sozinho e ela aparece em Operações Ativas.',
   }),
   [SIGNAL_PHASE.EXPIRED]: Object.freeze({

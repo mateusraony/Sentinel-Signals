@@ -10,7 +10,7 @@ import { GitCompareArrows, Plus, X, AlertTriangle } from 'lucide-react';
 const DEFAULT_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
 const CANDLES_LIMIT = 100;
 const TIMEFRAME = '1h';
-const LINE_COLORS = ['#00e5ff', '#ffd166', '#00ff80', '#ff1478', '#a78bfa', '#ff9f43'];
+const LINE_COLORS = ['#8db4e2', '#e3b45a', '#5db586', '#e06a5b', '#a78bfa', '#dd9a4a'];
 
 function pearsonCorrelation(a, b) {
   const n = Math.min(a.length, b.length);
@@ -35,9 +35,9 @@ function pearsonCorrelation(a, b) {
 
 function corrColor(v) {
   if (v === null) return 'rgba(255,255,255,0.2)';
-  if (v > 0.6) return '#00ff80';
-  if (v < 0.2) return '#ff1478';
-  return '#ffd166';
+  if (v > 0.6) return '#5db586';
+  if (v < 0.2) return '#e06a5b';
+  return '#e3b45a';
 }
 
 export default function CorrelationWidget() {
@@ -126,19 +126,19 @@ export default function CorrelationWidget() {
   const banner = analysis?.avgCorr === null || analysis?.avgCorr === undefined
     ? null
     : analysis.avgCorr > 0.6
-      ? { label: '✅ ALINHADOS', color: '#00ff80', bg: 'rgba(0,255,128,0.1)', border: 'rgba(0,255,128,0.3)' }
+      ? { label: '✅ ALINHADOS', color: '#5db586', bg: 'rgba(93,181,134,0.1)', border: 'rgba(93,181,134,0.3)' }
       : analysis.avgCorr < 0.2
-        ? { label: '⚠ DIVERGINDO', color: '#ff1478', bg: 'rgba(255,20,120,0.1)', border: 'rgba(255,20,120,0.3)' }
-        : { label: '~ MISTO', color: '#ffd166', bg: 'rgba(255,209,102,0.08)', border: 'rgba(255,209,102,0.25)' };
+        ? { label: '⚠ DIVERGINDO', color: '#e06a5b', bg: 'rgba(224,106,91,0.1)', border: 'rgba(224,106,91,0.3)' }
+        : { label: '~ MISTO', color: '#e3b45a', bg: 'rgba(227,180,90,0.08)', border: 'rgba(227,180,90,0.25)' };
 
   return (
-    <div className="rounded-2xl p-4 space-y-3" style={{ background: 'rgba(6,8,15,0.7)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(20px)' }}>
+    <div className="rounded-lg p-4 space-y-3" style={{ background: 'rgba(6,8,15,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <GitCompareArrows className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
-          <span className="text-10px font-mono uppercase tracking-widest text-muted-foreground">Correlação de Preço</span>
+          <GitCompareArrows className="w-3.5 h-3.5" style={{ color: '#8db4e2' }} />
+          <span className="text-11px font-mono uppercase tracking-widest text-muted-foreground">Correlação de Preço</span>
           {banner && (
-            <span className="text-9px font-mono px-2 py-0.5 rounded font-bold"
+            <span className="text-11px font-mono px-2 py-0.5 rounded font-bold"
               style={{ background: banner.bg, border: `1px solid ${banner.border}`, color: banner.color }}>
               {banner.label}
             </span>
@@ -146,7 +146,7 @@ export default function CorrelationWidget() {
         </div>
         <div className="flex items-center gap-1.5 flex-wrap relative">
           {symbols.map(sym => (
-            <span key={sym} className="flex items-center gap-1 text-9px font-mono px-2 py-1 rounded-md"
+            <span key={sym} className="flex items-center gap-1 text-11px font-mono px-2 py-1 rounded-md"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}>
               <TokenIcon symbol={sym} size={12} />
               {sym.replace('USDT', '')}
@@ -157,18 +157,18 @@ export default function CorrelationWidget() {
             </span>
           ))}
           <button onClick={() => setShowAdd(v => !v)}
-            className="flex items-center gap-1 text-9px font-mono px-2 py-1 rounded-md transition-all"
-            style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
+            className="flex items-center gap-1 text-11px font-mono px-2 py-1 rounded-md transition-all"
+            style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
             <Plus className="w-2.5 h-2.5" />Add
           </button>
           {showAdd && (
             <div className="absolute top-full right-0 mt-1 rounded-lg overflow-hidden z-20 max-h-48 overflow-y-auto"
               style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 160 }}>
               {addableAssets.length === 0 ? (
-                <div className="px-3 py-2 text-9px font-mono text-muted-foreground">Nenhum outro ativo monitorado</div>
+                <div className="px-3 py-2 text-11px font-mono text-muted-foreground">Nenhum outro ativo monitorado</div>
               ) : addableAssets.map(a => (
                 <button key={a.id} onClick={() => { setSymbols(s => [...s, a.symbol]); setShowAdd(false); }}
-                  className="block w-full text-left px-3 py-1.5 text-9px font-mono hover:bg-white/[0.04]"
+                  className="block w-full text-left px-3 py-1.5 text-11px font-mono hover:bg-white/[0.04]"
                   style={{ color: 'rgba(255,255,255,0.7)' }}>
                   <TokenIcon symbol={a.symbol} size={12} className="mr-1.5" />{a.display_name} <span className="text-muted-foreground">({a.symbol})</span>
                 </button>
@@ -178,12 +178,12 @@ export default function CorrelationWidget() {
         </div>
       </div>
 
-      {isLoading && <div className="text-9px font-mono text-muted-foreground animate-pulse py-6 text-center">Carregando preços...</div>}
+      {isLoading && <div className="text-11px font-mono text-muted-foreground animate-pulse py-6 text-center">Carregando preços...</div>}
 
       {!isLoading && (error || !analysis) && (
         <div className="text-center py-4">
           <AlertTriangle className="w-4 h-4 mx-auto mb-1 text-muted-foreground opacity-30" />
-          <div className="text-9px font-mono text-muted-foreground">Selecione ao menos 2 ativos com dados suficientes.</div>
+          <div className="text-11px font-mono text-muted-foreground">Selecione ao menos 2 ativos com dados suficientes.</div>
         </div>
       )}
 
@@ -194,13 +194,13 @@ export default function CorrelationWidget() {
               <LineChart data={analysis.chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                 <XAxis dataKey="time"
-                  tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9, fontFamily: 'monospace' }}
+                  tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 9, fontFamily: 'monospace' }}
                   tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   tickFormatter={t => moment(t).format('DD/MM HH:mm')}
                   minTickGap={50}
                 />
-                <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} unit="%" width={38} />
+                <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} unit="%" width={38} />
                 <Tooltip
                   contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                   formatter={(value, name) => [`${value}%`, String(name).replace('USDT', '')]}
@@ -214,7 +214,7 @@ export default function CorrelationWidget() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="text-9px font-mono w-full">
+            <table className="text-11px font-mono w-full">
               <thead>
                 <tr>
                   <th className="text-left px-2 py-1 text-muted-foreground"></th>

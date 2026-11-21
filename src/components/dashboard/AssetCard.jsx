@@ -87,14 +87,14 @@ function Dot({ color, filled = true }) {
 function IndicatorDots({ state }) {
   if (!state) return null;
   const rfDir = state.rf_direction;
-  const rfColor = rfDir === 1 ? '#00ff80' : rfDir === -1 ? '#ff1478' : '#64748b';
+  const rfColor = rfDir === 1 ? '#5db586' : rfDir === -1 ? '#e06a5b' : '#64748b';
   const rfLabel = rfDir === 1 ? 'Bull' : rfDir === -1 ? 'Bear' : 'Neu';
   const macdH = state.macd_histogram || 0;
-  const macdColor = macdH > 0 ? '#00ff80' : macdH < 0 ? '#ff1478' : '#64748b';
+  const macdColor = macdH > 0 ? '#5db586' : macdH < 0 ? '#e06a5b' : '#64748b';
   const emaTrend = state.trend_ema;
-  const emaColor = emaTrend === 'bullish' ? '#00ff80' : emaTrend === 'bearish' ? '#ff1478' : '#ffd166';
+  const emaColor = emaTrend === 'bullish' ? '#5db586' : emaTrend === 'bearish' ? '#e06a5b' : '#e3b45a';
   const rsiZone = state.rsi_zone;
-  const rsiColor = rsiZone === 'overbought' ? '#ff1478' : rsiZone === 'oversold' ? '#00ff80' : '#64748b';
+  const rsiColor = rsiZone === 'overbought' ? '#e06a5b' : rsiZone === 'oversold' ? '#5db586' : '#64748b';
   const rsiVal = Number.isFinite(state.rsi_value) ? state.rsi_value.toFixed(0) : '—';
 
   return (
@@ -103,11 +103,11 @@ function IndicatorDots({ state }) {
         <TooltipTrigger asChild>
           <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
             <Dot color={rfColor} />
-            <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>RF</span>
-            <span className="text-10px font-mono font-semibold" style={{ color: rfColor }}>{rfLabel}</span>
+            <span className="text-11px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>RF</span>
+            <span className="text-11px font-mono font-semibold" style={{ color: rfColor }}>{rfLabel}</span>
           </span>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+        <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
           Range Filter: indicador que filtra o ruído do preço e define uma banda de tendência — o sistema só considera um movimento válido quando o preço rompe essa banda de forma consistente.
         </TooltipContent>
       </Tooltip>
@@ -115,11 +115,11 @@ function IndicatorDots({ state }) {
         <TooltipTrigger asChild>
           <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
             <Dot color={macdColor} />
-            <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>MACD</span>
-            <span className="text-10px font-mono" style={{ color: macdColor }}>{macdH > 0 ? '▲' : macdH < 0 ? '▼' : '—'}</span>
+            <span className="text-11px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>MACD</span>
+            <span className="text-11px font-mono" style={{ color: macdColor }}>{macdH > 0 ? '▲' : macdH < 0 ? '▼' : '—'}</span>
           </span>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+        <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
           MACD: compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.
         </TooltipContent>
       </Tooltip>
@@ -127,11 +127,11 @@ function IndicatorDots({ state }) {
         <TooltipTrigger asChild>
           <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
             <Dot color={emaColor} />
-            <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>EMA</span>
-            <span className="text-10px font-mono" style={{ color: emaColor }}>{emaTrend === 'bullish' ? '▲' : emaTrend === 'bearish' ? '▼' : '—'}</span>
+            <span className="text-11px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>EMA</span>
+            <span className="text-11px font-mono" style={{ color: emaColor }}>{emaTrend === 'bullish' ? '▲' : emaTrend === 'bearish' ? '▼' : '—'}</span>
           </span>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+        <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
           EMA: média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência.
         </TooltipContent>
       </Tooltip>
@@ -139,11 +139,11 @@ function IndicatorDots({ state }) {
         <TooltipTrigger asChild>
           <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
             <Dot color={rsiColor} filled={rsiZone !== 'neutral'} />
-            <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>RSI</span>
-            <span className="text-10px font-mono" style={{ color: rsiColor }}>{rsiVal}</span>
+            <span className="text-11px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>RSI</span>
+            <span className="text-11px font-mono" style={{ color: rsiColor }}>{rsiVal}</span>
           </span>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+        <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
           RSI (Índice de Força Relativa): mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui, só confirmação, nunca sinal sozinho.
         </TooltipContent>
       </Tooltip>
@@ -159,17 +159,17 @@ function TFTrendRow({ states }) {
       {tfs.map(tf => {
         const s = states?.find(st => st.timeframe === tf);
         if (!s) return (
-          <span key={tf} className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.18)' }}>
+          <span key={tf} className="text-11px font-mono" style={{ color: 'rgba(255,255,255,0.18)' }}>
             {tf.toUpperCase()} —
           </span>
         );
         const dir = s.rf_direction;
-        const color = dir === 1 ? '#00ff80' : dir === -1 ? '#ff1478' : '#64748b';
+        const color = dir === 1 ? '#5db586' : dir === -1 ? '#e06a5b' : '#64748b';
         const arrow = dir === 1 ? '▲' : dir === -1 ? '▼' : '—';
         const label = dir === 1 ? 'Bull' : dir === -1 ? 'Bear' : 'Neu';
         return (
-          <span key={tf} className="flex items-center gap-0.5 text-9px font-mono">
-            <span style={{ color: 'rgba(255,255,255,0.3)' }}>{tf.toUpperCase()}</span>
+          <span key={tf} className="flex items-center gap-0.5 text-11px font-mono">
+            <span style={{ color: 'rgba(255,255,255,0.55)' }}>{tf.toUpperCase()}</span>
             <span style={{ color }}>{arrow}{label}</span>
           </span>
         );
@@ -196,11 +196,11 @@ function Details({ states, fundingRate, nextFundingTime, primaryState }) {
       {fundingRate !== null && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="text-8px font-mono mb-1.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
-              Fund.: <span style={{ color: fundingRate >= 0 ? '#00ff80' : '#ff1478' }}>{formatSignedPct(fundingRate * 100, 4)}</span>
+            <div className="text-11px font-mono mb-1.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.55)' }}>
+              Fund.: <span style={{ color: fundingRate >= 0 ? '#5db586' : '#e06a5b' }}>{formatSignedPct(fundingRate * 100, 4)}</span>
             </div>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
             {`Funding rate (Futures): taxa paga entre posições compradas e vendidas a cada 8h. Só informativo — não influencia nenhum sinal ou operação.${nextFundingTime ? ` Próximo: ${moment(nextFundingTime).utcOffset(-3).format('DD/MM HH:mm')} BRT.` : ''}`}
           </TooltipContent>
         </Tooltip>
@@ -381,9 +381,9 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   if (isStale) {
     statusLabel = qBadge.label; statusColor = qBadge.color;
   } else if (hasActiveOp) {
-    if (tradeOp.status === 'RUNNER_ACTIVE') { statusLabel = '🏃 Runner Ativo'; statusColor = '#00e5ff'; }
-    else if (opSide === 'BUY') { statusLabel = '🟢 Compra Ativa'; statusColor = '#00ff80'; }
-    else { statusLabel = '🔴 Venda Ativa'; statusColor = '#ff1478'; }
+    if (tradeOp.status === 'RUNNER_ACTIVE') { statusLabel = '🏃 Runner Ativo'; statusColor = '#8db4e2'; }
+    else if (opSide === 'BUY') { statusLabel = '🟢 Compra Ativa'; statusColor = '#5db586'; }
+    else { statusLabel = '🔴 Venda Ativa'; statusColor = '#e06a5b'; }
   } else if (sigStyle) {
     statusLabel = sigStyle.label; statusColor = sigStyle.labelColor;
   }
@@ -412,43 +412,42 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   let cardGlow = 'none';
   let flashStyle = '';
   if (flashing || sigFlashing) {
-    const fc = isBuy ? '#00ff80' : '#ff1478';
+    const fc = isBuy ? '#5db586' : '#e06a5b';
     cardBorder = fc;
-    cardGlow = `0 0 30px ${fc}60, 0 0 60px ${fc}30`;
+    cardGlow = 'none';
     flashStyle = isBuy ? 'flash-buy' : 'flash-sell';
   } else if (hasActiveOp && isBuy) {
     // Opção B (11/11/2026, pedido do usuário): operação ATIVA = verde/vermelho CLARO (antes 0,22 de opacidade, quase invisível) + luz suave e lenta (`op-glow-*`).
     // Só vale com operação ativa: nunca por distância até a linha nem por aviso (item 277).
-    cardBorder = 'rgba(0,255,128,0.55)'; cardGlow = '0 0 22px rgba(0,255,128,0.16)';
+    cardBorder = 'rgba(93,181,134,0.55)'; cardGlow = 'none';
   } else if (hasActiveOp && isSell) {
-    cardBorder = 'rgba(255,20,120,0.55)'; cardGlow = '0 0 22px rgba(255,20,120,0.16)';
+    cardBorder = 'rgba(224,106,91,0.55)'; cardGlow = 'none';
   } else if (sigStyle?.border) {
     // Item 290: aviso ESPERANDO confirmação = âmbar parado (não é a cor do lado: item 277). Vem antes de "perto da linha"
     // porque, com mercado lateral, vários ativos ficam perto da linha ao mesmo tempo e o Dashboard virava tudo azul.
-    cardBorder = sigStyle.border; cardGlow = sigStyle.glow;
+    cardBorder = sigStyle.border; cardGlow = 'none';
   } else if (proximity?.level === 'very_close') {
     // Preço a <1% da linha do Range Filter. Item 277: contorno neutro e
     // parado — antes pulsava na cor do lado (BUY/SELL), como se um sinal
     // fosse sair; a distância não diz isso (ver ProximityBar).
     cardBorder = 'rgba(96,165,250,0.4)';
   } else if (isStale) {
-    cardBorder = healthReason === 'persistent_error' ? 'rgba(255,20,120,0.22)' : 'rgba(255,159,67,0.22)';
+    cardBorder = healthReason === 'persistent_error' ? 'rgba(224,106,91,0.22)' : 'rgba(221,154,74,0.22)';
   }
 
   // A luz lenta só com operação ativa, com o dado em dia e fora do flash de 4 s da operação recém-aberta (o flash manda). Com o dado atrasado o contorno
   // segue forte, mas a luz NÃO pulsa: pulsar sugeriria dado vivo (o 📡 do cartão já avisa o atraso). `prefers-reduced-motion` desliga a animação (CSS abaixo).
-  const opSideColor = hasActiveOp ? (isBuy ? '0, 255, 128' : isSell ? '255, 20, 120' : null) : null;
-  const pulseStyle = opSideColor && !flashStyle && !isStale && !dataUnreliable ? (isBuy ? 'op-glow-buy' : 'op-glow-sell') : '';
-  const cardBackground = opSideColor ? `linear-gradient(160deg, rgba(${opSideColor}, 0.12) 0%, rgba(10, 13, 22, 0.82) 58%)` : 'rgba(10, 13, 22, 0.82)';
+  const pulseStyle = '';
+  const cardBackground = 'hsl(var(--card))';
 
   const priceVals = hasActiveOp
     ? [tradeOp.entry_price, tradeOp.initial_stop, tradeOp.tp1, tradeOp.tp2, tradeOp.current_stop]
     : [null, null, null, null, null];
   const priceColColors = [
-    'rgba(255,255,255,0.75)', '#ff1478',
-    tradeOp?.tp1_hit ? '#00ff80' : '#ffd166',
-    tradeOp?.tp2_hit ? '#00ff80' : 'rgba(255,209,102,0.55)',
-    tradeOp?.tp1_hit ? '#ffd166' : '#ff1478',
+    'rgba(255,255,255,0.75)', '#e06a5b',
+    tradeOp?.tp1_hit ? '#5db586' : '#e3b45a',
+    tradeOp?.tp2_hit ? '#5db586' : 'rgba(227,180,90,0.55)',
+    tradeOp?.tp1_hit ? '#e3b45a' : '#e06a5b',
   ];
   const priceColTooltips = {
     TP1: getTp1Tooltip(tradeOp),
@@ -460,24 +459,19 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   return (
     <>
       <style>{`
-        @keyframes flash-buy { 0%,100%{box-shadow:0 0 20px rgba(0,255,128,0.07)} 50%{box-shadow:0 0 40px rgba(0,255,128,0.5),0 0 80px rgba(0,255,128,0.2)} }
-        @keyframes flash-sell { 0%,100%{box-shadow:0 0 20px rgba(255,20,120,0.07)} 50%{box-shadow:0 0 40px rgba(255,20,120,0.5),0 0 80px rgba(255,20,120,0.2)} }
+        @keyframes flash-buy { 0%,100%{box-shadow:0 0 20px rgba(93,181,134,0.07)} 50%{box-shadow:0 0 40px rgba(93,181,134,0.5),0 0 80px rgba(93,181,134,0.2)} }
+        @keyframes flash-sell { 0%,100%{box-shadow:0 0 20px rgba(224,106,91,0.07)} 50%{box-shadow:0 0 40px rgba(224,106,91,0.5),0 0 80px rgba(224,106,91,0.2)} }
         .flash-buy { animation: flash-buy 0.8s ease-in-out 5; }
         .flash-sell { animation: flash-sell 0.8s ease-in-out 5; }
-        @keyframes op-glow-buy { 0%,100%{box-shadow:0 0 18px rgba(0,255,128,0.10)} 50%{box-shadow:0 0 34px rgba(0,255,128,0.26),0 0 64px rgba(0,255,128,0.10)} }
-        @keyframes op-glow-sell { 0%,100%{box-shadow:0 0 18px rgba(255,20,120,0.10)} 50%{box-shadow:0 0 34px rgba(255,20,120,0.26),0 0 64px rgba(255,20,120,0.10)} }
-        .op-glow-buy { animation: op-glow-buy 4.5s ease-in-out infinite; }
-        .op-glow-sell { animation: op-glow-sell 4.5s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
           .flash-buy, .flash-sell { animation: none; }
-          .op-glow-buy, .op-glow-sell { animation: none; }
         }
       `}</style>
       <div
         role="button"
         tabIndex={0}
         aria-label={`${asset.display_name} — abrir detalhes`}
-        className={`rounded-xl p-4 relative overflow-hidden transition-all duration-300 cursor-pointer hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${flashStyle} ${pulseStyle}`}
+        className={`rounded-md p-4 relative overflow-hidden transition-all duration-300 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${flashStyle} ${pulseStyle}`}
         onClick={onClick}
         onKeyDown={(e) => {
           // Achado A-8 do Raio-X de UI/UX: card só abria por clique de
@@ -487,7 +481,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); }
         }}
-        style={{ background: cardBackground, backdropFilter: 'blur(20px)', border: `1px solid ${cardBorder}`, boxShadow: cardGlow }}>
+        style={{ background: cardBackground, border: `1px solid ${cardBorder}`, boxShadow: 'none' }}>
 
         {/* Row 1: Symbol + Price */}
         <div className="flex items-start justify-between mb-2">
@@ -495,27 +489,27 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
             <div className="flex items-center gap-1.5 flex-wrap">
               <TokenIcon symbol={asset.symbol} size={18} />
               <span className="font-bold text-sm text-foreground tracking-tight">{asset.display_name}</span>
-              <span className="text-8px font-mono text-muted-foreground">{asset.exchange?.toUpperCase() || 'BINANCE'}</span>
+              <span className="text-11px font-mono text-muted-foreground">{asset.exchange?.toUpperCase() || 'BINANCE'}</span>
               <span className="flex items-center gap-0.5">
                 <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: qBadge.color, boxShadow: quality.status === 'ok' ? `0 0 5px ${qBadge.color}` : 'none' }} />
-                <span className="text-8px font-mono" style={{ color: qBadge.color }}>{qBadge.short}</span>
+                <span className="text-11px font-mono" style={{ color: qBadge.color }}>{qBadge.short}</span>
               </span>
               {tradeOpsUnavailable && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="flex items-center gap-0.5 cursor-help" tabIndex={0}>
-                      <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: '#ff9f43' }} />
-                      <span className="text-8px font-mono" style={{ color: '#ff9f43' }}>OP?</span>
+                      <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: '#dd9a4a' }} />
+                      <span className="text-11px font-mono" style={{ color: '#dd9a4a' }}>OP?</span>
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                  <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                     Não foi possível confirmar operações ativas agora — o status abaixo pode estar desatualizado.
                   </TooltipContent>
                 </Tooltip>
               )}
             </div>
             {candleCloseTime && (
-              <div className="text-8px font-mono text-muted-foreground mt-0.5">🕐 {candleOpen} → {candleClose} BRT</div>
+              <div className="text-11px font-mono text-muted-foreground mt-0.5">🕐 {candleOpen} → {candleClose} BRT</div>
             )}
           </div>
           <div className="text-right shrink-0 ml-2">
@@ -523,13 +517,13 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               <>
                 <div className="font-bold font-mono text-sm text-foreground">
                   ${formatPrice(priceView.price)}
-                  {priceView.isCandle && <span className="text-8px font-normal text-muted-foreground"> fech. {tfLabel}</span>}
+                  {priceView.isCandle && <span className="text-11px font-normal text-muted-foreground"> fech. {tfLabel}</span>}
                 </div>
-                <div className="text-10px font-mono" style={{ color: CHANGE_TONE_COLOR[priceView.tone] }}>
+                <div className="text-11px font-mono" style={{ color: CHANGE_TONE_COLOR[priceView.tone] }}>
                   {priceView.pctText}
                 </div>
                 {!priceView.isCandle && lastPrice ? (
-                  <div className="text-8px font-mono text-muted-foreground">
+                  <div className="text-11px font-mono text-muted-foreground">
                     Fech. {tfLabel} ${formatPrice(lastPrice)}
                   </div>
                 ) : null}
@@ -542,11 +536,11 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
             {score > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="text-8px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
-                    Confl.: <span style={{ color: score >= 85 ? '#00ff80' : score >= 65 ? '#ffd166' : '#ff9f43' }}>{score}</span>
+                  <div className="text-11px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.55)' }}>
+                    Confl.: <span style={{ color: score >= 85 ? '#5db586' : score >= 65 ? '#e3b45a' : '#dd9a4a' }}>{score}</span>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                   Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
                 </TooltipContent>
               </Tooltip>
@@ -560,15 +554,15 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
             {['1h','4h','1d'].filter(tf => availableTfs.includes(tf)).map(tf => {
               const tfState = states?.find(s => s.timeframe === tf);
               const rfDir = tfState?.rf_direction;
-              const dirColor = rfDir === 1 ? '#00ff80' : rfDir === -1 ? '#ff1478' : null;
+              const dirColor = rfDir === 1 ? '#5db586' : rfDir === -1 ? '#e06a5b' : null;
               const isSelected = selectedTf === tf;
               return (
                 <button key={tf}
                   onClick={e => { e.stopPropagation(); setSelectedTf(tf); }}
-                  className="flex items-center gap-1 text-xs font-mono font-bold px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                  className="flex items-center gap-1 text-xs font-mono font-bold px-3 py-1.5 rounded-lg transition-all"
                   style={isSelected
-                    ? { background: 'rgba(0,229,255,0.18)', border: '1px solid rgba(0,229,255,0.45)', color: '#00e5ff', minWidth: 44 }
-                    : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.3)', minWidth: 44 }}>
+                    ? { background: 'rgba(141,180,226,0.18)', border: '1px solid rgba(141,180,226,0.45)', color: '#8db4e2', minWidth: 44 }
+                    : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)', minWidth: 44 }}>
                   {tf.toUpperCase()}
                   {dirColor && <span style={{ color: dirColor, fontSize: 10 }}>{rfDir === 1 ? '▲' : '▼'}</span>}
                 </button>
@@ -584,8 +578,8 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               <span className="flex items-center gap-1 text-sm font-mono font-bold px-4 py-1.5 rounded-lg"
                 style={{
                   ...(showBadge === 'BUY'
-                    ? { background: 'rgba(0,255,128,0.15)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.4)', boxShadow: '0 0 12px rgba(0,255,128,0.15)' }
-                    : { background: 'rgba(255,20,120,0.15)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.4)', boxShadow: '0 0 12px rgba(255,20,120,0.15)' }),
+                    ? { background: 'rgba(93,181,134,0.15)', color: '#5db586', border: '1px solid rgba(93,181,134,0.4)', boxShadow: 'none' }
+                    : { background: 'rgba(224,106,91,0.15)', color: '#e06a5b', border: '1px solid rgba(224,106,91,0.4)', boxShadow: 'none' }),
                   // Item 290: o selo grande só fica vivo enquanto o aviso vale (esperando) ou há operação; aviso que já passou
                   // (ou que nunca vira operação) fica apagado — o rótulo ao lado diz o porquê.
                   ...(sigStyle?.dimBadge ? { opacity: 0.4, filter: 'saturate(0.5)', boxShadow: 'none' } : {}),
@@ -595,20 +589,20 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               </span>
             )}
             {latestSignal && !hasActiveOp && strengthLabel && (
-              <span className="text-10px font-mono px-2 py-1 rounded"
-                style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span className="text-11px font-mono px-2 py-1 rounded"
+                style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.62)', border: '1px solid rgba(255,255,255,0.08)' }}>
                 {strengthLabel}
               </span>
             )}
           </div>
           {statusLabel && (
-            <span className="text-10px font-mono font-semibold text-right" style={{ color: statusColor }}>{statusLabel}</span>
+            <span className="text-11px font-mono font-semibold text-right" style={{ color: statusColor }}>{statusLabel}</span>
           )}
         </div>
 
         {/* Item 290: por que o aviso ainda não virou operação, em linguagem simples (mesmo texto dos alertas e do drawer). */}
         {sigStyle?.showReason && sigReason && (
-          <p className="text-10px font-mono mb-2.5" style={{ color: reasonColorFor(sigStyle, sigReason.kind) }} title={sigReason.detail}>
+          <p className="text-11px font-mono mb-2.5" style={{ color: reasonColorFor(sigStyle, sigReason.kind) }} title={sigReason.detail}>
             {sigReason.icon} {sigReason.chip}
           </p>
         )}
@@ -622,7 +616,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
 
         {/* Candle status */}
         {hasActiveOp && (
-          <div className="text-8px font-mono mb-2" style={{ color: candleStatus === 'OPEN' ? '#ff9f43' : 'rgba(255,255,255,0.3)' }}>
+          <div className="text-11px font-mono mb-2" style={{ color: candleStatus === 'OPEN' ? '#dd9a4a' : 'rgba(255,255,255,0.55)' }}>
             {candleStatus === 'OPEN' ? '🕯️ Candle aberto — aguardando fechamento' : '✅ Candle fechado'}
           </div>
         )}
@@ -632,8 +626,8 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           type="button"
           onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
           aria-expanded={open}
-          className="flex items-center gap-1 text-8px font-mono mb-2.5 transition-colors hover:text-foreground"
-          style={{ color: 'rgba(255,255,255,0.35)' }}>
+          className="flex items-center gap-1 text-11px font-mono mb-2.5 transition-colors hover:text-foreground"
+          style={{ color: 'rgba(255,255,255,0.55)' }}>
           {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           {open ? 'Menos detalhes' : 'Detalhes técnicos'}
         </button>
@@ -649,16 +643,16 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               {priceColTooltips[col] ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="text-8px font-mono text-muted-foreground mb-0.5 leading-tight truncate cursor-help" tabIndex={0}>{col}</div>
+                    <div className="text-11px font-mono text-muted-foreground mb-0.5 leading-tight truncate cursor-help" tabIndex={0}>{col}</div>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                  <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                     {priceColTooltips[col]}
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                <div className="text-8px font-mono text-muted-foreground mb-0.5 leading-tight truncate">{col}</div>
+                <div className="text-11px font-mono text-muted-foreground mb-0.5 leading-tight truncate">{col}</div>
               )}
-              <div className="text-10px font-mono font-semibold" style={{ color: priceVals[i] ? priceColColors[i] : 'rgba(255,255,255,0.15)' }}>
+              <div className="text-11px font-mono font-semibold" style={{ color: priceVals[i] ? priceColColors[i] : 'rgba(255,255,255,0.15)' }}>
                 {formatPrice(priceVals[i])}
               </div>
             </div>
@@ -667,10 +661,10 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
 
         {/* Runner progress */}
         {hasActiveOp && tradeOp.status === 'RUNNER_ACTIVE' && (
-          <div className="rounded-lg px-3 py-2 mb-2.5" style={{ background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.15)' }}>
-            <div className="flex items-center justify-between text-9px font-mono">
-              <span style={{ color: '#00ff80' }}>✅ TP1 + {tradeOp.partial_percent || 50}% realizados</span>
-              <span style={{ color: '#ffd166' }}>🏃 {tradeOp.runner_percent || 50}% em runner</span>
+          <div className="rounded-lg px-3 py-2 mb-2.5" style={{ background: 'rgba(141,180,226,0.05)', border: '1px solid rgba(141,180,226,0.15)' }}>
+            <div className="flex items-center justify-between text-11px font-mono">
+              <span style={{ color: '#5db586' }}>✅ TP1 + {tradeOp.partial_percent || 50}% realizados</span>
+              <span style={{ color: '#e3b45a' }}>🏃 {tradeOp.runner_percent || 50}% em runner</span>
             </div>
           </div>
         )}
@@ -688,8 +682,8 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
             disabled={activateMutation.isPending}
             className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-11px font-mono font-bold mt-1 transition-all"
             style={sigSide === 'BUY'
-              ? { background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }
-              : { background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
+              ? { background: 'rgba(93,181,134,0.1)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }
+              : { background: 'rgba(224,106,91,0.1)', border: '1px solid rgba(224,106,91,0.3)', color: '#e06a5b' }}>
             {activateMutation.isPending ? 'Simulando...' : '🧪 Simular entrada (virtual)'}
           </button>
         )}
@@ -698,7 +692,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
             aparecia em :hover, que não existe em touch (mobile/tablet nunca
             viam esta dica). Card já é clicável e acessível por outro meio
             (role="button" + aria-label) — hint é só reforço decorativo. */}
-        <div className="absolute bottom-1.5 right-2.5 text-7px font-mono" style={{ color: 'rgba(255,255,255,0.15)' }}>
+        <div className="absolute bottom-1.5 right-2.5 text-10px font-mono" style={{ color: 'rgba(255,255,255,0.15)' }}>
           detalhes →
         </div>
       </div>

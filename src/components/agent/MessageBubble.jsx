@@ -11,9 +11,9 @@ function FunctionDisplay({ toolCall }) {
   const isPending = ['pending', 'running', 'in_progress'].includes(status);
 
   let statusText = 'Concluído';
-  let statusColor = '#00ff80';
-  if (isFailed) { statusText = 'Falhou'; statusColor = '#ff1478'; }
-  if (isPending) { statusText = 'Executando...'; statusColor = '#ffd166'; }
+  let statusColor = '#5db586';
+  if (isFailed) { statusText = 'Falhou'; statusColor = '#e06a5b'; }
+  if (isPending) { statusText = 'Executando...'; statusColor = '#e3b45a'; }
 
   const hideDetails = toolCall.display_projection?.hide_details && toolCall.display_projection?.details_redacted;
   const label = toolCall.display_projection?.label || toolCall.name;
@@ -62,7 +62,7 @@ function FunctionDisplay({ toolCall }) {
             <div>
               <span className="text-9px font-mono text-muted-foreground">Parâmetros:</span>
               <pre className="text-9px font-mono mt-0.5 p-2 rounded overflow-x-auto"
-                style={{ background: 'rgba(0,0,0,0.3)', color: 'rgba(0,229,255,0.6)' }}>
+                style={{ background: 'rgba(0,0,0,0.3)', color: 'rgba(141,180,226,0.6)' }}>
                 {JSON.stringify(parsedArgs, null, 2)}
               </pre>
             </div>
@@ -71,7 +71,7 @@ function FunctionDisplay({ toolCall }) {
             <div>
               <span className="text-9px font-mono text-muted-foreground">Resultado:</span>
               <pre className="text-9px font-mono mt-0.5 p-2 rounded overflow-x-auto"
-                style={{ background: 'rgba(0,0,0,0.3)', color: isFailed ? '#ff1478' : 'rgba(0,255,128,0.6)' }}>
+                style={{ background: 'rgba(0,0,0,0.3)', color: isFailed ? '#e06a5b' : 'rgba(93,181,134,0.6)' }}>
                 {typeof parsedResults === 'string' ? parsedResults : JSON.stringify(parsedResults, null, 2)}
               </pre>
             </div>
@@ -87,16 +87,16 @@ export default function MessageBubble({ message }) {
 
   return (
     <div className={isUser ? "flex justify-end" : "flex justify-start"}>
-      <div className={`max-w-[85%] rounded-xl px-4 py-2.5 ${isUser ? '' : ''}`}
+      <div className={`max-w-[85%] rounded-md px-4 py-2.5 ${isUser ? '' : ''}`}
         style={isUser
-          ? { background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)' }
+          ? { background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.2)' }
           : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-center gap-1.5 mb-1">
           {isUser
-            ? <User className="w-3 h-3" style={{ color: '#00e5ff' }} />
-            : <Bot className="w-3 h-3" style={{ color: '#00ff80' }} />}
+            ? <User className="w-3 h-3" style={{ color: '#8db4e2' }} />
+            : <Bot className="w-3 h-3" style={{ color: '#5db586' }} />}
           <span className="text-8px font-mono uppercase tracking-wider"
-            style={{ color: isUser ? '#00e5ff' : '#00ff80' }}>
+            style={{ color: isUser ? '#8db4e2' : '#5db586' }}>
             {isUser ? 'Você' : 'Strategy Reviewer'}
           </span>
         </div>

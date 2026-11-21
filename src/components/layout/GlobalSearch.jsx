@@ -97,11 +97,11 @@ export default function GlobalSearch() {
             onBlur={() => { if (!search) setShowSearch(false); }}
             placeholder="Buscar ativo ou alerta..."
             className="h-8 w-44 sm:w-52 font-mono text-xs rounded-lg px-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(255,255,255,0.8)' }}
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(141,180,226,0.3)', color: 'rgba(255,255,255,0.8)' }}
           />
           {showDropdown && search.trim() && hasResults && (
-            <div className="absolute top-full mt-1.5 left-0 w-64 sm:w-72 rounded-xl overflow-hidden z-50"
-              style={{ background: 'rgba(10,13,22,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+            <div className="absolute top-full mt-1.5 left-0 w-64 sm:w-72 rounded-md overflow-hidden z-50"
+              style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
               {results.assets.length > 0 && (
                 <div>
                   <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -129,7 +129,7 @@ export default function GlobalSearch() {
                       className="flex items-center justify-between w-full px-3 py-2 text-left transition-colors hover:bg-white/[0.04]">
                       <div className="min-w-0">
                         <span className="text-xs font-mono text-foreground">{s.symbol?.replace('USDT', '/USDT')}</span>
-                        <span className="text-9px font-mono ml-1.5" style={{ color: s.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>{s.signal_type}</span>
+                        <span className="text-9px font-mono ml-1.5" style={{ color: s.signal_type === 'BUY' ? '#5db586' : '#e06a5b' }}>{s.signal_type}</span>
                       </div>
                       <span className="text-9px font-mono text-muted-foreground truncate ml-2">{s.timeframe?.toUpperCase()}</span>
                     </button>
@@ -147,7 +147,7 @@ export default function GlobalSearch() {
                       className="flex items-center justify-between w-full px-3 py-2 text-left transition-colors hover:bg-white/[0.04]">
                       <div className="min-w-0">
                         <span className="text-xs font-mono text-foreground">{op.symbol?.replace('USDT', '/USDT')}</span>
-                        <span className="text-9px font-mono ml-1.5" style={{ color: op.side === 'BUY' ? '#00ff80' : '#ff1478' }}>{op.side}</span>
+                        <span className="text-9px font-mono ml-1.5" style={{ color: op.side === 'BUY' ? '#5db586' : '#e06a5b' }}>{op.side}</span>
                       </div>
                       <span className="text-9px font-mono text-muted-foreground truncate ml-2">{op.status}</span>
                     </button>
@@ -157,7 +157,7 @@ export default function GlobalSearch() {
             </div>
           )}
           {showDropdown && search.trim() && !hasResults && (
-            <div className="absolute top-full mt-1.5 left-0 w-64 sm:w-72 rounded-xl overflow-hidden z-50"
+            <div className="absolute top-full mt-1.5 left-0 w-64 sm:w-72 rounded-md overflow-hidden z-50"
               style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <div className="px-3 py-3 text-center text-10px font-mono text-muted-foreground">Nenhum resultado</div>
             </div>
@@ -166,7 +166,7 @@ export default function GlobalSearch() {
       ) : (
         <button onClick={() => setShowSearch(true)}
           className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-11px font-mono transition-colors"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
           <Search className="w-3 h-3" />
           <span className="hidden md:block">Buscar ativo ou alerta...</span>
         </button>

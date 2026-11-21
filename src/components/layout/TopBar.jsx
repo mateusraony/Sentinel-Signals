@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Clock, Radar, BellRing, KeyRound } from 'lucide-react';
 import { scanAllAssets } from '@/lib/scanner';
 import { useQueryClient } from '@tanstack/react-query';
-import { cn } from '@/lib/utils';
 import { isTelegramConfigured } from '@/lib/telegram';
 import { isOwnerKeyConfigured } from '@/lib/ownerKey';
 import TelegramSettings from '@/components/settings/TelegramSettings';
@@ -70,7 +69,7 @@ export default function TopBar() {
       <TelegramSettings open={showTelegram} onClose={() => setShowTelegram(false)} />
       <OwnerKeySettings open={showOwnerKey} onClose={() => setShowOwnerKey(false)} />
       <header className="h-14 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30"
-        style={{ background: 'rgba(8,10,18,0.7)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+        style={{ background: 'rgba(8,10,18,0.7)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
       >
       {/* Left */}
       <div className="flex items-center gap-3">
@@ -83,16 +82,16 @@ export default function TopBar() {
                 <span key={i} className="block w-1 rounded-full"
                   style={{
                     height: 16,
-                    background: '#00ff80',
+                    background: '#5db586',
                     opacity: 0.7,
                     animation: `bar-wave 0.9s ease-in-out infinite`,
                     animationDelay: `${i * 0.15}s`,
-                    boxShadow: '0 0 6px rgba(0,255,128,0.5)',
+                    boxShadow: 'none',
                   }}
                 />
               ))}
             </div>
-            <span className="text-xs font-mono" style={{ color: 'rgba(0,255,128,0.8)' }}>{progress}</span>
+            <span className="text-xs font-mono" style={{ color: 'rgba(93,181,134,0.8)' }}>{progress}</span>
           </div>
         )}
       </div>
@@ -111,9 +110,9 @@ export default function TopBar() {
               aria-label="Alertas Telegram"
               className="flex items-center justify-center w-8 h-8 rounded-lg transition-all"
               style={telegramActive
-                ? { background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)' }
+                ? { background: 'rgba(141,180,226,0.1)', border: '1px solid rgba(141,180,226,0.3)' }
                 : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <BellRing className="w-3.5 h-3.5" style={{ color: telegramActive ? '#00e5ff' : 'rgba(255,255,255,0.35)' }} />
+              <BellRing className="w-3.5 h-3.5" style={{ color: telegramActive ? '#8db4e2' : 'rgba(255,255,255,0.55)' }} />
             </button>
           </TooltipTrigger>
           <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
@@ -127,9 +126,9 @@ export default function TopBar() {
               aria-label="Chave de Acesso do Backend"
               className="flex items-center justify-center w-8 h-8 rounded-lg transition-all"
               style={ownerKeyActive
-                ? { background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)' }
-                : { background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.25)' }}>
-              <KeyRound className="w-3.5 h-3.5" style={{ color: ownerKeyActive ? '#00e5ff' : '#ff1478' }} />
+                ? { background: 'rgba(141,180,226,0.1)', border: '1px solid rgba(141,180,226,0.3)' }
+                : { background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.25)' }}>
+              <KeyRound className="w-3.5 h-3.5" style={{ color: ownerKeyActive ? '#8db4e2' : '#e06a5b' }} />
             </button>
           </TooltipTrigger>
           <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
@@ -141,19 +140,12 @@ export default function TopBar() {
           onClick={handleScan}
           disabled={scanning}
           size="sm"
-          className={cn(
-            "relative font-mono text-xs h-8 px-4 transition-all duration-300",
-            !scanning && "btn-scan-pulse"
-          )}
+          className="relative font-mono text-xs h-8 px-4 transition-all duration-300"
           style={{
-            background: scanning
-              ? 'rgba(0,255,128,0.1)'
-              : 'linear-gradient(135deg, rgba(0,255,128,0.15), rgba(0,200,255,0.1))',
-            border: `1px solid ${scanning ? 'rgba(0,255,128,0.2)' : 'rgba(0,255,128,0.4)'}`,
-            color: '#00ff80',
-            boxShadow: scanning ? 'none' : '0 0 20px rgba(0,255,128,0.1)',
-          }}
-        >
+            background: scanning ? 'rgba(141,180,226,0.08)' : 'rgba(141,180,226,0.14)',
+            border: `1px solid ${scanning ? 'rgba(141,180,226,0.2)' : 'rgba(141,180,226,0.4)'}`,
+            color: '#8db4e2',
+          }}        >
           {scanning
             ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
             : <Radar className="w-3.5 h-3.5 mr-2" />

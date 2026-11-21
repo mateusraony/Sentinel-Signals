@@ -45,21 +45,20 @@ function DesktopSidebar() {
       className="hidden md:flex fixed left-0 top-0 h-full w-14 flex-col items-center z-40"
       style={{
         background: 'rgba(6, 8, 15, 0.75)',
-        backdropFilter: 'blur(20px)',
         borderRight: '1px solid rgba(255,255,255,0.04)',
       }}
     >
       {/* Logo */}
       <div className="w-full flex justify-center py-4 mb-2">
         <div
-          className="w-8 h-8 rounded-xl flex items-center justify-center"
+          className="w-8 h-8 rounded-md flex items-center justify-center"
           style={{
-            background: 'linear-gradient(135deg, rgba(0,255,128,0.18), rgba(0,180,255,0.08))',
-            border: '1px solid rgba(0,255,128,0.22)',
-            boxShadow: '0 0 16px rgba(0,255,128,0.12)',
+            background: 'linear-gradient(135deg, rgba(93,181,134,0.18), rgba(0,180,255,0.08))',
+            border: '1px solid rgba(93,181,134,0.22)',
+            boxShadow: 'none',
           }}
         >
-          <Zap className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />
+          <Zap className="w-3.5 h-3.5" style={{ color: '#5db586' }} />
         </div>
       </div>
 
@@ -76,22 +75,22 @@ function DesktopSidebar() {
                 aria-current={isActive ? 'page' : undefined}
                 className="flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200 relative"
                 style={{
-                  background: isActive ? 'rgba(0,255,128,0.07)' : hovered === item.path ? 'rgba(255,255,255,0.04)' : 'transparent',
-                  border: isActive ? '1px solid rgba(0,255,128,0.15)' : '1px solid transparent',
+                  background: isActive ? 'rgba(93,181,134,0.07)' : hovered === item.path ? 'rgba(255,255,255,0.04)' : 'transparent',
+                  border: isActive ? '1px solid rgba(93,181,134,0.15)' : '1px solid transparent',
                 }}
                 onMouseEnter={() => setHovered(item.path)}
                 onMouseLeave={() => setHovered(null)}
               >
                 {isActive && (
                   <span className="absolute left-0 top-1/2 -translate-y-1/2 rounded-r-full"
-                    style={{ width: 2, height: 18, background: '#00ff80', boxShadow: '0 0 8px rgba(0,255,128,0.7)' }}
+                    style={{ width: 2, height: 18, background: '#5db586', boxShadow: 'none' }}
                   />
                 )}
                 <item.icon
                   className="w-[18px] h-[18px]"
                   style={{
-                    color: isActive ? '#00ff80' : hovered === item.path ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.28)',
-                    filter: isActive ? 'drop-shadow(0 0 5px rgba(0,255,128,0.55))' : 'none',
+                    color: isActive ? '#5db586' : hovered === item.path ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.28)',
+                    filter: isActive ? 'drop-shadow(0 0 5px rgba(93,181,134,0.55))' : 'none',
                     transition: 'color 0.18s, filter 0.18s',
                   }}
                 />
@@ -144,9 +143,9 @@ function QuickToggleButton() {
         onClick={() => navigate(target)}
         aria-label={`Ir para ${label}`}
         className="flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200"
-        style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.12)' }}
+        style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.12)' }}
       >
-        <ArrowLeftRight className="w-[18px] h-[18px]" style={{ color: '#00e5ff' }} />
+        <ArrowLeftRight className="w-[18px] h-[18px]" style={{ color: '#8db4e2' }} />
       </button>
       <span className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-md text-xs font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50"
         style={{ background: 'rgba(10,13,24,0.95)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}>
@@ -199,11 +198,11 @@ function ClearLogsButton() {
         aria-label="Limpar Logs"
         className="flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200"
         style={{ background: 'transparent', border: '1px solid transparent' }}
-        onMouseEnter={(e) => { if (!clearing) { e.currentTarget.style.background = 'rgba(255,159,67,0.06)'; e.currentTarget.style.border = '1px solid rgba(255,159,67,0.12)'; } }}
+        onMouseEnter={(e) => { if (!clearing) { e.currentTarget.style.background = 'rgba(221,154,74,0.06)'; e.currentTarget.style.border = '1px solid rgba(221,154,74,0.12)'; } }}
         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.border = '1px solid transparent'; }}
       >
         {clearing
-          ? <Loader2 className="w-[18px] h-[18px] animate-spin" style={{ color: '#ff9f43' }} />
+          ? <Loader2 className="w-[18px] h-[18px] animate-spin" style={{ color: '#dd9a4a' }} />
           : <Trash2 className="w-[18px] h-[18px]" style={{ color: 'rgba(255,255,255,0.28)' }} />}
       </button>
       <span className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-md text-xs font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50"
@@ -280,14 +279,14 @@ function MobileBottomNav() {
               {isActive && (
                 <span
                   className="absolute top-0 left-1/2 -translate-x-1/2 rounded-b-full"
-                  style={{ width: 24, height: 2, background: '#00ff80', boxShadow: '0 0 8px rgba(0,255,128,0.8)' }}
+                  style={{ width: 24, height: 2, background: '#5db586', boxShadow: 'none' }}
                 />
               )}
               <item.icon
                 className="w-[22px] h-[22px]"
                 style={{
-                  color: isActive ? '#00ff80' : 'rgba(255,255,255,0.3)',
-                  filter: isActive ? 'drop-shadow(0 0 5px rgba(0,255,128,0.6))' : 'none',
+                  color: isActive ? '#5db586' : 'rgba(255,255,255,0.55)',
+                  filter: isActive ? 'drop-shadow(0 0 5px rgba(93,181,134,0.6))' : 'none',
                   transition: 'color 0.18s, filter 0.18s',
                 }}
               />
@@ -304,8 +303,8 @@ function MobileBottomNav() {
           <MoreHorizontal
             className="w-[22px] h-[22px]"
             style={{
-              color: isMoreActive ? '#00ff80' : 'rgba(255,255,255,0.3)',
-              filter: isMoreActive ? 'drop-shadow(0 0 5px rgba(0,255,128,0.6))' : 'none',
+              color: isMoreActive ? '#5db586' : 'rgba(255,255,255,0.55)',
+              filter: isMoreActive ? 'drop-shadow(0 0 5px rgba(93,181,134,0.6))' : 'none',
               transition: 'color 0.18s, filter 0.18s',
             }}
           />
@@ -332,16 +331,16 @@ function MobileBottomNav() {
                   aria-current={isActive ? 'page' : undefined}
                   onClick={() => setMoreOpen(false)}
                   className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-lg transition-all duration-200"
-                  style={{ background: isActive ? 'rgba(0,255,128,0.07)' : 'transparent' }}
+                  style={{ background: isActive ? 'rgba(93,181,134,0.07)' : 'transparent' }}
                 >
                   <item.icon
                     className="w-[22px] h-[22px]"
                     style={{
-                      color: isActive ? '#00ff80' : 'rgba(255,255,255,0.5)',
-                      filter: isActive ? 'drop-shadow(0 0 5px rgba(0,255,128,0.6))' : 'none',
+                      color: isActive ? '#5db586' : 'rgba(255,255,255,0.5)',
+                      filter: isActive ? 'drop-shadow(0 0 5px rgba(93,181,134,0.6))' : 'none',
                     }}
                   />
-                  <span className="text-9px font-mono text-center leading-tight" style={{ color: isActive ? '#00ff80' : 'rgba(255,255,255,0.5)' }}>
+                  <span className="text-9px font-mono text-center leading-tight" style={{ color: isActive ? '#5db586' : 'rgba(255,255,255,0.5)' }}>
                     {item.label}
                   </span>
                 </Link>

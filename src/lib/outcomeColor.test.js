@@ -15,23 +15,23 @@ import { outcomeColor } from './outcomeColor.js';
 
 describe('outcomeColor', () => {
   it('STOP_HIT com outcome WIN (stop travou lucro real) é verde, não vermelho/amarelo', () => {
-    expect(outcomeColor('STOP_HIT', 'WIN')).toBe('#00ff80');
+    expect(outcomeColor('STOP_HIT', 'WIN')).toBe('#5db586');
   });
 
   it('STOP_HIT com outcome BE (empate real) é amarelo', () => {
-    expect(outcomeColor('STOP_HIT', 'BE')).toBe('#ffd166');
+    expect(outcomeColor('STOP_HIT', 'BE')).toBe('#e3b45a');
   });
 
   it('STOP_HIT com outcome LOSS é vermelho', () => {
-    expect(outcomeColor('STOP_HIT', 'LOSS')).toBe('#ff1478');
+    expect(outcomeColor('STOP_HIT', 'LOSS')).toBe('#e06a5b');
   });
 
   it('TP2_HIT é sempre verde, independente do outcome', () => {
-    expect(outcomeColor('TP2_HIT', 'WIN')).toBe('#00ff80');
+    expect(outcomeColor('TP2_HIT', 'WIN')).toBe('#5db586');
   });
 
   it('INVALIDATED é laranja; qualquer outro status cai no cinza neutro', () => {
-    expect(outcomeColor('INVALIDATED', 'LOSS')).toBe('#ff9f43');
+    expect(outcomeColor('INVALIDATED', 'LOSS')).toBe('#dd9a4a');
     expect(outcomeColor('CLOSED', 'BE')).toBe('#64748b');
   });
 });
