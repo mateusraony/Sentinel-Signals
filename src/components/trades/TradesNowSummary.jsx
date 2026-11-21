@@ -33,7 +33,7 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
     <div className="grid grid-cols-2 lg:grid-cols-12 gap-3" role="group" aria-label="Resumo de agora">
       <MetricSummaryCard
         flat
-        className="col-span-2 lg:col-span-4"
+        className="lg:col-span-4"
         icon={Target}
         label={`Operações ativas${suffix}`}
         value={String(active.total)}
@@ -44,7 +44,7 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
       />
       <MetricSummaryCard
         flat
-        className="col-span-2 lg:col-span-3"
+        className="lg:col-span-3"
         icon={ShieldCheck}
         label="Se todas baterem no stop"
         value={formatSignedR(sumR) ?? '—'}
@@ -67,7 +67,7 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
       />
       <MetricSummaryCard
         flat
-        className="col-span-2 lg:col-span-3"
+        className="lg:col-span-3"
         icon={History}
         label={`Fechadas${suffix}`}
         value={String(closed.total)}

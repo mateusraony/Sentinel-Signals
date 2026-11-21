@@ -772,4 +772,14 @@ describe('TradeHistory — estrutura nova (21/11/2026)', () => {
     expect(msg.parentElement.className).not.toMatch(/text-center/);
     expect(within(msg.parentElement).getByRole('button', { name: '✕ Limpar filtros' })).toBeTruthy();
   });
+
+  it('celular: a linha do trade deixa o resultado descer para uma linha própria (em tela larga fica ao lado)', async () => {
+    await abrir();
+    const linha = document.querySelector('[role="button"][aria-expanded]');
+    expect(linha.className).toMatch(/flex-wrap/);
+    expect(linha.className).toMatch(/sm:flex-nowrap/);
+    const resultado = within(linha).getAllByTestId('r-bar')[0].parentElement;
+    expect(resultado.className).toMatch(/w-full/);
+    expect(resultado.className).toMatch(/sm:w-auto/);
+  });
 });

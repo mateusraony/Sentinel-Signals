@@ -207,7 +207,7 @@ function HistoryCard({ op, eventCtx = null }) {
 
       {/* Main row */}
       <div
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+        className="relative flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 px-4 py-3 cursor-pointer"
         role="button"
         tabIndex={0}
         aria-expanded={expanded}
@@ -220,7 +220,7 @@ function HistoryCard({ op, eventCtx = null }) {
         <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: isBuy ? '#5db586' : '#e06a5b' }} />
 
         {/* Symbol + meta */}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-[calc(100%-1.5rem)] sm:basis-0 pr-6 sm:pr-0">
           <div className="flex items-center gap-2 flex-wrap">
             <TokenIcon symbol={op.symbol} size={18} />
             <span className="font-bold text-sm text-foreground">{op.symbol?.replace('USDT', '/USDT')}</span>
@@ -306,7 +306,8 @@ function HistoryCard({ op, eventCtx = null }) {
         </div>
 
         {/* P&L */}
-        <div className="text-right shrink-0">
+        {/* Celular: o resultado desce para uma linha própria embaixo (antes ficava ao lado e espremia o texto numa coluna fina). */}
+        <div className="w-full pl-4 sm:w-auto sm:pl-0 sm:text-right shrink-0 flex sm:block items-baseline justify-between gap-3">
           {pnl !== null ? (
             <div className="text-base font-mono font-bold" style={{ color: isBE ? '#e3b45a' : pnl >= 0 ? '#5db586' : '#e06a5b' }}>
               {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
@@ -319,7 +320,7 @@ function HistoryCard({ op, eventCtx = null }) {
           {op.score > 0 && <div className="text-11px font-mono text-muted-foreground">score {op.score}/100</div>}
         </div>
 
-        <span className="text-muted-foreground">{expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}</span>
+        <span className="absolute right-4 top-4 sm:static text-muted-foreground">{expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}</span>
       </div>
 
       {/* Expanded detail */}

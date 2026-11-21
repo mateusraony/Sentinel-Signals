@@ -60,5 +60,8 @@ describe('TradesNowSummary — desenho novo (21/11/2026)', () => {
     expect(container.querySelector('svg')).toBeNull();
     const larguras = Array.from(grade.children).map((el) => el.className.match(/lg:col-span-(\d+)/)?.[1]);
     expect(larguras).toEqual(['4', '3', '2', '3']);
+    // celular: grade de 2 colunas, os 4 cartões em 2 × 2 (nenhum ocupa a linha inteira)
+    expect(grade.className).toMatch(/grid-cols-2/);
+    for (const el of Array.from(grade.children)) expect(el.className).not.toMatch(/(^|\s)col-span-2(\s|$)/);
   });
 });
