@@ -34,7 +34,7 @@ function AnimatedNumber({ value }) {
 // prop existe pra evitar).
 export default function StatsCard({ icon: Icon, label, value, color, glowColor, error = false }) {
   return (
-    <div className="glass-card rounded-xl p-4 relative overflow-hidden group">
+    <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:scale-[1.02] transition-transform duration-300">
       {/* Subtle gradient bg */}
       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-xl"
         style={{ background: `radial-gradient(circle at top left, ${glowColor || 'rgba(0,255,128,0.04)'}, transparent 70%)` }}

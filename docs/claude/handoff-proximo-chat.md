@@ -71,9 +71,6 @@ Depois responda com um resumo curto do que entendeu e **espere o meu "pode segui
 7. **Investigar os `warn` ruidosos do `system_logs`** (item 298): confirmar os números nos logs antes de citar.
 
 **C. Depende de decisão minha (pergunte-me antes; não faça por conta própria):**
-0. **Visual do painel (roadmap, linha 9):** o pacote A (tirar fundo aurora, pulsações infinitas e aumento ao passar o mouse nos
-   cartões) está num PR aberto **esperando eu olhar a tela e dizer "pode mesclar"**. Os pacotes B (sem neon/vidro, contraste dos
-   filtros de 9px, cores em tokens — mexe nas 14 páginas) e C (fonte, paleta, emojis de status) só com minha escolha.
 8. **Aba Trades:** mostrar o lucro em **USDT** (precisa da minha banca) e a **linha do tempo completa do stop** (exige mudança
    no motor: skills `sentinel-trading-engine-review` + `sentinel-state-machine-test`, plano e minha aprovação).
 9. **Contexto, Fase 6 (opcionais):** on-chain, notícias por RSS, horário silencioso. Só se eu pedir.
