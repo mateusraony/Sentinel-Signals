@@ -390,3 +390,62 @@ describe('Verification — explica que OK/Pular só organiza a lista (item 258)'
   });
 });
 
+
+// 21/11/2026 — Verificação refeita (estrutura, não só cor): aviso em painel, filtros em abas ligadas, contexto em faixa, ações com texto no rodapé.
+describe('Verification — estrutura nova (21/11/2026)', () => {
+  const TASK_COMPLETA = {
+    ...TASK, score: 88, reason: 'Range Filter virou para alta',
+    signal_context: { rf_value: 96120.5, rf_direction: 1, rsi: 58.2, macd_histogram: 12.4, ema_short: 96010.2, ema_long: 95120.7, tf_4h_direction: 1, tf_1d_direction: 1 },
+  };
+  async function abrir() {
+    verificationTaskFilterMock.mockResolvedValue([TASK_COMPLETA]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+    renderPage(<Verification />);
+    await screen.findByRole('button', { name: 'Marcar como revisado (OK)' });
+  }
+
+  it('as ações têm texto visível (OK, Pular, Reenviar) além do nome acessível de sempre', async () => {
+    await abrir();
+    const ok = screen.getByRole('button', { name: 'Marcar como revisado (OK)' });
+    const pular = screen.getByRole('button', { name: 'Pular' });
+    expect(ok.textContent).toBe('OK');
+    expect(pular.textContent).toBe('Pular');
+    expect(screen.getByRole('button', { name: /reenviar/i }).textContent).toContain('Reenviar');
+  });
+
+  it('o aviso "o que esta lista é e não faz" fica num painel só, com os dois textos de sempre', async () => {
+    await abrir();
+    const a = screen.getByText(/Lista de conferência opcional/);
+    const b = screen.getByText(/não aprova nem bloqueia nenhuma operação/);
+    expect(a.parentElement).toBe(b.parentElement);
+  });
+
+  it('estado e prioridade são abas ligadas (um grupo cada), e a aba "Pendentes" vem marcada', async () => {
+    await abrir();
+    const pendentes = screen.getByRole('button', { name: 'Pendentes' });
+    const revisadas = screen.getByRole('button', { name: 'Revisadas' });
+    expect(pendentes.parentElement).toBe(revisadas.parentElement);
+    expect(pendentes.parentElement.className).toMatch(/overflow-hidden/);
+    expect(screen.getByRole('button', { name: 'Alta' }).parentElement).not.toBe(pendentes.parentElement);
+  });
+
+  it('o contexto do sinal é uma faixa de células (rótulo em cima, número embaixo) com os mesmos 8 itens', async () => {
+    await abrir();
+    const rsi = screen.getByText('RSI');
+    const faixa = rsi.closest('div[class*="grid"]');
+    expect(faixa.className).toMatch(/grid-cols-4/);
+    for (const rotulo of ['RF', 'RF Dir', 'RSI', 'MACD Hist', 'EMA Curta', 'EMA Longa', '4H', '1D']) {
+      expect(faixa.textContent).toContain(rotulo);
+    }
+  });
+
+  it('o campo de anotações cresce com o texto (uma linha vazia; mais linhas com texto longo)', async () => {
+    verificationTaskFilterMock.mockResolvedValue([{ ...TASK_COMPLETA, notes: 'x'.repeat(100) }]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+    renderPage(<Verification />);
+    const notas = await screen.findByPlaceholderText('Anotações sobre esta revisão...');
+    expect(Number(notas.getAttribute('rows'))).toBeGreaterThan(1);
+  });
+});

@@ -128,7 +128,7 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
       </button>
 
       {expanded && (
-        <div className="mt-1.5 rounded-lg p-2.5 space-y-1.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="mt-1.5 rounded-md p-2.5 space-y-1.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
           {needsFetch && isLoading && (
             <div className="flex items-center gap-1.5 text-11px font-mono text-muted-foreground py-2">
               <Loader2 className="w-3 h-3 animate-spin" />Buscando o aviso original...
@@ -176,7 +176,7 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
                   {copy?.reassurance}
                 </p>
               )}
-              <p className="text-10px font-mono text-muted-foreground/60 pt-0.5">
+              <p className="text-11px font-mono text-muted-foreground/60 pt-0.5">
                 Motivo lido direto do que o motor gravou ao avaliar este aviso — nenhum cálculo é refeito aqui.
               </p>
             </>
