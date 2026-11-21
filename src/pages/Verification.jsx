@@ -81,14 +81,16 @@ function ageColor(createdDate) {
 
 function NotesField({ task, onSave }) {
   const [value, setValue] = useState(task.notes || '');
+  const [focused, setFocused] = useState(false);
   return (
     <textarea
+      onFocus={() => setFocused(true)}
       value={value}
       onChange={e => setValue(e.target.value)}
-      onBlur={() => { if (value !== (task.notes || '')) onSave(value); }}
+      onBlur={() => { setFocused(false); if (value !== (task.notes || '')) onSave(value); }}
       placeholder="Anotações sobre esta revisão..."
-      rows={2}
-      className="w-full px-2.5 py-1.5 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+      rows={Math.min(5, Math.max(focused ? 3 : 1, Math.ceil(value.length / 32)))}
+      className="w-full px-2.5 py-1.5 rounded-md text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
       style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }}
     />
   );
@@ -108,11 +110,11 @@ function ContextGrid({ ctx }) {
   ].filter(([, v]) => v !== undefined);
   if (items.length === 0) return null;
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1 text-10px font-mono">
+    <div className="grid grid-cols-4 sm:grid-cols-8 gap-px rounded-md overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
       {items.map(([label, value, color]) => (
-        <div key={label} className="flex items-center justify-between gap-1">
-          <span className="text-muted-foreground">{label}</span>
-          <span className={color ? undefined : 'text-foreground/80'} style={color ? { color } : undefined}>{value ?? '—'}</span>
+        <div key={label} className="px-2.5 py-2 min-w-0" style={{ background: 'rgba(24,23,21,0.95)' }}>
+          <div className="text-11px text-muted-foreground truncate">{label}</div>
+          <div className={`text-xs font-mono font-medium tabular-nums ${color ? '' : 'text-foreground/80'}`} style={color ? { color } : undefined}>{value ?? '—'}</div>
         </div>
       ))}
     </div>
@@ -185,7 +187,7 @@ export default function Verification() {
   // Contagem do badge do cabeçalho é independente do filtro ativo — sem isso,
   // trocar para a aba "Revisadas"/"Puladas" faria o número de pendentes
   // sumir ou ficar desatualizado.
-  const { data: pendingTasks = [], isError: pendingCountError } = useQuery({
+  const { data: pendingTasks = [], isError: pendingCountError, isLoading: pendingCountLoading } = useQuery({
     queryKey: ['verification-tasks-pending-count'],
     queryFn: () => backend.entities.VerificationTask.filter({ status: 'pending' }, '-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
@@ -256,86 +258,108 @@ export default function Verification() {
 
   return (
     <div className="space-y-5 max-w-5xl mx-auto">
-      <div>
-        <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Revisão de Sinais</p>
-        <div className="flex items-center gap-2">
-          <ClipboardCheck className="w-6 h-6" style={{ color: '#e3b45a' }} />
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">Verificação</h1>
-          {pendingCountUnknown ? (
-            <span className="text-11px font-mono px-2 py-0.5 rounded-full"
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.62)' }}>
-              pendentes: não verificado
-            </span>
-          ) : pendingCount > 0 && (
-            <span className="text-11px font-mono px-2 py-0.5 rounded-full"
-              style={{ background: 'rgba(227,180,90,0.1)', border: '1px solid rgba(227,180,90,0.25)', color: '#e3b45a' }}>
-              {pendingCount} pendente{pendingCount === 1 ? '' : 's'}
-            </span>
-          )}
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-xs text-muted-foreground mb-1">Revisão de Sinais</p>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Verificação</h1>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">
-          Lista de conferência opcional: criada automaticamente para todo sinal de alta prioridade, inclusive pelo scan agendado, sem precisar do navegador aberto.
-        </p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Marcar OK ou Pular só organiza a sua lista — não aprova nem bloqueia nenhuma operação. O app abre operações sozinho, pelas regras dele: a cascata principal (gráfico de 4 horas → confirmação no 15m) e, nos ativos em que o SMC está ligado, a cascata SMC (1 hora → confirmação no 5m).
-        </p>
+        {pendingCountUnknown ? (
+          <span className="text-xs font-mono px-3 py-1.5 rounded-md"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.62)' }}>
+            pendentes: não verificado
+          </span>
+        ) : !pendingCountLoading && (
+          // Só afirma a contagem (inclusive "nenhuma pendente") depois que ela carregou — antes disso o selo some, como sempre foi.
+          <span className="text-xs font-mono px-3 py-1.5 rounded-md"
+            style={pendingCount > 0
+              ? { background: 'rgba(227,180,90,0.1)', border: '1px solid rgba(227,180,90,0.25)', color: '#e3b45a' }
+              : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.55)' }}>
+            {pendingCount > 0 ? `${pendingCount} pendente${pendingCount === 1 ? '' : 's'}` : 'nenhuma pendente'}
+          </span>
+        )}
+      </div>
+
+      {/* Aviso: o que esta lista é e o que NÃO faz (antes eram dois parágrafos soltos embaixo do título). */}
+      <div className="rounded-md px-4 py-3 space-y-1.5 flex gap-3" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
+        <span aria-hidden="true" className="self-stretch shrink-0" style={{ width: 3, borderRadius: 2, background: '#8db4e2' }} />
+        <div className="space-y-1.5 min-w-0">
+          <p className="text-xs text-foreground/80">
+            Lista de conferência opcional: criada automaticamente para todo sinal de alta prioridade, inclusive pelo scan agendado, sem precisar do navegador aberto.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Marcar OK ou Pular só organiza a sua lista — não aprova nem bloqueia nenhuma operação. O app abre operações sozinho, pelas regras dele: a cascata principal (gráfico de 4 horas → confirmação no 15m) e, nos ativos em que o SMC está ligado, a cascata SMC (1 hora → confirmação no 5m).
+          </p>
+        </div>
       </div>
 
       {assetsError && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg text-10px font-mono"
+        <div className="flex items-start gap-2 px-3 py-2 rounded-md text-11px font-mono"
           style={{ background: 'rgba(221,154,74,0.08)', border: '1px solid rgba(221,154,74,0.2)', color: '#dd9a4a' }}>
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
           <span>Não foi possível carregar os ativos monitorados agora — o "Reenviar" foi desativado (o filtro por ativo do Telegram não pode ser confirmado) até a próxima atualização.</span>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Buscar símbolo..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-7 pr-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}
-          />
+      {/* Filtros: um painel só, com abas ligadas (estado) + prioridade + ordem. No celular as abas rolam para o lado. */}
+      <div className="rounded-md p-3 space-y-3" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Buscar símbolo..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full pl-7 pr-3 py-1.5 rounded-md text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}
+            />
+          </div>
+          <div className="flex items-center gap-1.5 sm:ml-auto">
+            <ArrowUpDown className="w-3 h-3 text-muted-foreground shrink-0" />
+            <span className="text-xs text-muted-foreground">Ordenar</span>
+            {[{ id: 'date', label: 'Data' }, { id: 'score', label: 'Score ↓' }].map(s => (
+              <button key={s.id} onClick={() => setSortBy(s.id)}
+                className="text-11px font-mono px-2.5 py-1 rounded-md transition-all"
+                style={sortBy === s.id
+                  ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: 'rgba(141,180,226,0.9)' }
+                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {STATUS_FILTERS.map(f => (
-            <button key={f.id} onClick={() => setStatusFilter(f.id)}
-              className="text-9px font-mono px-2 py-1 rounded-md transition-all"
-              style={statusFilter === f.id
-                ? { background: 'rgba(141,180,226,0.15)', border: '1px solid rgba(141,180,226,0.4)', color: '#8db4e2' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
-              {f.label}
-            </button>
-          ))}
-          <div className="w-px h-4 mx-0.5" style={{ background: 'rgba(255,255,255,0.08)' }} />
-          {PRIORITY_FILTERS.map(f => (
-            <button key={f.id} onClick={() => setPriorityFilter(f.id)}
-              className="text-9px font-mono px-2 py-1 rounded-md transition-all"
-              style={priorityFilter === f.id
-                ? { background: 'rgba(221,154,74,0.15)', border: '1px solid rgba(221,154,74,0.4)', color: '#dd9a4a' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-1 ml-auto">
-          <ArrowUpDown className="w-3 h-3 text-muted-foreground shrink-0" />
-          {[{ id: 'date', label: 'Data' }, { id: 'score', label: 'Score ↓' }].map(s => (
-            <button key={s.id} onClick={() => setSortBy(s.id)}
-              className="text-9px font-mono px-2 py-1 rounded-md transition-all"
-              style={sortBy === s.id
-                ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: 'rgba(141,180,226,0.9)' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
-              {s.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3 overflow-x-auto pb-0.5">
+          <span className="text-xs text-muted-foreground shrink-0">Estado</span>
+          <div className="flex items-center rounded-md overflow-hidden shrink-0" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+            {STATUS_FILTERS.map((f, i) => (
+              <button key={f.id} onClick={() => setStatusFilter(f.id)}
+                className="text-11px font-mono px-3 py-1.5 transition-all whitespace-nowrap"
+                style={{
+                  borderLeft: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                  ...(statusFilter === f.id
+                    ? { background: 'rgba(141,180,226,0.15)', color: '#8db4e2' }
+                    : { background: 'rgba(255,255,255,0.02)', color: 'rgba(255,255,255,0.55)' }),
+                }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-muted-foreground shrink-0 ml-1">Prioridade</span>
+          <div className="flex items-center rounded-md overflow-hidden shrink-0" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+            {PRIORITY_FILTERS.map((f, i) => (
+              <button key={f.id} onClick={() => setPriorityFilter(f.id)}
+                className="text-11px font-mono px-3 py-1.5 transition-all whitespace-nowrap"
+                style={{
+                  borderLeft: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                  ...(priorityFilter === f.id
+                    ? { background: 'rgba(221,154,74,0.15)', color: '#dd9a4a' }
+                    : { background: 'rgba(255,255,255,0.02)', color: 'rgba(255,255,255,0.55)' }),
+                }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -349,8 +373,8 @@ export default function Verification() {
           <QueryErrorState message="Não foi possível carregar as tarefas de verificação agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="glass-card rounded-md p-12 text-center">
-          <ClipboardCheck className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
+        <div className="glass-card rounded-md px-5 py-6 flex flex-wrap items-center gap-x-4 gap-y-3">
+          <ClipboardCheck className="w-5 h-5 shrink-0 text-muted-foreground opacity-40" />
           <p className="text-muted-foreground text-sm">Nenhuma tarefa de verificação encontrada.</p>
           {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): filtro
               vazio sem NENHUM mecanismo de limpar em todo o arquivo — pior
@@ -359,7 +383,7 @@ export default function Verification() {
               'all'), então já conta como filtro ativo por padrão. */}
           {(search || statusFilter !== 'all' || priorityFilter !== 'all') && (
             <button onClick={() => { setSearch(''); setStatusFilter('all'); setPriorityFilter('all'); }}
-              className="mt-3 text-9px font-mono px-2.5 py-1.5 rounded-lg transition-all"
+              className="ml-auto text-11px font-mono px-2.5 py-1.5 rounded-md transition-all"
               style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
               ✕ Limpar filtros
             </button>
@@ -371,77 +395,57 @@ export default function Verification() {
             const badge = STATUS_BADGE[task.status] || STATUS_BADGE.pending;
             const asset = assets.find(a => a.id === task.asset_id);
             return (
-              <div key={task.id} id={`verification-task-${task.id}`} className="glass-card rounded-md p-4 transition-shadow duration-500"
+              <div key={task.id} id={`verification-task-${task.id}`} className="glass-card rounded-md transition-shadow duration-500"
                 style={highlightedTaskId === task.id ? { boxShadow: '0 0 0 2px rgba(141,180,226,0.5)' } : undefined}>
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <TokenIcon symbol={task.symbol} size={18} />
-                      <span className="text-sm font-bold text-foreground">{task.symbol?.replace('USDT', '/USDT')}</span>
-                      <span className="text-9px font-mono px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)' }}>
-                        {task.timeframe?.toUpperCase()}
-                      </span>
-                      <span className="text-10px font-mono font-bold" style={{ color: task.signal_type === 'BUY' ? '#5db586' : '#e06a5b' }}>
-                        {task.signal_type === 'BUY' ? '↑ BUY' : '↓ SELL'}
-                      </span>
-                      {Number.isFinite(task.score) && (
-                        <span className="text-10px font-mono" style={{ color: task.score >= 85 ? '#e3b45a' : 'rgba(255,255,255,0.62)' }}>
-                          {agreementLabel({ score: task.score })}
-                        </span>
-                      )}
-                      <span className="text-9px font-mono px-1.5 py-0.5 rounded-full" style={{ background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
-                        {badge.label}
-                      </span>
-                      <span className="text-9px font-mono" style={{ color: task.status === 'pending' ? ageColor(task.created_date) : 'rgba(255,255,255,0.55)' }}>
-                        {moment(task.created_date).fromNow()}
-                      </span>
-                    </div>
-
-                    {task.reason && <p className="text-11px text-muted-foreground">{task.reason}</p>}
-
-                    <ContextGrid ctx={task.signal_context} />
-
-                    <NotesField task={task} onSave={(notes) => updateMutation.mutate({ id: task.id, data: { notes } })} />
-
-                    <SignalChecklist
-                      signalEventId={task.signal_event_id}
-                      asset={asset ?? null}
-                      tradeOps={tradeOps}
-                      tradeOpsUnavailable={tradeOpsUnavailable}
-                    />
+                {/* Topo: quem é o sinal (esquerda) e em que pé está (direita). */}
+                <div className="flex items-start justify-between gap-x-3 gap-y-2 flex-wrap px-4 pt-3.5">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <TokenIcon symbol={task.symbol} size={18} />
+                    <span className="text-sm font-semibold text-foreground">{task.symbol?.replace('USDT', '/USDT')}</span>
+                    <span className="text-11px font-mono px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.62)' }}>
+                      {task.timeframe?.toUpperCase()}
+                    </span>
+                    <span className="text-xs font-mono font-semibold" style={{ color: task.signal_type === 'BUY' ? '#5db586' : '#e06a5b' }}>
+                      {task.signal_type === 'BUY' ? '↑ BUY' : '↓ SELL'}
+                    </span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-11px font-mono px-2 py-0.5 rounded-full" style={{ background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
+                      {badge.label}
+                    </span>
+                    <span className="text-11px font-mono" style={{ color: task.status === 'pending' ? ageColor(task.created_date) : 'rgba(255,255,255,0.55)' }}>
+                      {moment(task.created_date).fromNow()}
+                    </span>
+                  </div>
+                </div>
 
-                  <div className="flex flex-col items-end gap-1.5 shrink-0">
-                    <div className="flex items-center gap-1.5">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button onClick={() => setStatus(task, 'reviewed')}
-                            aria-label="Marcar como revisado (OK)"
-                            disabled={updateMutation.isPending}
-                            className="p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
-                            style={{ background: task.status === 'reviewed' ? 'rgba(93,181,134,0.1)' : 'transparent' }}>
-                            <Check className="w-4 h-4" style={{ color: '#5db586' }} />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                          Marcar como revisado (OK) — só organiza a sua lista, não aprova operação
-                        </TooltipContent>
-                      </Tooltip>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button onClick={() => setStatus(task, 'skipped')}
-                            aria-label="Pular"
-                            disabled={updateMutation.isPending}
-                            className="p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
-                            style={{ background: task.status === 'skipped' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>
-                            <XIcon className="w-4 h-4 text-muted-foreground" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                          Pular — só organiza a sua lista, não bloqueia operação
-                        </TooltipContent>
-                      </Tooltip>
+                <div className="px-4 pb-3.5 pt-3 space-y-3">
+                  {Number.isFinite(task.score) && (
+                    <div className="space-y-1">
+                      <span className="text-xs font-mono" style={{ color: task.score >= 85 ? '#e3b45a' : 'rgba(255,255,255,0.7)' }}>
+                        {agreementLabel({ score: task.score })}
+                      </span>
+                      <div aria-hidden="true" className="h-1 rounded-full max-w-xs" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, task.score))}%`, background: task.score >= 85 ? '#e3b45a' : '#8db4e2' }} />
+                      </div>
                     </div>
+                  )}
+
+                  {task.reason && <p className="text-xs text-muted-foreground">{task.reason}</p>}
+
+                  <ContextGrid ctx={task.signal_context} />
+
+                  <SignalChecklist
+                    signalEventId={task.signal_event_id}
+                    asset={asset ?? null}
+                    tradeOps={tradeOps}
+                    tradeOpsUnavailable={tradeOpsUnavailable}
+                  />
+
+                  <NotesField task={task} onSave={(notes) => updateMutation.mutate({ id: task.id, data: { notes } })} />
+
+                  {/* Rodapé de ações: o que fazer com esta tarefa (antes: coluna de ícones soltos à direita do cartão). */}
+                  <div className="flex items-center gap-2 flex-wrap pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                     {(() => {
                       const resendDisabled = resendingId === task.id || !isTelegramConfigured() || assetsError;
                       const resendTooltip = assetsError
@@ -450,7 +454,7 @@ export default function Verification() {
                       const resendButton = (
                         <button onClick={() => resend(task)}
                           disabled={resendDisabled}
-                          className="flex items-center gap-1 text-9px font-mono px-2 py-1 rounded-md transition-all disabled:opacity-40"
+                          className="flex items-center gap-1.5 text-11px font-mono px-2.5 py-1.5 rounded-md transition-all disabled:opacity-40"
                           style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.15)', color: '#8db4e2' }}>
                           {resendingId === task.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                           Reenviar
@@ -464,17 +468,49 @@ export default function Verification() {
                           <TooltipTrigger asChild>
                             {resendDisabled ? <span tabIndex={0} className="inline-block">{resendButton}</span> : resendButton}
                           </TooltipTrigger>
-                          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                          <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                             {resendTooltip}
                           </TooltipContent>
                         </Tooltip>
                       );
                     })()}
                     {task.telegram_notified_at && (
-                      <span className="text-8px font-mono text-muted-foreground">
+                      <span className="text-11px font-mono text-muted-foreground">
                         Enviado {moment(task.telegram_notified_at).fromNow()}
                       </span>
                     )}
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button onClick={() => setStatus(task, 'skipped')}
+                            aria-label="Pular"
+                            disabled={updateMutation.isPending}
+                            className="flex items-center gap-1.5 text-11px font-mono px-2.5 py-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
+                            style={{ background: task.status === 'skipped' ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}>
+                            <XIcon className="w-3.5 h-3.5" />
+                            Pular
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
+                          Pular — só organiza a sua lista, não bloqueia operação
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button onClick={() => setStatus(task, 'reviewed')}
+                            aria-label="Marcar como revisado (OK)"
+                            disabled={updateMutation.isPending}
+                            className="flex items-center gap-1.5 text-11px font-mono px-3 py-1.5 rounded-md hover:brightness-110 transition-all"
+                            style={{ background: task.status === 'reviewed' ? 'rgba(93,181,134,0.2)' : 'rgba(93,181,134,0.1)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }}>
+                            <Check className="w-3.5 h-3.5" />
+                            OK
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
+                          Marcar como revisado (OK) — só organiza a sua lista, não aprova operação
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </div>
                 </div>
               </div>
