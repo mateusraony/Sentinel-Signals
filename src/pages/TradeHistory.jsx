@@ -550,6 +550,7 @@ function DaySummary({ ops }) {
         <h2 className="text-sm font-semibold text-foreground/80">📅 Resumo do dia</h2>
         <span className="text-xs font-mono text-muted-foreground">{moment().format('DD/MM/YYYY')}</span>
       </div>
+      <div className="grid grid-cols-5 gap-2 w-full sm:contents">
       {[
         { label: 'Total', value: todayOps.length, color: '#8db4e2' },
         { label: '🏆 Win', value: wins, color: '#5db586' },
@@ -560,13 +561,14 @@ function DaySummary({ ops }) {
         // Neutro (`#8db4e2`, o mesmo do card "Alta Prioridade" do Dashboard com contagem 0) até haver operação contada.
         { label: 'Win Rate', value: `${wr}%`, color: counted === 0 ? '#8db4e2' : winRateColor(wr) },
       ].map(({ label, value, color }) => (
-        <div key={label} className="flex items-baseline gap-2">
+        <div key={label} className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-2">
           <span className="text-xs font-mono text-muted-foreground">{label}</span>
           <span className="text-base font-mono font-medium tabular-nums" style={{ color }}>{value}</span>
         </div>
       ))}
+      </div>
       {totalPnl !== 0 && (
-        <div className="ml-auto flex items-baseline gap-2">
+        <div className="w-full sm:w-auto sm:ml-auto flex items-baseline gap-2">
           <span className="text-xs font-mono text-muted-foreground">Performance do dia:</span>
           <span className="text-sm font-mono font-medium tabular-nums" style={{ color: totalPnl >= 0 ? '#5db586' : '#e06a5b' }}>
             {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}%
@@ -589,6 +591,7 @@ export default function TradeHistory() {
   const [showChart, setShowChart] = useState(true);
   const [showOverview, setShowOverview] = useState(true); // item 293 — "Visão geral" (relatório + "Como terminaram")
   const [sortBy, setSortBy] = useState('date_desc');
+  const [filtersOpen, setFiltersOpen] = useState(false); // só importa no celular: lá o painel de filtros começa recolhido (em tela larga fica sempre aberto)
   const eventCtx = useOperationEvents();
 
   const { data: operations = [], isLoading, isError, refetch } = useQuery({
@@ -659,6 +662,18 @@ export default function TradeHistory() {
     copy([header, ...lines].join('\n'));
   };
 
+  // Filtros que estão valendo agora (cada um vira uma etiqueta com ✕ — visível mesmo com o painel recolhido no celular).
+  const activeFilters = [
+    search && { key: 'search', label: `Busca: ${search}`, clear: () => setSearch('') },
+    filterTf !== 'all' && { key: 'tf', label: `Gráfico: ${filterTf.toUpperCase()}`, clear: () => setFilterTf('all') },
+    filterSide !== 'all' && { key: 'side', label: `Lado: ${filterSide}`, clear: () => setFilterSide('all') },
+    filterResult !== 'all' && { key: 'result', label: `Resultado: ${{ win: 'Win', be: 'BE', loss: 'Loss' }[filterResult] ?? filterResult}`, clear: () => setFilterResult('all') },
+    filterDateFrom && { key: 'from', label: `De: ${filterDateFrom}`, clear: () => setFilterDateFrom('') },
+    filterDateTo && { key: 'to', label: `Até: ${filterDateTo}`, clear: () => setFilterDateTo('') },
+    filterMinPnl && { key: 'min', label: `P&L mín: ${filterMinPnl}%`, clear: () => setFilterMinPnl('') },
+    filterMaxPnl && { key: 'max', label: `P&L máx: ${filterMaxPnl}%`, clear: () => setFilterMaxPnl('') },
+  ].filter(Boolean);
+
   const inputStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', outline: 'none', fontFamily: 'monospace', fontSize: 10 };
   const filterBtnStyle = (active) => active
     ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
@@ -693,10 +708,34 @@ export default function TradeHistory() {
 
       {/* Filters */}
       <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="flex items-center gap-2 text-11px font-mono text-muted-foreground mb-1">
-          <Filter className="w-3 h-3" /> Filtros
+        <div className="flex items-center gap-2">
+          <Filter className="w-3 h-3 text-muted-foreground" />
+          <span className="text-xs font-mono text-muted-foreground">Filtros</span>
+          {activeFilters.length > 0 && (
+            <span className="text-11px font-mono px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(141,180,226,0.1)', color: '#8db4e2' }}>
+              {activeFilters.length} {activeFilters.length === 1 ? 'ativo' : 'ativos'}
+            </span>
+          )}
+          {/* Só no celular. `aria-pressed` e não `aria-expanded` de propósito: os testes abrem um card pelo 1º `[aria-expanded]`. */}
+          <button type="button" onClick={() => setFiltersOpen(!filtersOpen)} aria-pressed={filtersOpen}
+            className="md:hidden ml-auto text-11px font-mono px-2 py-1 rounded-md" style={{ color: '#8db4e2' }}>
+            {filtersOpen ? '▲ ocultar' : '▼ mostrar'}
+          </button>
         </div>
 
+        {activeFilters.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" data-testid="filtros-ativos">
+            {activeFilters.map((f) => (
+              <button key={f.key} type="button" onClick={f.clear} aria-label={`Remover filtro ${f.label}`}
+                className="text-11px font-mono px-2 py-0.5 rounded-md transition-all"
+                style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.25)', color: '#8db4e2' }}>
+                {f.label} ✕
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className={`${filtersOpen ? 'block' : 'hidden'} md:block space-y-3`}>
         <div className="flex flex-wrap gap-2">
           {/* Search */}
           <div className="relative">
@@ -772,6 +811,7 @@ export default function TradeHistory() {
             </button>
           )}
         </div>
+        </div>
       </div>
 
       {/* Item 293 — "Visão geral": o relatório de performance que já existe em Operações + "Como terminaram", sobre as operações FILTRADAS. */}
@@ -783,6 +823,7 @@ export default function TradeHistory() {
             <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
             <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground transition-colors">Visão geral</span>
             <span className="text-11px font-mono" style={{ color: '#8db4e2' }}>{showOverview ? '▲ esconder' : '▼ mostrar'}</span>
+            {!showOverview && <span className="text-xs text-muted-foreground">Relatório de performance, curva de capital e como terminaram</span>}
           </button>
           {showOverview && (
             <div className="space-y-4">
@@ -801,6 +842,7 @@ export default function TradeHistory() {
                       <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
                       <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground transition-colors">Curva de Capital</span>
                       <span className="text-11px font-mono" style={{ color: '#8db4e2' }}>{showChart ? '▲ esconder' : '▼ mostrar'}</span>
+                      {!showChart && <span className="text-xs text-muted-foreground">Performance acumulada dos {filtered.length} trades</span>}
                     </button>
                     {showChart && <PnLChart history={filtered} />}
                   </div>
@@ -859,8 +901,8 @@ export default function TradeHistory() {
           <QueryErrorState message="Não foi possível carregar o histórico agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(24,23,21,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <History className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
+        <div className="rounded-md px-5 py-6 flex flex-wrap items-center gap-x-4 gap-y-3" style={{ background: 'rgba(24,23,21,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <History className="w-5 h-5 shrink-0 text-muted-foreground opacity-40" />
           <p className="text-muted-foreground text-sm">Nenhum trade encontrado com esses filtros.</p>
           {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): o botão
               "✕ Limpar" já existia, mas 49 linhas/2 blocos de JSX longe
@@ -868,7 +910,7 @@ export default function TradeHistory() {
               handler, só aparece quando há filtro ativo de verdade. */}
           {(search || filterTf !== 'all' || filterSide !== 'all' || filterResult !== 'all' || filterDateFrom || filterDateTo || filterMinPnl || filterMaxPnl) && (
             <button onClick={() => { setSearch(''); setFilterTf('all'); setFilterSide('all'); setFilterResult('all'); setFilterDateFrom(''); setFilterDateTo(''); setFilterMinPnl(''); setFilterMaxPnl(''); }}
-              className="mt-3 text-11px font-mono px-2.5 py-1.5 rounded-md transition-all"
+              className="ml-auto text-11px font-mono px-2.5 py-1.5 rounded-md transition-all"
               style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
               ✕ Limpar filtros
             </button>

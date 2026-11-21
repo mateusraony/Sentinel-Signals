@@ -732,4 +732,44 @@ describe('TradeHistory — estrutura nova (21/11/2026)', () => {
     expect(screen.getAllByTestId('r-bar')).toHaveLength(3);
     expect(screen.getAllByTestId('r-bar')[0].getAttribute('aria-hidden')).toBe('true');
   });
+
+  it('filtro valendo vira etiqueta com ✕ (visível mesmo com o painel recolhido no celular) e o ✕ remove só aquele filtro', async () => {
+    await abrir();
+    expect(screen.queryByTestId('filtros-ativos')).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText('Buscar ativo...'), { target: { value: 'BTC' } });
+    fireEvent.click(screen.getByRole('button', { name: '1H' }));
+    const etiquetas = await screen.findByTestId('filtros-ativos');
+    expect(etiquetas.textContent).toContain('Busca: BTC');
+    expect(etiquetas.textContent).toContain('Gráfico: 1H');
+    expect(screen.getByText('2 ativos')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Remover filtro Busca: BTC' }));
+    await waitFor(() => expect(screen.getByTestId('filtros-ativos').textContent).not.toContain('Busca: BTC'));
+    expect(screen.getByPlaceholderText('Buscar ativo...').value).toBe('');
+  });
+
+  it('no celular o painel de filtros começa recolhido (e abre no botão); em tela larga a classe o mantém sempre visível', async () => {
+    await abrir();
+    const campo = screen.getByPlaceholderText('Buscar ativo...');
+    const corpo = campo.closest('div[class*="md:block"]');
+    expect(corpo.className).toMatch(/\bhidden\b/);
+    expect(corpo.className).toMatch(/md:block/);
+    const botao = screen.getByRole('button', { name: '▼ mostrar', pressed: false });
+    fireEvent.click(botao);
+    expect(corpo.className).not.toMatch(/\bhidden\b/);
+    expect(screen.getByRole('button', { name: '▲ ocultar', pressed: true })).toBeTruthy();
+  });
+
+  it('seção recolhida diz o que tem dentro', async () => {
+    await abrir();
+    fireEvent.click(screen.getByText('Visão geral').closest('button'));
+    expect(await screen.findByText(/Relatório de performance, curva de capital e como terminaram/)).toBeTruthy();
+  });
+
+  it('estado vazio é uma linha compacta com o botão de limpar do lado', async () => {
+    await abrir();
+    fireEvent.change(screen.getByPlaceholderText('Buscar ativo...'), { target: { value: 'ZZZ' } });
+    const msg = await screen.findByText('Nenhum trade encontrado com esses filtros.');
+    expect(msg.parentElement.className).not.toMatch(/text-center/);
+    expect(within(msg.parentElement).getByRole('button', { name: '✕ Limpar filtros' })).toBeTruthy();
+  });
 });
