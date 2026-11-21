@@ -26,8 +26,7 @@ function EntryDot({ cx, cy, payload }) {
     : `${cx},${cy + s} ${cx - s},${cy - s * 0.6} ${cx + s},${cy - s * 0.6}`;
   return (
     <g>
-      <polygon points={pts} fill={color} opacity={0.95}
-        style={{ filter: `drop-shadow(0 0 5px ${color})` }} />
+      <polygon points={pts} fill={color} opacity={0.95} />
     </g>
   );
 }
@@ -38,8 +37,7 @@ function ExitDot({ cx, cy, payload }) {
   const color = outcomeColor(payload.status, payload.outcome);
   return (
     <g>
-      <circle cx={cx} cy={cy} r={6} fill="none" stroke={color} strokeWidth={2}
-        style={{ filter: `drop-shadow(0 0 5px ${color})` }} />
+      <circle cx={cx} cy={cy} r={6} fill="none" stroke={color} strokeWidth={2} />
       <line x1={cx - 3} y1={cy} x2={cx + 3} y2={cy} stroke={color} strokeWidth={2} />
       <line x1={cx} y1={cy - 3} x2={cx} y2={cy + 3} stroke={color} strokeWidth={1.5} />
     </g>
@@ -62,8 +60,8 @@ const CustomTooltip = ({ active, payload }) => {
   if (!d) return null;
   const isEntry = d.type === 'entry';
   return (
-    <div className="rounded-lg px-3 py-2.5 text-10px font-mono space-y-1"
-      style={{ background: 'rgba(6,8,15,0.97)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 180, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
+    <div className="rounded-lg px-3 py-2.5 text-11px font-mono space-y-1"
+      style={{ background: 'rgba(18,17,15,0.97)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 180, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
       <div className="font-bold flex items-center gap-1.5" style={{ color: d.side === 'BUY' ? '#5db586' : '#e06a5b' }}>
         {isEntry ? '▲ ENTRADA' : '● SAÍDA'} — {d.side} <TokenIcon symbol={d.symbol} size={14} />{d.symbol}
       </div>
@@ -76,7 +74,7 @@ const CustomTooltip = ({ active, payload }) => {
       <div style={{ color: '#94a3b8' }}>
         Cumulativo: {d.cumulative >= 0 ? '+' : ''}{d.cumulative?.toFixed(2)}%
       </div>
-      {!isEntry && <div className="text-9px" style={{ color: '#64748b' }}>{d.statusLabel}</div>}
+      {!isEntry && <div className="text-11px" style={{ color: '#64748b' }}>{d.statusLabel}</div>}
     </div>
   );
 };
@@ -142,18 +140,18 @@ export default function TradeEntryMarkers({ history }) {
 
   return (
     <div className="rounded-md p-4 space-y-3"
-      style={{ background: 'rgba(12,15,26,0.75)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(16px)' }}>
+      style={{ background: 'rgba(19,18,16,0.75)', border: '1px solid rgba(255,255,255,0.07)' }}>
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <div className="text-9px font-mono uppercase tracking-widest text-muted-foreground">Curva de Capital + Execuções de Entrada/Saída</div>
+          <div className="text-11px font-mono text-muted-foreground">Curva de Capital + Execuções de Entrada/Saída</div>
           <div className="text-xl font-bold font-mono mt-0.5" style={{ color: isPositive ? '#5db586' : '#e06a5b' }}>
             {finalCum >= 0 ? '+' : ''}{finalCum.toFixed(2)}%
           </div>
-          <div className="text-9px font-mono text-muted-foreground/70 mt-0.5">soma % simples, não composta</div>
+          <div className="text-11px font-mono text-muted-foreground/70 mt-0.5">soma % simples, não composta</div>
         </div>
-        <div className="flex items-center gap-3 text-10px font-mono flex-wrap">
+        <div className="flex items-center gap-3 text-11px font-mono flex-wrap">
           <span className="flex items-center gap-1.5">
             <svg width="12" height="10"><polygon points="6,0 0,10 12,10" fill="#5db586" opacity={0.9} /></svg>
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>Entrada BUY</span>
@@ -194,9 +192,9 @@ export default function TradeEntryMarkers({ history }) {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-            <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 9, fontFamily: 'monospace' }}
+            <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 11, fontFamily: 'monospace' }}
               axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={30} />
-            <YAxis tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 9, fontFamily: 'monospace' }}
+            <YAxis tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 11, fontFamily: 'monospace' }}
               axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="4 4" />
             <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.08)', strokeWidth: 1 }} />
@@ -241,7 +239,7 @@ export default function TradeEntryMarkers({ history }) {
         {chartData.filter(d => d.type === 'exit').slice(-12).map((d, i) => {
           const color = d.pnl >= 0 ? '#5db586' : '#e06a5b';
           return (
-            <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg text-9px font-mono"
+            <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg text-11px font-mono"
               style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${color}22` }}>
               <span style={{ color: d.side === 'BUY' ? '#5db586' : '#e06a5b' }}>{d.side === 'BUY' ? '▲' : '▼'}</span>
               <TokenIcon symbol={d.symbol} size={12} />

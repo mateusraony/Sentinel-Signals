@@ -184,7 +184,7 @@ export default function TriggerBacktestPanel({ onReportReady }) {
   };
 
   return (
-    <div className="rounded-md p-5 space-y-3 max-w-2xl mx-auto" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(141,180,226,0.15)' }}>
+    <div className="rounded-md p-5 space-y-3 max-w-2xl mx-auto" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(141,180,226,0.15)' }}>
       <div className="flex items-center gap-2">
         <Rocket className="w-4 h-4" style={{ color: '#8db4e2' }} />
         <h2 className="text-base font-bold text-foreground">Disparar novo backtest</h2>

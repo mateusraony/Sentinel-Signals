@@ -101,7 +101,7 @@ export default function GlobalSearch() {
           />
           {showDropdown && search.trim() && hasResults && (
             <div className="absolute top-full mt-1.5 left-0 w-64 sm:w-72 rounded-md overflow-hidden z-50"
-              style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+              style={{ background: 'rgba(24,23,21,0.98)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
               {results.assets.length > 0 && (
                 <div>
                   <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -158,7 +158,7 @@ export default function GlobalSearch() {
           )}
           {showDropdown && search.trim() && !hasResults && (
             <div className="absolute top-full mt-1.5 left-0 w-64 sm:w-72 rounded-md overflow-hidden z-50"
-              style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              style={{ background: 'rgba(24,23,21,0.98)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <div className="px-3 py-3 text-center text-10px font-mono text-muted-foreground">Nenhum resultado</div>
             </div>
           )}

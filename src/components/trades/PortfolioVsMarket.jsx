@@ -72,8 +72,8 @@ function CustomTooltip({ active, payload, marketLabel }) {
   const data = payload[0]?.payload;
   return (
     <div className="rounded-lg p-3 text-xs font-mono"
-      style={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
-      <div className="text-10px text-muted-foreground mb-1.5">{data?.date}</div>
+      style={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+      <div className="text-11px text-muted-foreground mb-1.5">{data?.date}</div>
       {payload.map((entry, i) => (
         <div key={i} className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5" style={{ color: entry.color }}>
@@ -86,7 +86,7 @@ function CustomTooltip({ active, payload, marketLabel }) {
         </div>
       ))}
       {data?.symbol && (
-        <div className="mt-1.5 pt-1.5 text-9px text-muted-foreground" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="mt-1.5 pt-1.5 text-11px text-muted-foreground" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           Trade: <TokenIcon symbol={data.symbol} size={12} className="mx-1" />{data.symbol} {data.side} → {data.status}
         </div>
       )}
@@ -160,19 +160,19 @@ export default function PortfolioVsMarket({ trades }) {
 
   return (
     <div className="rounded-md p-4"
-      style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      style={{ background: 'rgba(24,23,21,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <Activity className="w-4 h-4 shrink-0" style={{ color: '#8db4e2' }} />
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-foreground">Carteira vs Mercado ({benchmarkOption.label})</h3>
-            <p className="text-9px font-mono text-muted-foreground/60 leading-tight">
+            <p className="text-11px font-mono text-muted-foreground/60 leading-tight">
               100% do capital realocado a cada trade (composto) — comparável ao {benchmarkOption.label}, que também compõe
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-10px font-mono">
+        <div className="flex items-center gap-3 text-11px font-mono">
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ background: '#5db586' }} />
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>Carteira</span>
@@ -206,7 +206,7 @@ export default function PortfolioVsMarket({ trades }) {
       <div className="flex items-center gap-1.5 mb-3 flex-wrap">
         {BENCHMARK_OPTIONS.map((option) => (
           <button key={option.key} onClick={() => setBenchmarkKey(option.key)}
-            className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
+            className="text-11px font-mono px-2.5 py-1 rounded-md transition-all"
             style={benchmarkKey === option.key
               ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: 'rgba(141,180,226,0.9)' }
               : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
@@ -229,13 +229,13 @@ export default function PortfolioVsMarket({ trades }) {
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
             <XAxis
               dataKey="date"
-              tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 9, fontFamily: 'monospace' }}
+              tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 11, fontFamily: 'monospace' }}
               tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
               axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
               minTickGap={40}
             />
             <YAxis
-              tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 9, fontFamily: 'monospace' }}
+              tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 11, fontFamily: 'monospace' }}
               tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
               axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
               tickFormatter={(v) => `${v.toFixed(1)}%`}
@@ -243,7 +243,7 @@ export default function PortfolioVsMarket({ trades }) {
             />
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" />
             <Tooltip content={<CustomTooltip marketLabel={benchmarkOption.label} />} />
-            <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'monospace' }} />
+            <Legend wrapperStyle={{ fontSize: 11, fontFamily: 'monospace' }} />
             <Area
               type="monotone"
               dataKey="portfolio"
@@ -290,7 +290,7 @@ export default function PortfolioVsMarket({ trades }) {
       </div>
 
       {/* Summary bar */}
-      <div className="flex items-center justify-between mt-3 pt-3 text-10px font-mono"
+      <div className="flex items-center justify-between mt-3 pt-3 text-11px font-mono"
         style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
         <span style={{ color: 'rgba(255,255,255,0.55)' }}>
           {portfolioCurve.length} trades fechados · {portfolioCurve[0]?.date} → {portfolioCurve[portfolioCurve.length - 1]?.date}

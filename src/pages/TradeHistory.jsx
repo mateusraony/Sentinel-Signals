@@ -185,7 +185,7 @@ function HistoryCard({ op, eventCtx = null }) {
 
   return (
     <div className="rounded-md transition-all duration-200"
-      style={{ background: 'rgba(10,13,22,0.8)', border: `1px solid ${borderColor}`, boxShadow: 'none' }}>
+      style={{ background: 'rgba(24,23,21,0.8)', border: `1px solid ${borderColor}`, boxShadow: 'none' }}>
 
       {/* Main row */}
       <div
@@ -516,7 +516,7 @@ function DaySummary({ ops }) {
   const wr = counted > 0 ? Math.round((wins / counted) * 100) : 0;
 
   return (
-    <div className="rounded-md p-4" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
+    <div className="rounded-md p-4" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
       <div className="text-10px font-mono text-muted-foreground uppercase tracking-widest mb-3">📅 Resumo do Dia — {moment().format('DD/MM/YYYY')}</div>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
@@ -678,7 +678,7 @@ export default function TradeHistory() {
       )}
 
       {/* Filters */}
-      <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-center gap-2 text-10px font-mono text-muted-foreground mb-1">
           <Filter className="w-3 h-3" /> Filtros
         </div>
@@ -827,11 +827,11 @@ export default function TradeHistory() {
           <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       ) : isError && operations.length === 0 ? (
-        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(24,23,21,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
           <QueryErrorState message="Não foi possível carregar o histórico agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(10,13,22,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(24,23,21,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
           <History className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhum trade encontrado com esses filtros.</p>
           {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): o botão

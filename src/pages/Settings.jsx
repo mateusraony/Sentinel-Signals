@@ -189,7 +189,7 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="rounded-md p-5 space-y-5" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="rounded-md p-5 space-y-5" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-center justify-between flex-wrap gap-3 pb-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="w-4 h-4" style={{ color: '#8db4e2' }} />

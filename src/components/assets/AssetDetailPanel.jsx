@@ -152,7 +152,7 @@ export default function AssetDetailPanel({ asset, states, expanded, onToggle, st
 
   return (
     <div className="mt-3 rounded-md p-4 space-y-4"
-      style={{ background: 'rgba(6,8,15,0.6)', border: '1px solid rgba(255,255,255,0.04)' }}>
+      style={{ background: 'rgba(18,17,15,0.6)', border: '1px solid rgba(255,255,255,0.04)' }}>
 
       {/* Section: RF Parameters */}
       <div>

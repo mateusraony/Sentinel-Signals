@@ -10,10 +10,10 @@ export function MetricBoxCard({ icon: Icon, label, value, sub, color, glowColor 
   return (
     <div className="flex items-center gap-3 rounded-md px-4 py-3 flex-1 min-w-0"
       style={{
-        background: 'rgba(10,13,22,0.85)',
+        background: 'rgba(24,23,21,0.85)',
         border: `1px solid ${glowColor ?? 'rgba(255,255,255,0.06)'}`,
         boxShadow: glowColor ? `0 0 20px ${glowColor}` : 'none',
-        backdropFilter: 'blur(16px)',
+        
       }}>
       <div className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
         style={{ background: `${color}18`, border: `1px solid ${color}30` }}>

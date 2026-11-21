@@ -347,7 +347,7 @@ export default function MonthlyReport() {
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : !metrics || monthOps.length === 0 ? (
-        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <FileText className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhuma operação fechada neste mês.</p>
           <p className="text-xs text-muted-foreground mt-1">Selecione outro mês ou aguarde novas operações serem encerradas.</p>
@@ -375,7 +375,7 @@ export default function MonthlyReport() {
 
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2 rounded-md p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="lg:col-span-2 rounded-md p-4 space-y-2" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <h2 className="text-sm font-bold text-foreground">Evolução de P&L (acumulado + diário)</h2>
               <div style={{ height: 240 }} role="img"
                 aria-label={`Gráfico combinado de barras e linha da evolução de P&L diário e acumulado no mês: ${dailyPnlData.map(d => `${d.day} ${fmtPct(d.pnlPct)} no dia, ${fmtPct(d.cumulativePct)} acumulado`).join('; ')}`}>
@@ -385,7 +385,7 @@ export default function MonthlyReport() {
                     <XAxis dataKey="day" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} />
                     <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} />
                     <Tooltip
-                      contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                      contentStyle={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                       formatter={(value, name) => [`${value}%`, name === 'pnlPct' ? 'P&L do dia' : 'Acumulado']}
                     />
                     <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'monospace' }} />
@@ -397,7 +397,7 @@ export default function MonthlyReport() {
                 </ResponsiveContainer>
               </div>
             </div>
-            <div className="rounded-md p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="rounded-md p-4 space-y-2" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <h2 className="text-sm font-bold text-foreground">Taxa de acerto</h2>
               <div style={{ height: 110 }} role="img"
                 aria-label={`Gráfico de pizza da taxa de acerto do mês: ${outcomePie.map(d => `${d.name} ${d.value}`).join(', ')}`}>
@@ -411,7 +411,7 @@ export default function MonthlyReport() {
                         total — justamente o dado que mais importa numa
                         pizza. */}
                     <Tooltip
-                      contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                      contentStyle={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                       formatter={(value, name) => {
                         const total = outcomePie.reduce((s, d) => s + d.value, 0);
                         const numValue = Number(value);
@@ -433,7 +433,7 @@ export default function MonthlyReport() {
                         fix do pie de "Taxa de acerto" acima — % do total no
                         tooltip. */}
                     <Tooltip
-                      contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                      contentStyle={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                       formatter={(value, name) => {
                         const total = statusDistribution.reduce((s, d) => s + d.value, 0);
                         const numValue = Number(value);
@@ -448,7 +448,7 @@ export default function MonthlyReport() {
           </div>
 
           {/* Trade table */}
-          <div className="rounded-md overflow-hidden" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="rounded-md overflow-hidden" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               <FileText className="w-4 h-4" style={{ color: '#8db4e2' }} />
               <h2 className="text-sm font-bold text-foreground">Operações do Mês</h2>

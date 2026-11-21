@@ -74,6 +74,7 @@ Depois responda com um resumo curto do que entendeu e **espere o meu "pode segui
 0. **Visual do painel (roadmap, linha 9):** direção APROVADA em 21/11. Entregue em 2 PRs: **PR 1 (visual global: cores, painéis planos, fonte IBM Plex)** e **PR 2 (estrutura: régua no cartão, Resumo, alertas em cartões, Desempenho reorganizado)**.
    **Falta só decisão minha: EMOJIS** — o item 280 manda melhorar, não remover, e há testes protegendo o vocabulário (o Telegram usa o mesmo); os mockups aprovados mostravam a tela sem emojis, então pergunte-me se quero tirar do Dashboard.
    **Comparar** (pedido de 21/11) virou gaveta lateral (`CompareDrawer`) — antes abria no meio da página e obrigava a rolar.
+   **Aba Trades** (pedido de 21/11) recebeu o mesmo visual (cartões planos de larguras diferentes, títulos com marcador, texto mínimo de 11 px, tom quente uniforme) sem mover nem remover nada aprovado; `MetricSummaryCard` tem o modo `flat` (opt-in). Aguardava o "pode mesclar".
    Pendência pequena: bloco do Desempenho sem dados some e a coluna pode ficar com buraco. Como mostrar antes/depois: Playwright + Vite com `backend`, `useAuth` e o provedor de preços simulados (tudo fora do repositório).
 8. **Aba Trades:** mostrar o lucro em **USDT** (precisa da minha banca) e a **linha do tempo completa do stop** (exige mudança
    no motor: skills `sentinel-trading-engine-review` + `sentinel-state-machine-test`, plano e minha aprovação).

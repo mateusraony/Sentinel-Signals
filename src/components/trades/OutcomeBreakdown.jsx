@@ -14,11 +14,11 @@ export default function OutcomeBreakdown({ ops }) {
 
   return (
     <div className="rounded-md p-4" role="group" aria-label="Como terminaram"
-      style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
       <div className="flex items-center gap-2 mb-3">
         <Flag className="w-4 h-4" style={{ color: '#8db4e2' }} />
         <h2 className="text-base font-bold text-foreground/80">Como terminaram</h2>
-        <span className="text-10px font-mono text-muted-foreground">({total} trades fechados)</span>
+        <span className="text-11px font-mono text-muted-foreground">({total} trades fechados)</span>
       </div>
       <ul className="space-y-2">
         {items.map((item) => (
@@ -26,9 +26,9 @@ export default function OutcomeBreakdown({ ops }) {
           <li key={item.key} className="grid items-center gap-2 grid-cols-[8.5rem_1fr_4.5rem] sm:grid-cols-[11rem_1fr_4.5rem]">
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-10px font-mono cursor-help truncate" tabIndex={0} style={{ color: item.color }}>{item.label}</span>
+                <span className="text-11px font-mono cursor-help truncate" tabIndex={0} style={{ color: item.color }}>{item.label}</span>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                 {item.hint}
               </TooltipContent>
             </Tooltip>
@@ -36,7 +36,7 @@ export default function OutcomeBreakdown({ ops }) {
               <div className="h-full rounded-full" data-testid={`outcome-bar-${item.key}`}
                 style={{ width: `${item.pct}%`, minWidth: 2, background: item.color }} />
             </div>
-            <span className="text-10px font-mono text-foreground/80 tabular-nums text-right">
+            <span className="text-11px font-mono text-foreground/80 tabular-nums text-right">
               {item.count} <span className="text-muted-foreground">({item.pct < 1 ? '<1' : Math.round(item.pct)}%)</span>
             </span>
           </li>

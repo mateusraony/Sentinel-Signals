@@ -11,17 +11,17 @@ const CustomTooltip = ({ active, payload, label }) => {
   const isWin = d.pnl >= 0;
   return (
     <div className="rounded-lg px-3 py-2"
-      style={{ background: 'rgba(8,10,18,0.95)', border: '1px solid rgba(255,255,255,0.08)', minWidth: 140 }}>
-      <div className="text-9px font-mono text-muted-foreground mb-1">{label}</div>
+      style={{ background: 'rgba(20,19,17,0.95)', border: '1px solid rgba(255,255,255,0.08)', minWidth: 140 }}>
+      <div className="text-11px font-mono text-muted-foreground mb-1">{label}</div>
       <div className="text-11px font-mono font-bold" style={{ color: isWin ? '#5db586' : '#e06a5b' }}>
         {d.pnl >= 0 ? '+' : ''}{d.pnl?.toFixed(2)}%
       </div>
-      <div className="text-9px font-mono text-muted-foreground">
+      <div className="text-11px font-mono text-muted-foreground">
         Acum: <span style={{ color: d.cumulative >= 0 ? '#5db586' : '#e06a5b' }}>
           {d.cumulative >= 0 ? '+' : ''}{d.cumulative?.toFixed(2)}%
         </span>
       </div>
-      <div className="text-9px font-mono text-muted-foreground mt-0.5 flex items-center gap-1"><TokenIcon symbol={d.symbol} size={12} />{d.symbol} {d.side} {d.tf}</div>
+      <div className="text-11px font-mono text-muted-foreground mt-0.5 flex items-center gap-1"><TokenIcon symbol={d.symbol} size={12} />{d.symbol} {d.side} {d.tf}</div>
     </div>
   );
 };
@@ -57,8 +57,8 @@ export default function PnLChart({ history }) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-32 rounded-md"
-        style={{ background: 'rgba(12,15,26,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
-        <p className="text-10px font-mono text-muted-foreground">Sem histórico suficiente para o gráfico.</p>
+        style={{ background: 'rgba(19,18,16,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <p className="text-11px font-mono text-muted-foreground">Sem histórico suficiente para o gráfico.</p>
       </div>
     );
   }
@@ -69,17 +69,17 @@ export default function PnLChart({ history }) {
 
   return (
     <div className="rounded-md p-4"
-      style={{ background: 'rgba(12,15,26,0.7)', border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(12px)' }}>
+      style={{ background: 'rgba(19,18,16,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <div className="text-10px font-mono text-muted-foreground uppercase tracking-widest">Performance Acumulada</div>
+          <div className="text-11px font-mono text-muted-foreground">Performance Acumulada</div>
           <div className="text-xl font-bold font-mono mt-0.5" style={{ color: isPositive ? '#5db586' : '#e06a5b' }}>
             {finalCum >= 0 ? '+' : ''}{finalCum.toFixed(2)}%
           </div>
         </div>
         <div className="text-right">
-          <div className="text-9px font-mono text-muted-foreground">{data.length} trades</div>
-          <div className="text-9px font-mono mt-0.5">
+          <div className="text-11px font-mono text-muted-foreground">{data.length} trades</div>
+          <div className="text-11px font-mono mt-0.5">
             <span style={{ color: '#5db586' }}>✓ {wins} win</span>
             <span className="text-muted-foreground mx-1">·</span>
             <span style={{ color: '#e06a5b' }}>✗ {losses} loss</span>
@@ -97,8 +97,8 @@ export default function PnLChart({ history }) {
                 <stop offset="95%" stopColor={gradColor} stopOpacity={0.02} />
               </linearGradient>
             </defs>
-            <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
+            <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 11, fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 11, fontFamily: 'monospace' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
             <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
             <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }} />
             <Area

@@ -41,7 +41,7 @@ export default function OwnerKeySettings({ open, onClose }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md rounded-lg p-6"
-        style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        style={{ background: 'rgba(24,23,21,0.98)', border: '1px solid rgba(255,255,255,0.08)' }}>
         <DialogHeader>
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5" style={{ color: '#8db4e2' }} />

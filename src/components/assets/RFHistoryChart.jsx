@@ -206,7 +206,7 @@ export default function RFHistoryChart({ asset }) {
                   minTickGap={40}
                 />
                 <Tooltip
-                  contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                  contentStyle={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                   labelStyle={{ color: 'rgba(255,255,255,0.5)', fontSize: 9 }}
                   formatter={(value, name) => {
                     if (name === 'band') return [`$${formatPrice(value[0])} ~ $${formatPrice(value[1])}`, 'Banda RF'];

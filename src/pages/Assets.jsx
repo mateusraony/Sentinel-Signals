@@ -179,7 +179,7 @@ export default function Assets() {
                 <Plus className="w-3.5 h-3.5 mr-2" />Adicionar
               </Button>
             </DialogTrigger>
-            <DialogContent style={{ background: 'rgba(14,17,28,0.97)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)' }}>
+            <DialogContent style={{ background: 'rgba(21,20,18,0.97)', border: '1px solid rgba(255,255,255,0.08)' }}>
               <DialogHeader><DialogTitle className="font-mono">Adicionar Ativo</DialogTitle></DialogHeader>
               <AddAssetForm onSuccess={() => { setShowAddDialog(false); invalidateAssetLists(queryClient); }} />
             </DialogContent>
@@ -196,7 +196,7 @@ export default function Assets() {
           { label: 'Erros', value: assets.filter(a => a.scan_status === 'error').length, color: '#e06a5b', icon: XCircle },
         ].map(({ label, value, color, icon: Icon }) => (
           <div key={label} className="rounded-md px-4 py-3 flex items-center gap-3"
-            style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <Icon className="w-4 h-4 shrink-0" style={{ color }} />
             <div>
               <div className="text-9px font-mono text-muted-foreground">{label}</div>
@@ -233,19 +233,19 @@ export default function Assets() {
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
       ) : isError && assets.length === 0 ? (
-        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar os ativos agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 && filterStatus === 'proximity' && statesUnavailable ? (
-        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar os indicadores agora — o filtro 'Perto da linha do filtro' pode estar escondendo ativos incorretamente." />
         </div>
       ) : filtered.length === 0 && filterStatus === 'signals' && signalsFilterUnavailable ? (
-        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar sinais/operações agora — o filtro 'Com sinal ou operação' pode estar escondendo ativos incorretamente." />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <Coins className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm mb-4">{assets.length === 0 ? 'Nenhum ativo cadastrado.' : 'Nenhum ativo encontrado.'}</p>
           {assets.length === 0 && (
@@ -264,10 +264,10 @@ export default function Assets() {
             const proximity = assetsNearEntry.get(asset.id);
             const zoneStyle = proximity
               ? {
-                background: 'rgba(10,13,22,0.82)',
+                background: 'rgba(24,23,21,0.82)',
                 border: '1px solid rgba(96,165,250,0.35)',
               }
-              : { background: 'rgba(10,13,22,0.82)', border: asset.is_active ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(255,255,255,0.05)' };
+              : { background: 'rgba(24,23,21,0.82)', border: asset.is_active ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(255,255,255,0.05)' };
 
             return (
               <div key={asset.id}
@@ -422,7 +422,7 @@ export default function Assets() {
 
       {/* Config Dialog */}
       <Dialog open={!!configAsset} onOpenChange={(open) => !open && setConfigAsset(null)}>
-        <DialogContent style={{ background: 'rgba(14,17,28,0.97)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)' }} className="max-w-lg">
+        <DialogContent style={{ background: 'rgba(21,20,18,0.97)', border: '1px solid rgba(255,255,255,0.08)' }} className="max-w-lg">
           <DialogHeader><DialogTitle className="font-mono">Config — {configAsset?.display_name}</DialogTitle></DialogHeader>
           {configAsset && <AssetConfigPanel asset={configAsset} onSave={() => { setConfigAsset(null); invalidateAssetLists(queryClient); }} />}
         </DialogContent>

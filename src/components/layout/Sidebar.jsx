@@ -44,7 +44,7 @@ function DesktopSidebar() {
     <aside
       className="hidden md:flex fixed left-0 top-0 h-full w-14 flex-col items-center z-40"
       style={{
-        background: 'rgba(6, 8, 15, 0.75)',
+        background: 'rgba(18, 17, 15, 0.75)',
         borderRight: '1px solid rgba(255,255,255,0.04)',
       }}
     >
@@ -90,14 +90,13 @@ function DesktopSidebar() {
                   className="w-[18px] h-[18px]"
                   style={{
                     color: isActive ? '#5db586' : hovered === item.path ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.28)',
-                    filter: isActive ? 'drop-shadow(0 0 5px rgba(93,181,134,0.55))' : 'none',
                     transition: 'color 0.18s, filter 0.18s',
                   }}
                 />
               </Link>
               {/* Tooltip */}
               <span className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-md text-xs font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50"
-                style={{ background: 'rgba(10,13,24,0.95)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}
+                style={{ background: 'rgba(16,16,14,0.95)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}
               >{item.label}</span>
             </div>
           );
@@ -148,7 +147,7 @@ function QuickToggleButton() {
         <ArrowLeftRight className="w-[18px] h-[18px]" style={{ color: '#8db4e2' }} />
       </button>
       <span className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-md text-xs font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50"
-        style={{ background: 'rgba(10,13,24,0.95)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}>
+        style={{ background: 'rgba(16,16,14,0.95)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}>
         Ir para {label}
       </span>
     </div>
@@ -169,7 +168,7 @@ function QuickActionButton({ title, onClick, children }) {
         <span style={{ color: 'rgba(255,255,255,0.28)' }}>{children}</span>
       </button>
       <span className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-md text-xs font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50"
-        style={{ background: 'rgba(10,13,24,0.95)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}>
+        style={{ background: 'rgba(16,16,14,0.95)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}>
         {title}
       </span>
     </div>
@@ -206,7 +205,7 @@ function ClearLogsButton() {
           : <Trash2 className="w-[18px] h-[18px]" style={{ color: 'rgba(255,255,255,0.28)' }} />}
       </button>
       <span className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-md text-xs font-mono whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50"
-        style={{ background: 'rgba(10,13,24,0.95)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}>
+        style={{ background: 'rgba(16,16,14,0.95)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}>
         Limpar Logs
       </span>
 
@@ -261,8 +260,8 @@ function MobileBottomNav() {
       <nav
         className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around h-16"
         style={{
-          background: 'rgba(6, 8, 15, 0.92)',
-          backdropFilter: 'blur(24px)',
+          background: 'rgba(18, 17, 15, 0.92)',
+          
           borderTop: '1px solid rgba(255,255,255,0.06)',
         }}
       >
@@ -286,7 +285,6 @@ function MobileBottomNav() {
                 className="w-[22px] h-[22px]"
                 style={{
                   color: isActive ? '#5db586' : 'rgba(255,255,255,0.55)',
-                  filter: isActive ? 'drop-shadow(0 0 5px rgba(93,181,134,0.6))' : 'none',
                   transition: 'color 0.18s, filter 0.18s',
                 }}
               />
@@ -304,7 +302,6 @@ function MobileBottomNav() {
             className="w-[22px] h-[22px]"
             style={{
               color: isMoreActive ? '#5db586' : 'rgba(255,255,255,0.55)',
-              filter: isMoreActive ? 'drop-shadow(0 0 5px rgba(93,181,134,0.6))' : 'none',
               transition: 'color 0.18s, filter 0.18s',
             }}
           />
@@ -315,7 +312,7 @@ function MobileBottomNav() {
         <SheetContent
           side="bottom"
           className="p-0"
-          style={{ background: 'rgba(8,10,18,0.97)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(24px)' }}
+          style={{ background: 'rgba(20,19,17,0.97)', border: '1px solid rgba(255,255,255,0.07)' }}
         >
           <SheetHeader className="px-5 py-4 text-left" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <SheetTitle className="font-bold text-base text-foreground">Mais opções</SheetTitle>
@@ -337,7 +334,6 @@ function MobileBottomNav() {
                     className="w-[22px] h-[22px]"
                     style={{
                       color: isActive ? '#5db586' : 'rgba(255,255,255,0.5)',
-                      filter: isActive ? 'drop-shadow(0 0 5px rgba(93,181,134,0.6))' : 'none',
                     }}
                   />
                   <span className="text-9px font-mono text-center leading-tight" style={{ color: isActive ? '#5db586' : 'rgba(255,255,255,0.5)' }}>

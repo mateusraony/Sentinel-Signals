@@ -121,7 +121,7 @@ export default function Alerts() {
           { label: 'SELL', value: sellCount, color: '#e06a5b', icon: TrendingDown },
         ].map(({ label, value, color, icon: Icon }) => (
           <div key={label} className="rounded-md px-4 py-3 flex items-center gap-3"
-            style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <Icon className="w-4 h-4 shrink-0" style={{ color }} />
             <div>
               <div className="text-9px font-mono text-muted-foreground">{label}</div>
@@ -132,7 +132,7 @@ export default function Alerts() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-md p-3 space-y-2" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="rounded-md p-3 space-y-2" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-center gap-2 flex-wrap">
           <Filter className="w-3 h-3 text-muted-foreground shrink-0" />
 
@@ -212,11 +212,11 @@ export default function Alerts() {
           <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       ) : isError && signals.length === 0 ? (
-        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar os alertas agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <Bell className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhum alerta com esses filtros.</p>
           {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): botão
@@ -247,8 +247,8 @@ export default function Alerts() {
                 aria-label={`${signal.symbol?.replace('USDT', '/USDT')} — ver detalhes do alerta`}
                 className="rounded-md px-4 py-3 flex items-center gap-3 transition-all duration-200 cursor-pointer group focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 style={{
-                  background: 'rgba(10,13,22,0.82)',
-                  backdropFilter: 'blur(12px)',
+                  background: 'rgba(24,23,21,0.82)',
+                  
                   border: signal.priority === 'high'
                     ? (isBuy ? '1px solid rgba(93,181,134,0.3)' : '1px solid rgba(224,106,91,0.3)')
                     : (isBuy ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(224,106,91,0.1)'),
@@ -345,7 +345,7 @@ export default function Alerts() {
 
       {/* Detail Dialog */}
       <Dialog open={!!selectedSignal} onOpenChange={(open) => !open && setSelectedSignal(null)}>
-        <DialogContent style={{ background: 'rgba(14,17,28,0.97)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)' }}>
+        <DialogContent style={{ background: 'rgba(21,20,18,0.97)', border: '1px solid rgba(255,255,255,0.08)' }}>
           <DialogHeader>
             <DialogTitle className="font-mono flex items-center gap-2 text-sm">
               <span style={{ color: selectedSignal?.signal_type === 'BUY' ? '#5db586' : '#e06a5b' }}>
