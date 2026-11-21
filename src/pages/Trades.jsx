@@ -62,7 +62,7 @@ function EditModal({ op, onClose, onSave }) {
   return (
     <Dialog open={!!op} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="max-w-sm p-5 rounded-lg"
+        className="max-w-sm p-5 rounded-md"
         style={{ background: 'rgba(24,23,21,0.98)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: 'none' }}>
         <DialogHeader>
           <DialogTitle className="font-bold text-sm text-foreground text-left flex items-center gap-2"><TokenIcon symbol={op.symbol} size={18} />{op.symbol?.replace('USDT', '/USDT')}</DialogTitle>
@@ -74,7 +74,7 @@ function EditModal({ op, onClose, onSave }) {
           <div>
             <label className="text-11px font-mono mb-1 block" style={{ color: '#8db4e2' }}>Status Manual</label>
             <select value={status} onChange={e => setStatus(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg text-xs font-mono"
+              className="w-full px-3 py-2 rounded-md text-xs font-mono"
               style={fieldStyle}>
               <option value="SIGNAL_CONFIRMED">SIGNAL_CONFIRMED — Entrada confirmada, aguardando TP1</option>
               <option value="RUNNER_ACTIVE">RUNNER_ACTIVE — TP1 atingido, runner ativo</option>
@@ -90,7 +90,7 @@ function EditModal({ op, onClose, onSave }) {
             <div>
               <label className="text-11px font-mono mb-1 block" style={{ color: '#e3b45a' }}>Preço de Saída (exit_price)</label>
               <input type="number" step="any" value={exitPrice} onChange={e => setExitPrice(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg text-xs font-mono" style={fieldStyle} />
+                className="w-full px-3 py-2 rounded-md text-xs font-mono" style={fieldStyle} />
             </div>
           )}
 
@@ -102,7 +102,7 @@ function EditModal({ op, onClose, onSave }) {
             <div key={label}>
               <label className="text-11px font-mono mb-1 block" style={{ color }}>{label}</label>
               <input type="number" step="any" value={value} onChange={e => set(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg text-xs font-mono" style={fieldStyle} />
+                className="w-full px-3 py-2 rounded-md text-xs font-mono" style={fieldStyle} />
             </div>
           ))}
         </div>
@@ -116,7 +116,7 @@ function EditModal({ op, onClose, onSave }) {
 
         <div className="flex gap-2 pt-1">
           <button onClick={onClose}
-            className="flex-1 py-2 rounded-lg text-11px font-mono transition-all"
+            className="flex-1 py-2 rounded-md text-11px font-mono transition-all"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
             Cancelar
           </button>
@@ -137,7 +137,7 @@ function EditModal({ op, onClose, onSave }) {
               if (status === 'RUNNER_ACTIVE') data.tp1_hit = true;
               onSave(data);
             }}
-            className="flex-1 py-2 rounded-lg text-11px font-mono font-bold transition-all"
+            className="flex-1 py-2 rounded-md text-11px font-mono font-bold transition-all"
             style={{ background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }}>
             Salvar Alterações
           </button>
@@ -217,7 +217,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
           {/* O QUE O SISTEMA NÃO GOSTOU. Antes o card expirado só dizia que
               nada foi aberto e engolia o motivo — que estava ali, em
               last_rejection_reason. Pedido do usuário, item 161. */}
-          <div className="rounded-lg px-2 py-1.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="rounded-md px-2 py-1.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <div className="text-11px font-mono font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>
               {reason.icon} O que travou: {reason.chip}
             </div>
@@ -237,7 +237,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
           <TooltipTrigger asChild>
             <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
               aria-label="Tirar este aviso da lista"
-              className="shrink-0 p-1 rounded-lg transition-colors hover:bg-white/[0.06]">
+              className="shrink-0 p-1 rounded-md transition-colors hover:bg-white/[0.06]">
               <X className="w-3.5 h-3.5" style={{ color: 'rgba(255,255,255,0.55)' }} />
             </button>
           </TooltipTrigger>
@@ -302,7 +302,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
           Omitido no aviso INFO sem motivo salvo: a linha 4 já diz que ele
           não vira operação (achado do Codex, review do PR #502). */}
       {reason.kind !== REASON_KIND.INFO && (
-      <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="rounded-md px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-baseline justify-between gap-2 mb-1">
           <div className="text-11px font-mono font-semibold" style={{ color: copy.color }}>
             {reason.icon} {reason.chip}
@@ -354,7 +354,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
         <Tooltip>
           <TooltipTrigger asChild>
             <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
-              className="text-11px font-mono px-2 py-1 rounded-lg transition-colors hover:bg-white/[0.06]"
+              className="text-11px font-mono px-2 py-1 rounded-md transition-colors hover:bg-white/[0.06]"
               style={{ color: 'rgba(255,255,255,0.55)' }}>
               Dispensar
             </button>
@@ -831,7 +831,7 @@ export default function Trades() {
                     <div className="flex items-center gap-1.5 p-2">
                       <button
                         onClick={() => setEditingOp(op)}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-11px font-mono transition-all hover:opacity-90"
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-md text-11px font-mono transition-all hover:opacity-90"
                         style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
                         <Edit3 className="w-3 h-3" />
                         Editar
@@ -839,7 +839,7 @@ export default function Trades() {
                       <button
                         onClick={() => setConfirmingOp({ op, action: 'invalidate' })}
                         disabled={invalidateMutation.isPending}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-11px font-mono transition-all hover:opacity-90"
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-md text-11px font-mono transition-all hover:opacity-90"
                         style={{ background: 'rgba(221,154,74,0.08)', border: '1px solid rgba(221,154,74,0.2)', color: '#dd9a4a' }}>
                         <AlertTriangle className="w-3 h-3" />
                         Invalidar
@@ -847,7 +847,7 @@ export default function Trades() {
                       <button
                         onClick={() => setConfirmingOp({ op, action: 'close' })}
                         disabled={closeMutation.isPending}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-11px font-mono ml-auto transition-all hover:opacity-90"
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-md text-11px font-mono ml-auto transition-all hover:opacity-90"
                         style={{ background: 'rgba(224,106,91,0.1)', border: '1px solid rgba(224,106,91,0.25)', color: '#e06a5b' }}>
                         <XCircle className="w-3 h-3" />
                         Encerrar
@@ -910,7 +910,7 @@ export default function Trades() {
             <button onClick={() => setShowInfoSignals(!showInfoSignals)}
               aria-expanded={showInfoSignals}
               className="flex items-center gap-2 text-11px font-mono transition-colors hover:text-foreground/70"
-              style={{ color: '#60a5fa' }}>
+              style={{ color: '#8db4e2' }}>
               {showInfoSignals ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               ℹ {shownInfoOnly.length} observações de mercado
               <span style={{ color: 'rgba(255,255,255,0.55)' }}>— não viram operação</span>
@@ -948,7 +948,7 @@ export default function Trades() {
 
             {showHistory && (
               <div className="space-y-1.5">
-                <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-3 py-2 rounded-lg mb-3 text-11px font-mono"
+                <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-3 py-2 rounded-md mb-3 text-11px font-mono"
                   style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
                   <span style={{ color: '#5db586' }}>✓ Ganhos: {closedSummary.wins}</span>
                   <span style={{ color: '#e3b45a' }}>↔ Empates: {closedSummary.be}</span>

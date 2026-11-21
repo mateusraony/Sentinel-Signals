@@ -20,7 +20,7 @@ const STATE_COLOR = {
   active_op: '#8db4e2',
   waiting: '#e3b45a',
   expired: '#64748b',
-  info: '#60a5fa',
+  info: '#8db4e2',
   unavailable: '#dd9a4a',
   none: 'rgba(255,255,255,0.5)',
 };

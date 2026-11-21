@@ -71,7 +71,7 @@ function CustomTooltip({ active, payload, marketLabel }) {
   if (!active || !payload?.length) return null;
   const data = payload[0]?.payload;
   return (
-    <div className="rounded-lg p-3 text-xs font-mono"
+    <div className="rounded-md p-3 text-xs font-mono"
       style={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
       <div className="text-11px text-muted-foreground mb-1.5">{data?.date}</div>
       {payload.map((entry, i) => (

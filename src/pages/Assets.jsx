@@ -265,7 +265,7 @@ export default function Assets() {
             const zoneStyle = proximity
               ? {
                 background: 'rgba(24,23,21,0.82)',
-                border: '1px solid rgba(96,165,250,0.35)',
+                border: '1px solid rgba(141,180,226,0.35)',
               }
               : { background: 'rgba(24,23,21,0.82)', border: asset.is_active ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(255,255,255,0.05)' };
 

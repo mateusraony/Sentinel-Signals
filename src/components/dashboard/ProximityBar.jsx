@@ -33,7 +33,7 @@ export function calcProximity(state) {
 // soava como compra iminente. Ela só mede a distância do preço até a linha do
 // Range Filter — não diz se haverá aviso nem para que lado. Cor neutra única,
 // sem lado e sem animação; o nível só muda a intensidade do contorno.
-const NEUTRAL = '96,165,250'; // azul informativo (mesmo tom de "observação" no painel)
+const NEUTRAL = '141,180,226'; // azul informativo (mesmo tom de "observação" no painel)
 const LEVEL_ALPHA = { very_close: 0.45, close: 0.3, watching: 0.18 };
 
 export default function ProximityBar({ state }) {

@@ -10,7 +10,7 @@ import React from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { CandleBoundTag, DetectionLag } from './EventTimeline.jsx';
+import { CandleBoundTag, DetectionLag, EventTimeline } from './EventTimeline.jsx';
 
 afterEach(cleanup);
 
@@ -42,5 +42,14 @@ describe('DetectionLag — usa Tooltip em vez de title= nativo (achado A-6)', ()
     const detectedAt = '2026-09-01T00:05:00.000Z'; // 5min de gap, abaixo do threshold
     const { container } = renderWithTooltip(<DetectionLag realTime={realTime} detectedAt={detectedAt} />);
     expect(container.textContent).toBe('');
+  });
+});
+
+describe('EventTimeline — título legível (21/11/2026)', () => {
+  it('o título "Horários (BRT)" sai em frase normal e com contraste de leitura (era MAIÚSCULAS a 28% de opacidade)', () => {
+    render(<EventTimeline events={[{ key: 'k1', at: '2026-11-21T12:00:00.000Z', label: 'Aviso apareceu', kind: 'signal' }]} />);
+    const titulo = screen.getByText(/Horários \(BRT\)/);
+    expect(titulo.className).not.toMatch(/uppercase|tracking-/);
+    expect(titulo.style.color).not.toBe('rgba(255, 255, 255, 0.28)');
   });
 });

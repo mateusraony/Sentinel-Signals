@@ -757,7 +757,7 @@ describe('AssetCard — estado do aviso manda no rótulo e no contorno (item 290
     expect(bordaDoCartao(esperando.container)).toMatch(/227, 180, 90/);
     esperando.unmount();
     const soPerto = renderCard({ asset: ASSET, states: VERY_CLOSE });
-    expect(bordaDoCartao(soPerto.container)).toMatch(/96, 165, 250/); // sem aviso: continua azul (item 277)
+    expect(bordaDoCartao(soPerto.container)).toMatch(/141, 180, 226/); // sem aviso: continua azul (item 277)
   });
 
   it('a cor do contorno NÃO depende do lado: BUY e SELL esperando ficam iguais (item 277)', () => {

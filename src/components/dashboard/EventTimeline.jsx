@@ -92,7 +92,7 @@ export function EventTimeline({ events, title = 'Horários (BRT)' }) {
   return (
     <div className="space-y-0.5">
       {title && (
-        <div className="text-11px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.28)' }}>
+        <div className="text-11px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>
           🕐 {title}
         </div>
       )}

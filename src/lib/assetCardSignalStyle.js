@@ -22,7 +22,7 @@ export const REASON_COLORS = Object.freeze({
   [REASON_KIND.WAITING]: '#e3b45a',
   [REASON_KIND.WORSE]: '#dd9a4a',
   [REASON_KIND.APP]: '#94a3b8',
-  [REASON_KIND.INFO]: '#60a5fa',
+  [REASON_KIND.INFO]: '#8db4e2',
 });
 
 export function reasonColor(kind) {

@@ -33,7 +33,7 @@ export const OUTCOME_META = Object.freeze({
   [OUTCOME_KIND.STOP_LOSS]: { label: 'Stop com perda', hint: 'O stop foi tocado e o resultado final foi perda.', color: '#e06a5b' },
   [OUTCOME_KIND.INVALIDATED]: { label: 'Invalidada', hint: 'A condição técnica que sustentava a entrada caiu e a operação foi encerrada.', color: '#dd9a4a' },
   [OUTCOME_KIND.TIME_STOP]: { label: 'Tempo esgotado', hint: 'Passou do prazo máximo sem atingir o TP1 e foi encerrada.', color: '#94a3b8' },
-  [OUTCOME_KIND.CHOP_EXIT]: { label: 'Mercado sem direção', hint: 'O preço passou a andar de lado antes do TP1 e a operação foi encerrada.', color: '#60a5fa' },
+  [OUTCOME_KIND.CHOP_EXIT]: { label: 'Mercado sem direção', hint: 'O preço passou a andar de lado antes do TP1 e a operação foi encerrada.', color: '#8db4e2' },
   [OUTCOME_KIND.MANUAL]: { label: 'Encerrada à mão', hint: 'Encerrada, invalidada ou editada por você no painel — o resultado não é decisão do motor.', color: '#c4b5fd' },
   [OUTCOME_KIND.OTHER]: { label: 'Outras', hint: 'Fechada sem um motivo de saída reconhecido, ou sem resultado calculável.', color: '#64748b' },
 });
