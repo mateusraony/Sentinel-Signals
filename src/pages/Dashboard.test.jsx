@@ -364,6 +364,45 @@ describe('Dashboard — contagens com operação ativa fora das 100 mais recente
   });
 });
 
+// Comparar (21/11/2026): abria um bloco NO MEIO da página (depois dos alertas e do Resumo), obrigando a rolar até o fim
+// para ver. Agora abre como gaveta lateral por cima da página — igual ao painel do ativo.
+describe('Dashboard — "Comparar" abre como gaveta, não como bloco no meio da página', () => {
+  const iso = (msAgo) => new Date(Date.now() - msAgo).toISOString();
+  const A = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', exchange: 'binance', is_active: true, last_scan_at: iso(5 * 60 * 1000) };
+  const B = { id: 'a2', symbol: 'ETHUSDT', display_name: 'ETH/USDT', exchange: 'binance', is_active: true, last_scan_at: iso(5 * 60 * 1000) };
+
+  it('REGRESSÃO: clicar em "Comparar" abre um dialog já com os 2 primeiros ativos; fechar remove o dialog', async () => {
+    drawerScenario = { assets: () => [A, B], signals: [], recentOps: [], activeOps: [] };
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+    await screen.findByText('Ativos');
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /comparar/i }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Comparar ativos')).toBeTruthy();
+    // os ativos podem chegar depois do clique — o preenchimento acontece quando chegam
+    await waitFor(() => expect(within(dialog).getByLabelText('Ativo A').value).toBe('a1'));
+    expect(within(dialog).getByLabelText('Ativo B').value).toBe('a2');
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('o rótulo do botão não vira mais "Sair" e o bloco antigo no meio da página não existe', async () => {
+    drawerScenario = { assets: () => [A, B], signals: [], recentOps: [], activeOps: [] };
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    const { container } = renderPage(<Dashboard />);
+    await screen.findByText('Ativos');
+    fireEvent.click(screen.getByRole('button', { name: /comparar/i }));
+    await screen.findByRole('dialog');
+    expect(screen.queryByRole('button', { name: /^sair$/i })).toBeNull();
+    // nada de "Selecione Ativo A..." solto na página (o seletor antigo): só dentro da gaveta
+    const fora = Array.from(container.querySelectorAll('select')).filter((el) => !el.closest('[role="dialog"]'));
+    expect(fora).toHaveLength(0);
+  });
+});
+
 describe('Dashboard — aviso com a CAUSA quando os dados do servidor não carregam (item 6, correção de 08/11/2026)', () => {
   const forbidden = () => Object.assign(new Error('Chave de acesso ausente ou inválida.'), { status: 403 });
   async function abre() {
