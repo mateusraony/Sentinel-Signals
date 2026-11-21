@@ -44,6 +44,19 @@ const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 /** Quantas operações (ativas + fechadas) a página pede ao banco. A lista do histórico avisa quando bate nesse teto. */
 const OPERATIONS_PAGE_SIZE = 100;
 
+/**
+ * Opções do seletor "Status (manual)" da janela de Editar. O `value` é o status interno (não muda — é o que vai pro banco);
+ * só o texto que o usuário lê está em português, no mesmo vocabulário do cartão e do histórico.
+ */
+const STATUS_OPTIONS = [
+  { value: 'SIGNAL_CONFIRMED', label: 'Ativa — aguardando TP1' },
+  { value: 'RUNNER_ACTIVE', label: 'Runner ativo — TP1 atingido' },
+  { value: 'TP2_HIT', label: 'TP2 atingido (ganho)' },
+  { value: 'STOP_HIT', label: 'Stop atingido' },
+  { value: 'INVALIDATED', label: 'Invalidada' },
+  { value: 'CLOSED', label: 'Encerrada à mão' },
+];
+
 /** Modal for editing an active operation */
 function EditModal({ op, onClose, onSave }) {
   const [stop, setStop] = useState(op.current_stop ?? '');
@@ -72,23 +85,18 @@ function EditModal({ op, onClose, onSave }) {
         <div className="space-y-3">
           {/* Status manual */}
           <div>
-            <label className="text-11px font-mono mb-1 block" style={{ color: '#8db4e2' }}>Status Manual</label>
+            <label className="text-11px font-mono mb-1 block" style={{ color: '#8db4e2' }}>Status (manual)</label>
             <select value={status} onChange={e => setStatus(e.target.value)}
               className="w-full px-3 py-2 rounded-md text-xs font-mono"
               style={fieldStyle}>
-              <option value="SIGNAL_CONFIRMED">SIGNAL_CONFIRMED — Entrada confirmada, aguardando TP1</option>
-              <option value="RUNNER_ACTIVE">RUNNER_ACTIVE — TP1 atingido, runner ativo</option>
-              <option value="TP2_HIT">TP2_HIT — TP2 atingido (win)</option>
-              <option value="STOP_HIT">STOP_HIT — Stop atingido</option>
-              <option value="INVALIDATED">INVALIDATED — Invalidado</option>
-              <option value="CLOSED">CLOSED — Encerrado manualmente</option>
+              {STATUS_OPTIONS.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
             </select>
           </div>
 
           {/* Preço de saída (para status terminais) */}
           {['TP2_HIT','STOP_HIT','INVALIDATED','CLOSED'].includes(status) && (
             <div>
-              <label className="text-11px font-mono mb-1 block" style={{ color: '#e3b45a' }}>Preço de Saída (exit_price)</label>
+              <label className="text-11px font-mono mb-1 block" style={{ color: '#e3b45a' }}>Preço de saída</label>
               <input type="number" step="any" value={exitPrice} onChange={e => setExitPrice(e.target.value)}
                 className="w-full px-3 py-2 rounded-md text-xs font-mono" style={fieldStyle} />
             </div>
@@ -692,8 +700,8 @@ export default function Trades() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmingOp?.action === 'invalidate'
-                ? `Invalidar ${confirmingOp?.op.symbol} ${confirmingOp?.op.side}? O registro é mantido como histórico (status muda para INVALIDATED) — esta ação não pode ser desfeita pela interface.`
-                : `Encerrar ${confirmingOp?.op.symbol} ${confirmingOp?.op.side}? O registro é mantido como histórico (status muda para CLOSED) — esta ação não pode ser desfeita pela interface.`}
+                ? `Invalidar ${confirmingOp?.op.symbol} ${confirmingOp?.op.side}? O registro é mantido como histórico (status muda para Invalidada) — esta ação não pode ser desfeita pela interface.`
+                : `Encerrar ${confirmingOp?.op.symbol} ${confirmingOp?.op.side}? O registro é mantido como histórico (status muda para Encerrada à mão) — esta ação não pode ser desfeita pela interface.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
