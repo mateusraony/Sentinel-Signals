@@ -395,6 +395,35 @@ describe('Trades — modal de edição (EditModal) usa Dialog acessível (achado
     expect(dialog.textContent).toMatch(/sai da medição do motor/);
     expect(dialog.textContent).toMatch(/sem encerrar não deixa marca/);
   });
+
+  // 21/11/2026: o seletor mostrava `RUNNER_ACTIVE — …`/`SIGNAL_CONFIRMED — …`. O texto agora é em português; o VALOR que vai
+  // pro banco continua sendo o status interno.
+  it('o seletor de status fala português e guarda o status interno no valor', async () => {
+    mockBackend({ operations: [ACTIVE_OP], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+    fireEvent.click(await screen.findByText('Editar'));
+    const dialog = await screen.findByRole('dialog');
+    const select = dialog.querySelector('select');
+    const opcoes = Array.from(select.options).map((o) => [o.value, o.textContent]);
+    expect(opcoes.map(([v]) => v)).toEqual(['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE', 'TP2_HIT', 'STOP_HIT', 'INVALIDATED', 'CLOSED']);
+    for (const [, texto] of opcoes) expect(texto).not.toMatch(/[A-Z]+_[A-Z_]+/);
+    expect(opcoes.find(([v]) => v === 'RUNNER_ACTIVE')[1]).toMatch(/^Runner ativo/);
+    // cabem inteiras no seletor da janela (o texto longo ficava cortado no "...o resto segu")
+    for (const [, texto] of opcoes) expect(texto.length).toBeLessThanOrEqual(38);
+    expect(select.value).toBe('RUNNER_ACTIVE');
+  });
+
+  it('com status final o campo de saída não mostra o nome técnico', async () => {
+    mockBackend({ operations: [ACTIVE_OP], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+    fireEvent.click(await screen.findByText('Editar'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(dialog.querySelector('select'), { target: { value: 'STOP_HIT' } });
+    expect(dialog.textContent).toMatch(/Preço de saída/);
+    expect(dialog.textContent).not.toMatch(/exit_price/);
+  });
 });
 
 // Achado da varredura pós-Raio-X, Round 2 (2026-09-27): Invalidar/Encerrar
@@ -447,14 +476,14 @@ describe('Trades — Invalidar/Encerrar usam AlertDialog em vez de confirm() nat
 
     fireEvent.click(await screen.findByRole('button', { name: 'Invalidar' }));
     let dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByText(/INVALIDATED/)).toBeTruthy();
+    expect(within(dialog).getByText(/status muda para Invalidada/)).toBeTruthy();
     fireEvent.click(within(dialog).getByText('Cancelar'));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
 
     fireEvent.click(screen.getByRole('button', { name: 'Encerrar' }));
     dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByText(/CLOSED/)).toBeTruthy();
-    expect(within(dialog).queryByText(/INVALIDATED/)).toBeNull();
+    expect(within(dialog).getByText(/status muda para Encerrada à mão/)).toBeTruthy();
+    expect(within(dialog).queryByText(/Invalidada/)).toBeNull();
   });
 });
 
