@@ -102,12 +102,12 @@ describe('Dashboard — "Alertas Recentes" aparece antes do grid de Ativos (acha
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
 
-    const alertsHeading = await screen.findByText('Alertas Recentes');
+    const alertsHeading = await screen.findByText('Alertas recentes');
     const assetsHeading = await screen.findByText('Ativos');
 
     const position = alertsHeading.compareDocumentPosition(assetsHeading);
     if (!(position & Node.DOCUMENT_POSITION_FOLLOWING)) {
-      throw new Error('"Alertas Recentes" deveria vir ANTES de "Ativos" no DOM');
+      throw new Error('"Alertas recentes" deveria vir ANTES de "Ativos" no DOM');
     }
   });
 });
@@ -118,9 +118,10 @@ describe('Dashboard — cor do StatsCard "Alta Prioridade" reflete a contagem (a
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
 
-    const label = await screen.findByText('Alta Prioridade');
-    const numberEl = label.nextElementSibling;
-    await waitFor(() => expect(numberEl.style.color).toBe('rgb(141, 180, 226)'));
+    // Resumo novo (21/11/2026): com 0 o número fica neutro (cor do texto), nunca na cor de atenção.
+    const numberEl = await screen.findByTestId('resumo-alta');
+    await waitFor(() => expect(numberEl.textContent).toBe('0'));
+    expect(numberEl.style.color).not.toBe('rgb(221, 154, 74)');
   });
 
   it('com highPriorityCount > 0, o card usa a cor de atenção', async () => {
@@ -135,8 +136,7 @@ describe('Dashboard — cor do StatsCard "Alta Prioridade" reflete a contagem (a
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
 
-    const label = await screen.findByText('Alta Prioridade');
-    const numberEl = label.nextElementSibling;
+    const numberEl = await screen.findByTestId('resumo-alta');
     await waitFor(() => expect(numberEl.style.color).toBe('rgb(221, 154, 74)'));
   });
 });
@@ -165,7 +165,7 @@ describe('Dashboard — reorganização em grupos (achados M-4/M-13/M-15)', () =
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(contentWrapper.className).not.toMatch(/\bhidden\b/);
-    await screen.findByText('Resumo da Semana');
+    await screen.findByText('Esta semana');
   });
 
   it('REGRESSÃO: colapsar/expandir "Desempenho" NÃO desmonta o CorrelationWidget (achado do Codex review no PR #435)', async () => {
@@ -173,28 +173,28 @@ describe('Dashboard — reorganização em grupos (achados M-4/M-13/M-15)', () =
     renderPage(<Dashboard />);
 
     await screen.findByText('Ativos');
-    const correlationHeadingBefore = await screen.findByText('Correlação de Preço');
+    const correlationHeadingBefore = await screen.findByText('Correlação de preço');
     const toggle = screen.getByRole('button', { name: /desempenho/i });
 
     fireEvent.click(toggle); // expande
     fireEvent.click(toggle); // colapsa de novo
 
-    const correlationHeadingAfter = screen.getByText('Correlação de Preço');
+    const correlationHeadingAfter = screen.getByText('Correlação de preço');
     // Mesmo nó de DOM antes/depois — nunca foi desmontado, então o state
     // interno do CorrelationWidget (símbolos selecionados) não se perde.
     expect(correlationHeadingAfter).toBe(correlationHeadingBefore);
   });
 
-  it('REGRESSÃO: "Atenção" vem depois de "Agora" e antes de "Ativos" no DOM', async () => {
+  it('REGRESSÃO: "Resumo" vem depois de "Alertas recentes" e antes de "Ativos" no DOM (21/11/2026: o título "Agora" saiu e "Atenção" virou "Resumo")', async () => {
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
 
-    const agora = await screen.findByText('Agora');
-    const atencao = await screen.findByText('Atenção');
+    const alertas = await screen.findByText('Alertas recentes');
+    const resumo = await screen.findByText('Resumo');
     const ativos = await screen.findByText('Ativos');
 
-    expect(agora.compareDocumentPosition(atencao) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(atencao.compareDocumentPosition(ativos) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(alertas.compareDocumentPosition(resumo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(resumo.compareDocumentPosition(ativos) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('REGRESSÃO: TelegramStatusBanner aparece depois da grade de "Ativos" no DOM (achado M-15)', async () => {
@@ -342,24 +342,25 @@ describe('Dashboard — contagens com operação ativa fora das 100 mais recente
     status: 'RUNNER_ACTIVE', entry_price: 100, initial_stop: 95, current_stop: 98.5,
     tp1: 105, tp2: 112.5, rr_at_entry: 1.5, score: 90, created_date: '2026-01-01T00:00:00.000Z',
   };
-  const valueOf = async (label) => (await screen.findByText(label)).nextElementSibling;
+  // Resumo novo (21/11/2026): os números têm data-testid (antes: o irmão do rótulo).
+  const valueOf = async (testId) => screen.findByTestId(testId);
 
   it('REGRESSÃO: "Operações Ativas" conta a operação antiga e "Aguardando" não conta o ativo', async () => {
     drawerScenario = { assets: () => [ASSET], signals: [RF_SIGNAL], recentOps: [], activeOps: [OLD_ACTIVE_OP] };
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
-    await waitFor(() => expect(screen.getByText('Operações Ativas').nextElementSibling.textContent).toBe('1'), { timeout: 5000 });
-    expect((await valueOf('Aguardando')).textContent).toBe('0');
-    // score 90 ≥ 85 → também entra em "Alta Prioridade"
-    expect((await valueOf('Alta Prioridade')).textContent).toBe('1');
+    await waitFor(async () => expect((await valueOf('resumo-ops')).textContent).toBe('1'), { timeout: 5000 });
+    expect((await valueOf('resumo-aguardando')).textContent).toBe('0');
+    // score 90 ≥ 85 → também entra em "Alta prioridade"
+    await waitFor(async () => expect((await valueOf('resumo-alta')).textContent).toBe('1'));
   });
 
   it('falha na consulta de ativas: os números não afirmam nada (fail-closed)', async () => {
     drawerScenario = { assets: () => [ASSET], signals: [RF_SIGNAL], recentOps: [], activeOpsError: true };
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
-    await waitFor(() => expect(screen.getByText('Operações Ativas').nextElementSibling.textContent).toBe('—'), { timeout: 5000 });
-    expect((await valueOf('Aguardando')).textContent).toBe('—');
+    await waitFor(async () => expect((await valueOf('resumo-ops')).textContent).toBe('—'), { timeout: 5000 });
+    expect((await valueOf('resumo-aguardando')).textContent).toBe('—');
   });
 });
 

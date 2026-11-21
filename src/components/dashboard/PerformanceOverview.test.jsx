@@ -52,7 +52,7 @@ describe('PerformanceOverview — gráfico "Evolução do Saldo Acumulado" tem r
   it('REGRESSÃO: o wrapper do AreaChart tem role="img" e aria-label com o PnL total', async () => {
     listMock.mockResolvedValue(CLOSED_OPS);
     const { container } = renderOverview();
-    await screen.findByText('Performance Consolidada');
+    await screen.findByText('Evolução do saldo');
     const chart = container.querySelector('[role="img"]');
     expect(chart).not.toBeNull();
     expect(chart.getAttribute('aria-label')).toMatch(/Gráfico de área da evolução do saldo acumulado/);
@@ -75,7 +75,7 @@ describe('PerformanceOverview — eixo X do gráfico não está mais escondido (
     };
     try {
       const { container } = renderOverview();
-      await screen.findByText('Performance Consolidada');
+      await screen.findByText('Evolução do saldo');
       await vi.waitFor(() => {
         expect(container.querySelector('.recharts-xAxis')).not.toBeNull();
       });

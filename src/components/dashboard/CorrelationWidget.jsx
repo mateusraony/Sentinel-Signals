@@ -5,7 +5,7 @@ import moment from 'moment';
 import { backend } from '@/api/entities';
 import { fetchCandles } from '@/lib/marketDataProvider';
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { GitCompareArrows, Plus, X, AlertTriangle } from 'lucide-react';
+import { Plus, X, AlertTriangle } from 'lucide-react';
 
 const DEFAULT_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
 const CANDLES_LIMIT = 100;
@@ -132,11 +132,11 @@ export default function CorrelationWidget() {
         : { label: '~ MISTO', color: '#e3b45a', bg: 'rgba(227,180,90,0.08)', border: 'rgba(227,180,90,0.25)' };
 
   return (
-    <div className="rounded-lg p-4 space-y-3" style={{ background: 'rgba(6,8,15,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}>
+    <div className="glass-card rounded-md p-5 space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <GitCompareArrows className="w-3.5 h-3.5" style={{ color: '#8db4e2' }} />
-          <span className="text-11px font-mono uppercase tracking-widest text-muted-foreground">Correlação de Preço</span>
+          
+          <span className="text-sm font-semibold text-foreground">Correlação de preço</span>
           {banner && (
             <span className="text-11px font-mono px-2 py-0.5 rounded font-bold"
               style={{ background: banner.bg, border: `1px solid ${banner.border}`, color: banner.color }}>

@@ -52,8 +52,10 @@ function renderWidget() {
   );
 }
 
+// Layout novo (21/11/2026): os três números da semana têm data-testid (antes: o irmão do rótulo, que mudou de lugar).
+const SEMANA_TESTID = { 'P&L Semana': 'semana-pnl', 'Taxa de Acerto': 'semana-acerto', 'Sinais Processados': 'semana-sinais' };
 function statValueFor(label) {
-  return screen.getByText(label).closest('.flex').nextElementSibling;
+  return screen.getByTestId(SEMANA_TESTID[label]);
 }
 
 describe('WeeklySummary — rótulos de dia sem colisão (achado M-3)', () => {

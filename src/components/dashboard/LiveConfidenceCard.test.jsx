@@ -152,7 +152,7 @@ describe('LiveConfidenceCard — seção "Por fonte de dado" (item 186/187)', ()
 describe('LiveConfidenceCard — subtítulo "evidência histórica, não probabilidade" (passo 5)', () => {
   it('REGRESSÃO: mantém o nome e diz que é evidência histórica, não probabilidade', async () => {
     renderCard([makeOp({ id: 'b1' })]);
-    await screen.findByText('Confiança ao Vivo (amostra real)');
+    await screen.findByText('Confiança ao vivo (amostra real)');
     expect(screen.getByText(/Evidência histórica das operações reais já fechadas — não é probabilidade de acerto futuro/)).toBeTruthy();
   });
 });
