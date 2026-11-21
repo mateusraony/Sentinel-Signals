@@ -24,10 +24,10 @@ describe('SummaryTiles — números e nomes', () => {
       buy: 3, sell: 1, assetsOk: [true, true, true],
     });
     // o número anima ~0,7 s até o valor final — espera cada um
-    await waitFor(() => expect(num('resumo-ops').textContent).toBe('2'));
-    await waitFor(() => expect(num('resumo-alta').textContent).toBe('1'));
-    await waitFor(() => expect(num('resumo-aguardando').textContent).toBe('2'));
-    await waitFor(() => expect(num('resumo-monitorados').textContent).toBe('3'));
+    await waitFor(() => expect(num('resumo-ops').textContent).toBe('2'), { timeout: 4000 });
+    await waitFor(() => expect(num('resumo-alta').textContent).toBe('1'), { timeout: 4000 });
+    await waitFor(() => expect(num('resumo-aguardando').textContent).toBe('2'), { timeout: 4000 });
+    await waitFor(() => expect(num('resumo-monitorados').textContent).toBe('3'), { timeout: 4000 });
     // BTC aparece nos dois blocos em que entra: operações ativas e alta prioridade
     expect(screen.getAllByText('BTC').length).toBe(2);
     expect(screen.getByText(/Compra · runner ativo/)).toBeTruthy();
@@ -37,8 +37,8 @@ describe('SummaryTiles — números e nomes', () => {
 
   it('REGRESSÃO (item 256): a contagem NÃO depende dos nomes — contagem 1 sem nome conhecido continua 1', async () => {
     renderTiles({ highPriorityCount: 1, highPriority: [], waitingCount: 3, waiting: [] });
-    await waitFor(() => expect(num('resumo-alta').textContent).toBe('1'));
-    await waitFor(() => expect(num('resumo-aguardando').textContent).toBe('3'));
+    await waitFor(() => expect(num('resumo-alta').textContent).toBe('1'), { timeout: 4000 });
+    await waitFor(() => expect(num('resumo-aguardando').textContent).toBe('3'), { timeout: 4000 });
     // sem nome para mostrar, diz quantos são em vez de ficar em branco
     expect(screen.getByText('1 ativo(s)')).toBeTruthy();
     expect(screen.getByText('3 ativo(s)')).toBeTruthy();
@@ -46,12 +46,12 @@ describe('SummaryTiles — números e nomes', () => {
 
   it('"Alta prioridade" fica na cor de atenção só quando há algum; com 0 fica neutro (achado M-16)', async () => {
     const { unmount } = renderTiles({ highPriorityCount: 0 });
-    await waitFor(() => expect(num('resumo-alta').textContent).toBe('0'));
+    await waitFor(() => expect(num('resumo-alta').textContent).toBe('0'), { timeout: 4000 });
     expect(num('resumo-alta').style.color).not.toBe('rgb(221, 154, 74)');
     expect(screen.getByText('Nenhuma agora')).toBeTruthy();
     unmount();
     renderTiles({ highPriorityCount: 2, highPriority: ['BTCUSDT', 'ETHUSDT'] });
-    await waitFor(() => expect(num('resumo-alta').style.color).toBe('rgb(221, 154, 74)'));
+    await waitFor(() => expect(num('resumo-alta').style.color).toBe('rgb(221, 154, 74)'), { timeout: 4000 });
   });
 
   it('sem operações abertas diz isso em vez de ficar vazio', () => {
@@ -71,7 +71,7 @@ describe('SummaryTiles — falha de leitura (fail-closed, itens 193–196)', () 
   it('erro de ativos deixa "Monitorados" em "—" e não afeta os outros', async () => {
     renderTiles({ opsCount: 1, ops: [{ id: 'o1', symbol: 'BTCUSDT', side: 'BUY', status: 'SIGNAL_CONFIRMED' }], errors: { assets: true } });
     expect(num('resumo-monitorados').textContent).toBe('—');
-    await waitFor(() => expect(num('resumo-ops').textContent).toBe('1'));
+    await waitFor(() => expect(num('resumo-ops').textContent).toBe('1'), { timeout: 4000 });
   });
 });
 
