@@ -437,15 +437,24 @@ describe('AssetCard — indicadores RF/MACD/EMA/RSI e colunas TP1/TP2 têm toolt
     expect(rsi?.getAttribute('tabindex')).toBe('0');
   });
 
-  it('REGRESSÃO: colunas TP1/TP2 do grid de preços são focáveis com tooltip; Entrada/Stop/Stop+ continuam sem tooltip', () => {
-    renderCard({});
+  // 21/11/2026: as 5 caixas viraram a régua da operação (só com operação ativa) — TP1/TP2 continuam focáveis com tooltip.
+  it('REGRESSÃO: rótulos TP1/TP2 da régua são focáveis com tooltip; Entrada/Stop/Stop atual continuam sem tooltip', () => {
+    renderCard({ tradeOp: { id: 'op1', status: 'SIGNAL_CONFIRMED', side: 'BUY', entry_price: 100, initial_stop: 90, current_stop: 95, tp1: 110, tp2: 120 } });
     const tp1 = screen.getByText('TP1').closest('.cursor-help');
     const tp2 = screen.getByText('TP2').closest('.cursor-help');
     expect(tp1?.getAttribute('tabindex')).toBe('0');
     expect(tp2?.getAttribute('tabindex')).toBe('0');
-    // Entrada/Stop/Stop+ são autoexplicativos — não deveriam virar gatilho de tooltip.
+    // Entrada/Stop/Stop atual são autoexplicativos — não deveriam virar gatilho de tooltip.
     expect(screen.getByText('Entrada').closest('.cursor-help')).toBeNull();
-    expect(screen.getByText('Stop+').closest('.cursor-help')).toBeNull();
+    expect(screen.getByText('Stop').closest('.cursor-help')).toBeNull();
+    expect(screen.getByText(/Stop atual/).closest('.cursor-help')).toBeNull();
+  });
+
+  it('sem operação ativa o cartão não mostra a régua nem caixas vazias com "—" (21/11/2026)', () => {
+    renderCard({});
+    expect(screen.queryByText('Entrada')).toBeNull();
+    expect(screen.queryByText('TP1')).toBeNull();
+    expect(document.querySelector('[aria-label^="Régua da operação"]')).toBeNull();
   });
 
   // Achado do Codex review no PR #430: o texto de TP1/TP2 era estático e

@@ -1,25 +1,13 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Wallet, TrendingUp, TrendingDown, Shield } from 'lucide-react';
 import { backend } from '@/api/entities';
 import { simulateEquityCurve, DEFAULT_INITIAL_CAPITAL, DEFAULT_RISK_PCT } from '@/lib/equityCurve';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
-import { MetricBoxCard } from '@/components/MetricBoxCard';
 import { drawdownColor } from '@/lib/metricColorRanges';
 
-// Conta virtual (capital+drawdown reais, compostos) sobre TODAS as operações
-// fechadas. Mesma queryKey usada por LiveConfidenceCard.jsx e (desde o
-// achado C-2 do Raio-X de UI/UX, docs/claude/ui-audit-criticos.md) por
-// PerformanceMetricsBar.jsx/PerformanceOverview.jsx — os 4 cards de
-// performance do Dashboard agora sempre concordam sobre a mesma amostra.
-// Teto de 500, mesmo que MonthlyReport.jsx
-// tinha antes do item 141 (agora MonthlyReport busca por intervalo de data
-// em vez desse teto — aqui ele segue valendo, sem filtro de mês possível,
-// já que a conta virtual precisa do histórico inteiro). Sujeito à mesma
-// classe de truncamento silencioso caso o total de operações fechadas passe
-// de 500 — não corrigido nesta rodada (fora do que foi pedido: known-risks
-// item 141). Defaults ($1.000 / 1% de risco por operação) são os mesmos do
-// relatório de Backtest — ver src/lib/equityCurve.js.
+// Conta virtual (capital+drawdown reais, compostos) sobre TODAS as operações fechadas.
+// Mesma queryKey de LiveConfidenceCard.jsx/PerformanceMetricsBar.jsx/PerformanceOverview.jsx (achado C-2).
+// Defaults ($1.000 / 1% de risco por operação) são os mesmos do relatório de Backtest — ver src/lib/equityCurve.js.
 export default function VirtualAccountCard() {
   const { data: operations = [] } = useQuery({
     queryKey: ['trade-operations-closed-all'],
@@ -36,51 +24,21 @@ export default function VirtualAccountCard() {
 
   const { finalCapital, totalReturnPct, maxDrawdownPct, accountBlown, unsized, total } = sim;
   const returnColor = totalReturnPct >= 0 ? '#5db586' : '#e06a5b';
-  const ddColor = drawdownColor(maxDrawdownPct);
 
   return (
-    <div className="rounded-lg p-4"
-      style={{ background: 'rgba(6,8,15,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}>
-      <div className="flex items-center gap-2 mb-3">
-        <Wallet className="w-3.5 h-3.5" style={{ color: '#e3b45a' }} />
-        <span className="text-11px font-mono uppercase tracking-widest text-muted-foreground">Conta Virtual (real, composta)</span>
-        <span className="text-11px font-mono px-1.5 py-0.5 rounded"
-          style={{ background: 'rgba(227,180,90,0.08)', border: '1px solid rgba(227,180,90,0.2)', color: '#e3b45a' }}>
-          ${DEFAULT_INITIAL_CAPITAL} inicial · {DEFAULT_RISK_PCT}% risco/op
-        </span>
-        {accountBlown && (
-          <span className="text-11px font-mono px-1.5 py-0.5 rounded"
-            style={{ background: 'rgba(224,106,91,0.15)', border: '1px solid rgba(224,106,91,0.4)', color: '#e06a5b' }}>
-            CONTA ZERADA
-          </span>
-        )}
+    <div className="glass-card rounded-md p-4 h-full">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">Conta virtual · ${DEFAULT_INITIAL_CAPITAL} inicial, {DEFAULT_RISK_PCT}% de risco por operação</p>
+        {accountBlown && <span className="text-11px font-mono px-1.5 py-0.5 rounded" style={{ background: 'rgba(224,106,91,0.15)', border: '1px solid rgba(224,106,91,0.4)', color: '#e06a5b' }}>CONTA ZERADA</span>}
       </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
-        <MetricBoxCard
-          icon={totalReturnPct >= 0 ? TrendingUp : TrendingDown}
-          label="Capital Atual"
-          value={`$${finalCapital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          sub={`${total} operações fechadas`}
-          color={returnColor}
-          glowColor={totalReturnPct >= 0 ? 'rgba(93,181,134,0.06)' : 'rgba(224,106,91,0.06)'}
-        />
-        <MetricBoxCard
-          icon={totalReturnPct >= 0 ? TrendingUp : TrendingDown}
-          label="Retorno Total"
-          value={`${totalReturnPct >= 0 ? '+' : ''}${totalReturnPct.toFixed(2)}%`}
-          sub={unsized > 0 ? `${unsized} sem risco definido` : 'todas dimensionadas'}
-          color={returnColor}
-        />
-        <MetricBoxCard
-          icon={Shield}
-          label="Drawdown Real"
-          value={`-${maxDrawdownPct.toFixed(2)}%`}
-          sub={maxDrawdownPct < 5 ? 'Risco controlado ✓' : maxDrawdownPct < 15 ? 'Atenção moderada' : 'Drawdown alto ⚠️'}
-          color={ddColor}
-          glowColor={maxDrawdownPct > 15 ? 'rgba(224,106,91,0.06)' : undefined}
-        />
+      <p className="text-2xl font-mono font-medium tabular-nums leading-none mt-2" style={{ color: returnColor }}>
+        ${finalCapital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </p>
+      <div className="flex gap-5 mt-2.5 text-xs">
+        <span className="text-muted-foreground">Retorno <span className="font-mono" style={{ color: returnColor }}>{totalReturnPct >= 0 ? '+' : ''}{totalReturnPct.toFixed(2)}%</span></span>
+        <span className="text-muted-foreground">Drawdown <span className="font-mono" style={{ color: drawdownColor(maxDrawdownPct) }}>-{maxDrawdownPct.toFixed(2)}%</span></span>
       </div>
+      <p className="text-xs text-muted-foreground mt-1.5">{total} operações fechadas · {unsized > 0 ? `${unsized} sem risco definido` : 'todas dimensionadas'}</p>
     </div>
   );
 }

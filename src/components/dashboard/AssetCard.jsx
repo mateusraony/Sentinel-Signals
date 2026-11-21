@@ -16,6 +16,7 @@ import { classifySignal, SIGNAL_PHASE, rejectionCopy } from '@/lib/signalStatus'
 import { signalCardStyle, reasonColorFor } from '@/lib/assetCardSignalStyle';
 import { logError } from '@/lib/logger';
 import moment from 'moment';
+import OpLadder from './OpLadder';
 import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar';
 import { formatPrice, formatSignedPct } from '@/lib/priceProximity';
 import { describeChange24h, resolvePriceDisplay, CHANGE_TONE_COLOR } from '@/lib/priceChange24h';
@@ -440,15 +441,6 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   const pulseStyle = '';
   const cardBackground = 'hsl(var(--card))';
 
-  const priceVals = hasActiveOp
-    ? [tradeOp.entry_price, tradeOp.initial_stop, tradeOp.tp1, tradeOp.tp2, tradeOp.current_stop]
-    : [null, null, null, null, null];
-  const priceColColors = [
-    'rgba(255,255,255,0.75)', '#e06a5b',
-    tradeOp?.tp1_hit ? '#5db586' : '#e3b45a',
-    tradeOp?.tp2_hit ? '#5db586' : 'rgba(227,180,90,0.55)',
-    tradeOp?.tp1_hit ? '#e3b45a' : '#e06a5b',
-  ];
   const priceColTooltips = {
     TP1: getTp1Tooltip(tradeOp),
     TP2: getTp2Tooltip(tradeOp),
@@ -635,29 +627,8 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           <Details states={states} fundingRate={fundingRate} nextFundingTime={nextFundingTime} primaryState={primaryState} />
         )}
 
-        {/* Price grid — responsive, scrollable on very small screens */}
-        <div className="grid grid-cols-5 gap-1 mb-2.5 overflow-x-auto">
-          {['Entrada', 'Stop', 'TP1', 'TP2', 'Stop+'].map((col, i) => (
-            <div key={col} className="text-center px-1 py-1.5 rounded min-w-[48px]"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
-              {priceColTooltips[col] ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="text-11px font-mono text-muted-foreground mb-0.5 leading-tight truncate cursor-help" tabIndex={0}>{col}</div>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
-                    {priceColTooltips[col]}
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <div className="text-11px font-mono text-muted-foreground mb-0.5 leading-tight truncate">{col}</div>
-              )}
-              <div className="text-11px font-mono font-semibold" style={{ color: priceVals[i] ? priceColColors[i] : 'rgba(255,255,255,0.15)' }}>
-                {formatPrice(priceVals[i])}
-              </div>
-            </div>
-          ))}
-        </div>
+        {/* Régua da operação (substitui as 5 caixas Entrada/Stop/TP1/TP2/Stop+; sem operação ativa não mostra caixas vazias) */}
+        {hasActiveOp && <OpLadder op={tradeOp} price={priceView.price} tooltips={priceColTooltips} />}
 
         {/* Runner progress */}
         {hasActiveOp && tradeOp.status === 'RUNNER_ACTIVE' && (

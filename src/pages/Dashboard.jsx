@@ -2,10 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { backend } from '@/api/entities';
-import { Bell, Coins, TrendingUp, TrendingDown, Target, Clock, Search, ArrowUpDown, Swords, ChevronDown, ChevronUp } from 'lucide-react';
+import { Coins, Search, ArrowUpDown, Swords, ChevronDown, ChevronUp } from 'lucide-react';
 import AssetCard from '@/components/dashboard/AssetCard';
 import RecentAlertsList from '@/components/dashboard/RecentAlertsList';
-import StatsCard from '@/components/dashboard/StatsCard';
+import SummaryTiles from '@/components/dashboard/SummaryTiles';
+import { assetDataQuality } from '@/lib/assetDataQuality';
 import AssetDrawer from '@/components/dashboard/AssetDrawer';
 import { QueryErrorState } from '@/components/QueryErrorState';
 import SignalToast from '@/components/dashboard/SignalToast';
@@ -137,6 +138,13 @@ export default function Dashboard() {
   const assetsWithSignal = new Set(recentSignals.filter(s => s.source === 'range_filter').map(s => s.asset_id));
   const assetsWithActiveTrade = new Set(allOps.filter(o => ACTIVE_STATUSES.includes(o.status)).map(o => o.asset_id));
   const waitingCount = [...assetsWithSignal].filter(id => !assetsWithActiveTrade.has(id)).length;
+  // Só para o Resumo mostrar QUAIS ativos: nome por id (ativo, sinal ou operação). Não entra em nenhuma contagem.
+  const symbolById = new Map([...assets.map(a => [a.id, a.symbol]), ...recentSignals.map(s => [s.asset_id, s.symbol]), ...allOps.map(o => [o.asset_id, o.symbol])].filter(([id, sym]) => id && sym));
+  const highPrioritySymbols = [...new Set([
+    ...recentSignals.filter(s => s.priority === 'high' && s.source === 'range_filter').map(s => s.asset_id),
+    ...allOps.filter(o => o.score >= 85 && ACTIVE_STATUSES.includes(o.status)).map(o => o.asset_id),
+  ])].map(id => symbolById.get(id)).filter(Boolean);
+  const waitingSymbols = [...assetsWithSignal].filter(id => !assetsWithActiveTrade.has(id)).map(id => symbolById.get(id)).filter(Boolean);
 
   // Build filtered + sorted assets
   const displayAssets = useMemo(() => {
@@ -220,8 +228,8 @@ export default function Dashboard() {
         {/* Header */}
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Sistema de Monitoramento</p>
-            <h1 className="text-3xl font-bold text-foreground tracking-tight">Dashboard</h1>
+            <p className="text-xs text-muted-foreground mb-1">Sistema de Monitoramento</p>
+            <h1 className="text-2xl font-semibold text-foreground tracking-tight">Dashboard</h1>
           </div>
           <div className="flex items-center gap-3">
             <Tooltip>
@@ -276,10 +284,6 @@ export default function Dashboard() {
                 separados entre um banner efêmero e uma lista no fim da
                 página. */}
             <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Bell className="w-3.5 h-3.5" style={{ color: '#8db4e2' }} />
-                <h2 className="text-sm font-bold text-foreground tracking-tight">Agora</h2>
-              </div>
               <div className="space-y-3">
                 <SignalAlertBanner signals={recentSignals} />
                 <RecentAlertsList signals={recentSignals} unavailable={signalsUnavailable} assets={assets} onSelectAsset={setSelectedAsset} />
@@ -291,18 +295,23 @@ export default function Dashboard() {
                 por "são todos números" junto do resto das stats). */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Clock className="w-3.5 h-3.5" style={{ color: '#e3b45a' }} />
-                <h2 className="text-sm font-bold text-foreground tracking-tight">Atenção</h2>
+                <span style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
+                <h2 className="text-sm font-semibold text-foreground tracking-tight">Resumo</h2>
               </div>
               <div className="space-y-3">
                 <VerificationWidget />
-                <div className="grid grid-cols-2 gap-3">
-                  <StatsCard icon={Bell} label="Alta Prioridade" value={highPriorityCount}
-                    color={highPriorityCount > 0 ? '#dd9a4a' : '#8db4e2'}
-                    glowColor={highPriorityCount > 0 ? 'rgba(221,154,74,0.1)' : 'rgba(141,180,226,0.1)'}
-                    error={signalsUnavailable || tradeOpsUnavailable} />
-                  <StatsCard icon={Clock} label="Aguardando" value={waitingCount} color="#e3b45a" glowColor="rgba(227,180,90,0.1)" error={signalsUnavailable || tradeOpsUnavailable} />
-                </div>
+                <SummaryTiles
+                  opsCount={activeOpsCount}
+                  ops={allOps.filter(o => ACTIVE_STATUSES.includes(o.status))}
+                  highPriorityCount={highPriorityCount}
+                  highPriority={highPrioritySymbols}
+                  waitingCount={waitingCount}
+                  waiting={waitingSymbols}
+                  buy={buySignals}
+                  sell={sellSignals}
+                  assetsOk={assets.map(a => assetDataQuality(a, Date.now()).status === 'ok')}
+                  errors={{ ops: tradeOpsUnavailable, signals: signalsUnavailable || tradeOpsUnavailable, assets: assetsError && assets.length === 0 }}
+                />
               </div>
             </div>
 
@@ -343,19 +352,10 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Visão rápida — os 4 contadores que não pedem ação imediata
-                (os 2 que pedem já estão em "Atenção" acima). */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatsCard icon={Coins} label="Monitorados" value={assets.length} color="#8db4e2" glowColor="rgba(141,180,226,0.1)" error={assetsError && assets.length === 0} />
-              <StatsCard icon={Target} label="Operações Ativas" value={activeOpsCount} color="#5db586" glowColor="rgba(93,181,134,0.1)" error={tradeOpsUnavailable} />
-              <StatsCard icon={TrendingUp} label="Sinais BUY" value={buySignals} color="#5db586" glowColor="rgba(93,181,134,0.1)" error={signalsUnavailable} />
-              <StatsCard icon={TrendingDown} label="Sinais SELL" value={sellSignals} color="#e06a5b" glowColor="rgba(224,106,91,0.1)" error={signalsUnavailable} />
-            </div>
-
             {/* Assets */}
             <div>
               {/* Search + filters + sort */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
+              <div className="glass-card rounded-md px-3 py-2 flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
                 {/* Search */}
                 <div className="relative flex-1 max-w-xs">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
@@ -382,7 +382,7 @@ export default function Dashboard() {
                     { id: 'high', label: '★ Alta Prio', color: '#dd9a4a' },
                   ].map(f => (
                     <button key={f.id} onClick={() => setFilterSignal(f.id)}
-                      className="text-11px font-mono px-2 py-1 rounded-md transition-all"
+                      className="text-11px font-mono px-2.5 py-1.5 rounded transition-all"
                       style={filterSignal === f.id
                         ? { background: `${f.color}18`, border: `1px solid ${f.color}50`, color: f.color }
                         : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
@@ -394,7 +394,7 @@ export default function Dashboard() {
                   <div className="w-px h-4 mx-0.5" style={{ background: 'rgba(255,255,255,0.08)' }} />
                   {['all', '1h', '4h', '1d'].map(tf => (
                     <button key={tf} onClick={() => setFilterTf(tf)}
-                      className="text-11px font-mono px-2 py-1 rounded-md transition-all"
+                      className="text-11px font-mono px-2.5 py-1.5 rounded transition-all"
                       style={filterTf === tf
                         ? { background: 'rgba(141,180,226,0.15)', border: '1px solid rgba(141,180,226,0.4)', color: '#8db4e2' }
                         : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
@@ -409,7 +409,7 @@ export default function Dashboard() {
                   <div className="flex items-center gap-1">
                     {SORT_OPTS.map(s => (
                       <button key={s.id} onClick={() => setSortBy(s.id)}
-                        className="text-11px font-mono px-2 py-1 rounded-md transition-all"
+                        className="text-11px font-mono px-2.5 py-1.5 rounded transition-all"
                         style={sortBy === s.id
                           ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: 'rgba(141,180,226,0.9)' }
                           : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
@@ -422,8 +422,8 @@ export default function Dashboard() {
 
               {/* Count label */}
               <div className="flex items-center gap-2 mb-2">
-                <Coins className="w-3.5 h-3.5" style={{ color: '#8db4e2' }} />
-                <h2 className="text-sm font-bold text-foreground tracking-tight">Ativos</h2>
+                <span style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
+                <h2 className="text-sm font-semibold text-foreground tracking-tight">Ativos</h2>
                 <span className="text-11px font-mono text-muted-foreground">({displayAssets.length})</span>
               </div>
 
@@ -499,25 +499,20 @@ export default function Dashboard() {
                 type="button"
                 onClick={() => setShowPerformance(o => !o)}
                 aria-expanded={showPerformance}
-                className="flex items-center gap-1.5 text-sm font-bold text-foreground tracking-tight transition-colors hover:opacity-80">
+                className="flex items-center gap-1.5 text-sm font-semibold text-foreground tracking-tight transition-colors hover:opacity-80">
                 {showPerformance ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 Desempenho
               </button>
-              <div className={`space-y-5 mt-3 ${showPerformance ? '' : 'hidden'}`}>
-                <WeeklySummary />
-                {/* Real performance metrics — busca sua própria amostra
-                    (500 ops fechadas), a mesma de
-                    VirtualAccountCard/LiveConfidenceCard, não o tradeOps
-                    de 100 (recentes, qualquer status) usado acima para
-                    prioridade/atividade */}
-                <PerformanceMetricsBar activeOpsCount={activeOpsCount} />
-                {/* Consolidated performance chart — appears only when there's history */}
-                <PerformanceOverview />
-                {/* Conta virtual real (capital+drawdown compostos, position sizing por risco) */}
-                <VirtualAccountCard />
-                {/* Confiança ao vivo — mesmo IC/gate de amostra do backtest, sobre operações reais */}
+              <div className={`space-y-4 mt-3 ${showPerformance ? '' : 'hidden'}`}>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div className="lg:col-span-8"><PerformanceOverview /></div>
+                  <div className="lg:col-span-4"><WeeklySummary /></div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div className="lg:col-span-8"><PerformanceMetricsBar activeOpsCount={activeOpsCount} /></div>
+                  <div className="lg:col-span-4"><VirtualAccountCard /></div>
+                </div>
                 <LiveConfidenceCard />
-                {/* Cross-asset price correlation */}
                 <CorrelationWidget />
               </div>
             </div>

@@ -2,7 +2,6 @@ import TokenIcon from '@/components/TokenIcon';
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { TrendingUp, Award, BarChart2, Target } from 'lucide-react';
 import moment from 'moment';
 import { backend } from '@/api/entities';
 import { summarizeOps } from '@/lib/tradeMetrics';
@@ -13,8 +12,8 @@ const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="rounded-lg px-3 py-2 text-11px font-mono space-y-1"
-      style={{ background: 'rgba(6,8,15,0.95)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
+    <div className="rounded-md px-3 py-2 text-11px font-mono space-y-1"
+      style={{ background: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))' }}>
       <div className="text-muted-foreground flex items-center gap-1.5"><TokenIcon symbol={d.symbol} size={12} />{d.label}</div>
       <div style={{ color: d.pnl >= 0 ? '#5db586' : '#e06a5b' }}>
         Trade: {d.pnl >= 0 ? '+' : ''}{d.pnl?.toFixed(2)}%
@@ -30,6 +29,8 @@ const CustomTooltip = ({ active, payload }) => {
 // Mesma queryKey/teto de VirtualAccountCard.jsx e LiveConfidenceCard.jsx —
 // ver comentário equivalente em PerformanceMetricsBar.jsx (achado C-2 do
 // Raio-X de UI/UX, docs/claude/ui-audit-criticos.md).
+// Layout: o número principal (retorno acumulado) e a contagem W/BE/L aparecem AQUI, uma vez só —
+// antes repetiam em "Performance Real" e "Performance Consolidada".
 export default function PerformanceOverview() {
   const { data: tradeOps = [] } = useQuery({
     queryKey: ['trade-operations-closed-all'],
@@ -37,17 +38,14 @@ export default function PerformanceOverview() {
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
-  const { chartData, total, wins, losses, be, totalPnl, winRate, avgWin, avgLoss } = useMemo(() => {
+  const { chartData, total, wins, losses, be, totalPnl } = useMemo(() => {
     const s = summarizeOps(tradeOps);
-
-    // Exit reason still labels each point; the BE tag now follows the
-    // realized outcome, not `STOP_HIT && tp1_hit`.
     const data = s.curve
       .filter(p => p.pnlPct !== null)
       .map(({ op, pnlPct, cumulativePct, outcome }) => {
         const STATUS_LABELS = {
-          TP2_HIT: '🏆 TP2', STOP_HIT: outcome === 'BE' ? '🟡 BE' : '🛑 Stop',
-          INVALIDATED: '⚠️ Inv.', CLOSED: '✖ Enc.'
+          TP2_HIT: 'TP2', STOP_HIT: outcome === 'BE' ? 'BE' : 'Stop',
+          INVALIDATED: 'Inv.', CLOSED: 'Enc.'
         };
         return {
           label: `${op.symbol?.replace('USDT', '/USDT')} ${op.timeframe?.toUpperCase()} · ${moment(op.created_date).format('DD/MM HH:mm')}`,
@@ -58,113 +56,65 @@ export default function PerformanceOverview() {
           status: STATUS_LABELS[op.status] || op.status,
         };
       });
-
-    return {
-      chartData: data,
-      total: s.total,
-      wins: s.wins,
-      losses: s.losses,
-      be: s.be,
-      totalPnl: s.totalPnlPct,
-      winRate: s.counted > 0 ? Math.round(s.winRate) : 0,
-      avgWin: s.avgWinPct.toFixed(2),
-      avgLoss: s.avgLossPct.toFixed(2),
-    };
+    return { chartData: data, total: s.total, wins: s.wins, losses: s.losses, be: s.be, totalPnl: s.totalPnlPct };
   }, [tradeOps]);
 
   if (total === 0) return null;
 
   const pnlColor = totalPnl >= 0 ? '#5db586' : '#e06a5b';
-  const wrColor = winRate >= 60 ? '#5db586' : winRate >= 45 ? '#e3b45a' : '#e06a5b';
-
-  const metrics = [
-    { icon: Award, label: 'Win Rate', value: `${winRate}%`, color: wrColor },
-    { icon: TrendingUp, label: 'Retorno Acum.', value: `${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}%`, color: pnlColor },
-    { icon: Target, label: 'Trades', value: `${wins}W / ${be}BE / ${losses}L`, color: '#8db4e2' },
-    { icon: BarChart2, label: 'Avg Win / Loss', value: `+${avgWin}% / -${avgLoss}%`, color: '#e3b45a' },
-  ];
 
   return (
-    <div className="rounded-md p-4 space-y-4"
-      style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.07)' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <BarChart2 className="w-4 h-4" style={{ color: '#8db4e2' }} />
-          <span className="text-sm font-bold text-foreground">Performance Consolidada</span>
-          <span className="text-11px font-mono text-muted-foreground">— {total} trades fechados</span>
+    <div className="glass-card rounded-md p-5 h-full">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Evolução do saldo</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">{total} trades fechados · {wins}W · {be}BE · {losses}L</p>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#5db586', boxShadow: 'none' }} />
-          <span className="text-11px font-mono text-muted-foreground">Atualizado em tempo real</span>
+        <div className="text-right">
+          <p className="text-3xl font-mono font-medium tabular-nums leading-none" style={{ color: pnlColor }}>
+            {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}%
+          </p>
+          <p className="text-xs text-muted-foreground mt-1.5">retorno acumulado</p>
         </div>
       </div>
 
-      {/* Metric pills */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        {metrics.map(({ icon: MetricIcon, label, value, color }) => (
-          <div key={label} className="flex items-center gap-2.5 rounded-lg px-3 py-2.5"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <MetricIcon className="w-3.5 h-3.5 shrink-0" style={{ color }} />
-            <div className="min-w-0">
-              <div className="text-11px font-mono text-muted-foreground leading-none mb-0.5">{label}</div>
-              <div className="text-xs font-mono font-bold truncate" style={{ color }}>{value}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Chart — Saldo Acumulado */}
       {chartData.length > 1 && (
-        <>
-          <div className="flex items-center justify-between">
-            <span className="text-11px font-mono text-muted-foreground">Evolução do Saldo Acumulado (%)</span>
-            <span className="text-11px font-mono font-bold" style={{ color: pnlColor }}>
-              {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}% total
-            </span>
-          </div>
-          <div style={{ height: 140 }} role="img" aria-label={`Gráfico de área da evolução do saldo acumulado, ${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}% no total`}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="perfGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={pnlColor} stopOpacity={0.3} />
-                    <stop offset="95%" stopColor={pnlColor} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                {/* Achado da varredura pós-Raio-X (2026-09-27): eixo escondido
-                    tirava qualquer referência temporal do gráfico (mesmo
-                    defeito que A-13 corrigiu em RFHistoryChart.jsx) — usa
-                    `date` (curto) em vez de `label` (texto completo,
-                    usado só no tooltip), mesmo padrão de
-                    TradeEntryMarkers.jsx. */}
-                <XAxis dataKey="date"
-                  tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 9, fontFamily: 'monospace' }}
-                  axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={30} />
-                <YAxis
-                  tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)', fontFamily: 'monospace' }}
-                  tickLine={false} axisLine={false}
-                  tickFormatter={v => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
-                <Area
-                  type="monotone"
-                  dataKey="cumulative"
-                  stroke={pnlColor}
-                  strokeWidth={2}
-                  fill="url(#perfGrad)"
-                  dot={(props) => {
-                    const { cx, cy, payload } = props;
-                    const dotColor = payload.pnl >= 0 ? '#5db586' : '#e06a5b';
-                    return <circle key={`dot-${payload.label}`} cx={cx} cy={cy} r={3} fill={dotColor} strokeWidth={0} />;
-                  }}
-                  activeDot={{ r: 4, strokeWidth: 0 }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </>
+        <div className="mt-4" style={{ height: 230 }} role="img" aria-label={`Gráfico de área da evolução do saldo acumulado, ${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}% no total`}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={chartData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="perfGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={pnlColor} stopOpacity={0.25} />
+                  <stop offset="95%" stopColor={pnlColor} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="date"
+                tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 11 }}
+                axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={40} />
+              {/* width fixo: antes o rótulo ficava cortado na esquerda (margin -28) */}
+              <YAxis width={52}
+                tick={{ fontSize: 11, fill: 'rgba(255,255,255,0.62)' }}
+                tickLine={false} axisLine={false}
+                tickFormatter={v => `${v > 0 ? '+' : ''}${v.toFixed(0)}%`}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <ReferenceLine y={0} stroke="rgba(255,255,255,0.18)" strokeDasharray="3 3" />
+              <Area
+                type="monotone"
+                dataKey="cumulative"
+                stroke={pnlColor}
+                strokeWidth={2}
+                fill="url(#perfGrad)"
+                dot={(props) => {
+                  const { cx, cy, payload } = props;
+                  const dotColor = payload.pnl >= 0 ? '#5db586' : '#e06a5b';
+                  return <circle key={`dot-${payload.label}`} cx={cx} cy={cy} r={2.5} fill={dotColor} strokeWidth={0} />;
+                }}
+                activeDot={{ r: 4, strokeWidth: 0 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
       )}
     </div>
   );

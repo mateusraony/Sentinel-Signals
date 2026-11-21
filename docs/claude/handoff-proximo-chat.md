@@ -71,9 +71,9 @@ Depois responda com um resumo curto do que entendeu e **espere o meu "pode segui
 7. **Investigar os `warn` ruidosos do `system_logs`** (item 298): confirmar os números nos logs antes de citar.
 
 **C. Depende de decisão minha (pergunte-me antes; não faça por conta própria):**
-0. **Visual do painel (roadmap, linha 9):** direção APROVADA em 21/11 (antes/depois sobre a tela real). Entrega em 2 PRs: o **PR 1 (visual global: cores, painéis planos, fonte IBM Plex)** está feito;
-   o **PR 2 (estrutura: régua no cartão, Resumo, alertas em cartões, Desempenho reorganizado)** vem em seguida. **Emojis ficam como estão até eu decidir** (item 280 manda melhorar, não remover).
-   Não repita mudança conservadora: o usuário recusou o "pacote A". Como mostrar antes/depois: Playwright + Vite com `backend`, `useAuth` e o provedor de preços simulados (tudo fora do repositório).
+0. **Visual do painel (roadmap, linha 9):** direção APROVADA em 21/11. Entregue em 2 PRs: **PR 1 (visual global: cores, painéis planos, fonte IBM Plex)** e **PR 2 (estrutura: régua no cartão, Resumo, alertas em cartões, Desempenho reorganizado)**.
+   **Falta só decisão minha: EMOJIS** — o item 280 manda melhorar, não remover, e há testes protegendo o vocabulário (o Telegram usa o mesmo); os mockups aprovados mostravam a tela sem emojis, então pergunte-me se quero tirar do Dashboard.
+   Pendência pequena: bloco do Desempenho sem dados some e a coluna pode ficar com buraco. Como mostrar antes/depois: Playwright + Vite com `backend`, `useAuth` e o provedor de preços simulados (tudo fora do repositório).
 8. **Aba Trades:** mostrar o lucro em **USDT** (precisa da minha banca) e a **linha do tempo completa do stop** (exige mudança
    no motor: skills `sentinel-trading-engine-review` + `sentinel-state-machine-test`, plano e minha aprovação).
 9. **Contexto, Fase 6 (opcionais):** on-chain, notícias por RSS, horário silencioso. Só se eu pedir.

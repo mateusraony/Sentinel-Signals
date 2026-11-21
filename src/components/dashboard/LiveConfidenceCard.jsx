@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Gauge, Copy, Check, AlertTriangle } from 'lucide-react';
+import { Copy, Check, AlertTriangle } from 'lucide-react';
 import { backend } from '@/api/entities';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { summarizeOps, isClosedOp } from '@/lib/tradeMetrics';
@@ -25,9 +25,9 @@ function ConfidenceRow({ label, summary, divergenceWarning = false }) {
   const badgeLabel = summary.conclusive ? (positive ? 'CONCLUSIVO +' : 'CONCLUSIVO −') : 'INCONCLUSIVO';
 
   return (
-    <div className="rounded-md px-3 py-2.5" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
+    <div className="rounded-md px-3.5 py-3" style={{ background: 'hsl(var(--background))', border: '1px solid hsl(var(--border))' }}>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-11px font-mono uppercase text-muted-foreground">{label}</span>
+        <span className="text-xs text-muted-foreground">{label}</span>
         <div className="flex items-center gap-1">
           {divergenceWarning && (
             <Tooltip>
@@ -53,7 +53,7 @@ function ConfidenceRow({ label, summary, divergenceWarning = false }) {
           </Tooltip>
         </div>
       </div>
-      <div className="text-base font-bold font-mono"
+      <div className="text-xl font-medium font-mono tabular-nums"
         style={{ color: hasSamples ? (positive ? '#5db586' : '#e06a5b') : 'rgba(255,255,255,0.55)' }}>
         {hasSamples ? `${positive ? '+' : ''}${summary.expectancyR.toFixed(3)}R` : '—'}
       </div>
@@ -157,12 +157,11 @@ export default function LiveConfidenceCard() {
   };
 
   return (
-    <div className="rounded-lg p-4"
-      style={{ background: 'rgba(6,8,15,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}>
+    <div className="glass-card rounded-md p-5">
       <div className="flex items-center gap-2 mb-3">
-        <Gauge className="w-3.5 h-3.5" style={{ color: '#8db4e2' }} />
-        <span className="text-11px font-mono uppercase tracking-widest text-muted-foreground">Confiança ao Vivo (amostra real)</span>
-        <span className="text-11px font-mono px-1.5 py-0.5 rounded"
+        
+        <span className="text-sm font-semibold text-foreground">Confiança ao vivo (amostra real)</span>
+        <span className="text-xs px-2 py-0.5 rounded"
           style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
           cresce a cada operação fechada
         </span>
@@ -175,7 +174,7 @@ export default function LiveConfidenceCard() {
           {copied ? 'Copiado!' : 'Copiar'}
         </button>
       </div>
-      <p className="text-11px font-mono text-muted-foreground mb-3">
+      <p className="text-xs text-muted-foreground mb-3">
         Evidência histórica das operações reais já fechadas — não é probabilidade de acerto futuro.
       </p>
       {exclusionText && (
@@ -191,7 +190,7 @@ export default function LiveConfidenceCard() {
       {sourceRows.length > 0 && (
         <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <div className="flex items-center gap-2 mb-2.5">
-            <span className="text-11px font-mono uppercase tracking-widest text-muted-foreground">Por fonte de dado</span>
+            <span className="text-sm font-semibold text-foreground">Por fonte de dado</span>
             <Tooltip>
               <TooltipTrigger type="button" className="text-11px font-mono px-1.5 py-0.5 rounded cursor-help"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.62)' }}>
