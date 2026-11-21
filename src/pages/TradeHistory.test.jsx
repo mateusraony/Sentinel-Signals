@@ -679,3 +679,57 @@ describe('TradeHistory — selo "Aberta durante <evento>"', () => {
     expect(document.querySelector('[data-op-event-marker]')).toBeNull();
   });
 });
+
+// 21/11/2026 — Histórico refeito (estrutura, não só cor): "Resumo do dia" numa linha, filtros ANTES dos gráficos que eles controlam, "Curva de Capital" ao
+// lado de "Como terminaram", a faixa-resumo junto da lista, e a barra do resultado em R em cada linha. Os números e textos continuam os mesmos.
+describe('TradeHistory — estrutura nova (21/11/2026)', () => {
+  const T = '2026-11-01T12:00:00Z';
+  const base = { side: 'BUY', entry_price: 100, initial_stop: 95, tp1: 107.5, tp2: 115, partial_percent: 50, tp1_hit: false, created_date: T, closed_at: T, timeframe: '15m', signal_timeframe: '4h' };
+  const perda = (id, symbol) => ({ ...base, id, asset_id: id, symbol, status: 'STOP_HIT', exit_price: 95, stop_hit_at: T });
+  const alvo = (id, symbol) => ({ ...base, id, asset_id: id, symbol, status: 'TP2_HIT', tp1_hit: true, tp1_hit_price: 107.5, exit_price: 115 });
+  const OPS = [perda('n1', 'BTCUSDT'), perda('n2', 'ETHUSDT'), alvo('n3', 'SOLUSDT')];
+
+  async function abrir() {
+    mockBackend(OPS);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    const r = renderPage(<TradeHistory />);
+    await screen.findAllByText('BTC/USDT');
+    return r;
+  }
+  const antes = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it('a ordem da página: resumo do dia → filtros → visão geral (com a curva) → faixa-resumo → lista', async () => {
+    await abrir();
+    const dia = screen.getByText('Resumo do dia', { exact: false });
+    const filtros = screen.getByText('Filtros');
+    const visao = screen.getByText('Visão geral');
+    const curva = screen.getByText('Curva de Capital');
+    const faixa = screen.getByText(/^Total: /);
+    const primeiroCard = document.querySelector('[role="button"][aria-expanded]'); // a 1ª linha de trade
+    expect(antes(dia, filtros)).toBe(true);
+    expect(antes(filtros, visao)).toBe(true);
+    expect(antes(visao, curva)).toBe(true);
+    expect(antes(curva, faixa)).toBe(true);
+    expect(antes(faixa, primeiroCard)).toBe(true);
+  });
+
+  it('"Curva de Capital" e "Como terminaram" dividem a mesma linha (grade) dentro da visão geral', async () => {
+    await abrir();
+    const grade = screen.getByRole('group', { name: 'Como terminaram' }).parentElement;
+    expect(grade.className).toMatch(/lg:grid-cols-\[/);
+    expect(grade.textContent).toContain('Curva de Capital');
+  });
+
+  it('o resumo do dia é uma linha só: os 5 números continuam lá, sem os 5 cartões centrados de antes', async () => {
+    await abrir();
+    const dia = screen.getByText('Resumo do dia', { exact: false }).closest('div[class*="flex-wrap"]');
+    for (const rotulo of ['Total', 'Win', 'BE', 'Loss', 'Win Rate']) expect(dia.textContent).toContain(rotulo);
+    expect(dia.querySelector('.text-center')).toBeNull();
+  });
+
+  it('cada linha de trade fechada traz a barra do resultado em R (só desenho; o número segue escrito)', async () => {
+    await abrir();
+    expect(screen.getAllByTestId('r-bar')).toHaveLength(3);
+    expect(screen.getAllByTestId('r-bar')[0].getAttribute('aria-hidden')).toBe('true');
+  });
+});

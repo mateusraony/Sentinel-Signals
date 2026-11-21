@@ -143,6 +143,24 @@ function TradeContext({ op }) {
   );
 }
 
+/**
+ * Barra do resultado em R (só desenho: o número e o % já estão escritos ao lado). Centro = 0R; a esquerda é perda, a direita é ganho;
+ * a escala vai de -1,5R a +3R, que é a faixa que as operações deste painel ocupam (stop = -1R, TP2 = +3R).
+ */
+function RBar({ r, color }) {
+  const MIN = -1.5, MAX = 3;
+  const clamp = Math.max(MIN, Math.min(MAX, r));
+  const zero = (0 - MIN) / (MAX - MIN) * 100;
+  const pos = (clamp - MIN) / (MAX - MIN) * 100;
+  const left = Math.min(zero, pos), width = Math.abs(pos - zero);
+  return (
+    <div aria-hidden="true" data-testid="r-bar" className="relative mt-1.5 h-1.5 w-28 ml-auto rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+      <div className="absolute inset-y-0 rounded-full" style={{ left: `${left}%`, width: `${Math.max(width, 2)}%`, background: color }} />
+      <div className="absolute -inset-y-0.5 w-px" style={{ left: `${zero}%`, background: 'rgba(255,255,255,0.35)' }} />
+    </div>
+  );
+}
+
 function HistoryCard({ op, eventCtx = null }) {
   const [expanded, setExpanded] = useState(false);
   const isBuy = op.side === 'BUY';
@@ -297,6 +315,7 @@ function HistoryCard({ op, eventCtx = null }) {
               )}
             </div>
           ) : <div className="text-sm font-mono text-muted-foreground">—</div>}
+          {realizedR !== null && <RBar r={realizedR} color={isBE ? '#e3b45a' : pnl >= 0 ? '#5db586' : '#e06a5b'} />}
           {op.score > 0 && <div className="text-11px font-mono text-muted-foreground">score {op.score}/100</div>}
         </div>
 
@@ -336,10 +355,11 @@ function HistoryCard({ op, eventCtx = null }) {
           )}
 
           {/* Item 291 — "A história deste trade": o que aconteceu, em ordem e em frases simples (campos que a operação já tem). */}
+          {/* Duas colunas em tela larga (antes: uma fila única de 8 blocos): à esquerda o que aconteceu e os números (história, preços, marcos,
+              linha do tempo, motivos); à direita a conta (o que o sistema via na entrada, plano × realizado, como o resultado foi formado). */}
+          <div className="grid gap-3 lg:grid-cols-2 items-start">
+          <div className="space-y-3 min-w-0">
           <TradeStory op={op} />
-
-          {/* Item 292 — o que o sistema via na entrada, plano × realizado e a conta do resultado (bruto → custos → líquido). */}
-          <TradeContext op={op} />
 
           {/* Price breakdown grid — só TP1/TP2 precisam de tooltip
               (Entrada/Stop Inicial já são autoexplicativos). Texto
@@ -481,6 +501,13 @@ function HistoryCard({ op, eventCtx = null }) {
             </div>
           )}
 
+          </div>
+          <div className="space-y-3 min-w-0">
+          {/* Item 292 — o que o sistema via na entrada, plano × realizado e a conta do resultado (bruto → custos → líquido). */}
+          <TradeContext op={op} />
+          </div>
+          </div>
+
           {/* Motivo de encerramento — só aparece aqui quando NÃO há
               decision_snapshot de EXIT: nesse caso o "por quê" (linha
               compacta acima) já é o texto completo e mais informativo que
@@ -516,37 +543,32 @@ function DaySummary({ ops }) {
   const wr = counted > 0 ? Math.round((wins / counted) * 100) : 0;
 
   return (
-    <div className="rounded-md p-4" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
-      <div className="flex items-center gap-2 mb-3">
+    <div className="rounded-md px-4 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2"
+      style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <div className="flex items-center gap-2">
         <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
         <h2 className="text-sm font-semibold text-foreground/80">📅 Resumo do dia</h2>
         <span className="text-xs font-mono text-muted-foreground">{moment().format('DD/MM/YYYY')}</span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {[
-          { label: 'Total', value: todayOps.length, color: '#8db4e2' },
-          { label: '🏆 Win', value: wins, color: '#5db586' },
-          { label: '🟡 BE', value: be, color: '#e3b45a' },
-          { label: '🛑 Loss', value: losses, color: '#e06a5b' },
-          // Achado da varredura pós-Raio-X (2026-09-27): mesma classe de bug
-          // do M-16 (docs/known-risks.md) — "0%" por falta de operação
-          // fechada no dia não é o mesmo que "0% de acerto", mas usava a
-          // cor de atenção (laranja) igual a um resultado ruim de verdade.
-          // Neutro (mesmo `#8db4e2` já usado em Dashboard.jsx pro card
-          // "Alta Prioridade" quando a contagem é 0) até haver operação
-          // contada.
-          { label: 'Win Rate', value: `${wr}%`, color: counted === 0 ? '#8db4e2' : winRateColor(wr) },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="rounded-md px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div className="text-xs font-mono text-muted-foreground mb-1">{label}</div>
-            <div className="text-xl font-mono font-medium tabular-nums" style={{ color }}>{value}</div>
-          </div>
-        ))}
-      </div>
+      {[
+        { label: 'Total', value: todayOps.length, color: '#8db4e2' },
+        { label: '🏆 Win', value: wins, color: '#5db586' },
+        { label: '🟡 BE', value: be, color: '#e3b45a' },
+        { label: '🛑 Loss', value: losses, color: '#e06a5b' },
+        // Achado da varredura pós-Raio-X (2026-09-27): mesma classe de bug do M-16 (docs/known-risks.md) — "0%" por falta de operação
+        // fechada no dia não é o mesmo que "0% de acerto", mas usava a cor de atenção (laranja) igual a um resultado ruim de verdade.
+        // Neutro (`#8db4e2`, o mesmo do card "Alta Prioridade" do Dashboard com contagem 0) até haver operação contada.
+        { label: 'Win Rate', value: `${wr}%`, color: counted === 0 ? '#8db4e2' : winRateColor(wr) },
+      ].map(({ label, value, color }) => (
+        <div key={label} className="flex items-baseline gap-2">
+          <span className="text-xs font-mono text-muted-foreground">{label}</span>
+          <span className="text-base font-mono font-medium tabular-nums" style={{ color }}>{value}</span>
+        </div>
+      ))}
       {totalPnl !== 0 && (
-        <div className="mt-3 text-center">
-          <span className="text-11px font-mono text-muted-foreground">Performance do dia: </span>
-          <span className="text-sm font-mono font-bold" style={{ color: totalPnl >= 0 ? '#5db586' : '#e06a5b' }}>
+        <div className="ml-auto flex items-baseline gap-2">
+          <span className="text-xs font-mono text-muted-foreground">Performance do dia:</span>
+          <span className="text-sm font-mono font-medium tabular-nums" style={{ color: totalPnl >= 0 ? '#5db586' : '#e06a5b' }}>
             {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}%
           </span>
         </div>
@@ -669,18 +691,6 @@ export default function TradeHistory() {
       {/* Day summary */}
       <DaySummary ops={history} />
 
-      {/* P&L Chart */}
-      {filtered.length > 1 && (
-        <div>
-          <button onClick={() => setShowChart(!showChart)} className="flex items-center gap-2 mb-3 group">
-            <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
-            <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground transition-colors">Curva de Capital</span>
-            <span className="text-11px font-mono" style={{ color: '#8db4e2' }}>{showChart ? '▲ esconder' : '▼ mostrar'}</span>
-          </button>
-          {showChart && <PnLChart history={filtered} />}
-        </div>
-      )}
-
       {/* Filters */}
       <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-center gap-2 text-11px font-mono text-muted-foreground mb-1">
@@ -764,6 +774,44 @@ export default function TradeHistory() {
         </div>
       </div>
 
+      {/* Item 293 — "Visão geral": o relatório de performance que já existe em Operações + "Como terminaram", sobre as operações FILTRADAS. */}
+      {filtered.length > 0 && (
+        <div className="space-y-3">
+          {/* Sem `aria-expanded` de propósito: mesmo padrão do botão "Curva de Capital", e os testes desta tela abrem um card pelo 1º `[aria-expanded]` — um
+              segundo antes dos cards abriria/fecharia esta seção em vez do card. O texto "esconder/mostrar" já diz o estado. */}
+          <button onClick={() => setShowOverview(!showOverview)} className="flex items-center gap-2 group">
+            <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
+            <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground transition-colors">Visão geral</span>
+            <span className="text-11px font-mono" style={{ color: '#8db4e2' }}>{showOverview ? '▲ esconder' : '▼ mostrar'}</span>
+          </button>
+          {showOverview && (
+            <div className="space-y-4">
+              {counted > 0 && <PerformanceReport trades={filtered} />}
+              {summary.inconclusiveReason === 'sample_too_small' && counted > 0 && (
+                <p className="text-11px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  Poucas operações contadas ({counted}): esses números oscilam muito e não provam vantagem.
+                </p>
+              )}
+              {/* Curva de Capital ao lado de "Como terminaram" (antes ficava solta no topo, acima dos filtros que ela obedece). */}
+              <div className={`grid gap-4 items-start ${filtered.length > 1 ? 'lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]' : ''}`}>
+                {filtered.length > 1 && (
+                  <div className="min-w-0">
+                    {/* Sem `aria-expanded` de propósito: os testes abrem um card pelo 1º `[aria-expanded]`. O texto "esconder/mostrar" diz o estado. */}
+                    <button onClick={() => setShowChart(!showChart)} className="flex items-center gap-2 mb-3 group">
+                      <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
+                      <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground transition-colors">Curva de Capital</span>
+                      <span className="text-11px font-mono" style={{ color: '#8db4e2' }}>{showChart ? '▲ esconder' : '▼ mostrar'}</span>
+                    </button>
+                    {showChart && <PnLChart history={filtered} />}
+                  </div>
+                )}
+                <OutcomeBreakdown ops={filtered} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Summary strip */}
       {filtered.length > 0 && (
         <div className="flex flex-wrap items-center gap-4 px-4 py-2.5 rounded-md text-11px font-mono"
@@ -799,30 +847,6 @@ export default function TradeHistory() {
         <p className="-mt-3 px-1 text-11px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
           {excludedNote} — não são decisões do motor, mas entram nos números desta tela.
         </p>
-      )}
-
-      {/* Item 293 — "Visão geral": o relatório de performance que já existe em Operações + "Como terminaram", sobre as operações FILTRADAS. */}
-      {filtered.length > 0 && (
-        <div className="space-y-3">
-          {/* Sem `aria-expanded` de propósito: mesmo padrão do botão "Curva de Capital", e os testes desta tela abrem um card pelo 1º `[aria-expanded]` — um
-              segundo antes dos cards abriria/fecharia esta seção em vez do card. O texto "esconder/mostrar" já diz o estado. */}
-          <button onClick={() => setShowOverview(!showOverview)} className="flex items-center gap-2 group">
-            <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
-            <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground transition-colors">Visão geral</span>
-            <span className="text-11px font-mono" style={{ color: '#8db4e2' }}>{showOverview ? '▲ esconder' : '▼ mostrar'}</span>
-          </button>
-          {showOverview && (
-            <div className="space-y-4">
-              {counted > 0 && <PerformanceReport trades={filtered} />}
-              {summary.inconclusiveReason === 'sample_too_small' && counted > 0 && (
-                <p className="text-11px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                  Poucas operações contadas ({counted}): esses números oscilam muito e não provam vantagem.
-                </p>
-              )}
-              <OutcomeBreakdown ops={filtered} />
-            </div>
-          )}
-        </div>
       )}
 
       {/* Trade cards */}
