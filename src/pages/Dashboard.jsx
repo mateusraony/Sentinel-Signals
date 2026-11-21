@@ -12,7 +12,7 @@ import { QueryErrorState } from '@/components/QueryErrorState';
 import SignalToast from '@/components/dashboard/SignalToast';
 import SignalAlertBanner from '@/components/dashboard/SignalAlertBanner';
 import PerformanceOverview from '@/components/dashboard/PerformanceOverview';
-import ComparePanel from '@/components/dashboard/ComparePanel';
+import CompareDrawer from '@/components/dashboard/CompareDrawer';
 import TelegramStatusBanner from '@/components/dashboard/TelegramStatusBanner';
 import MarketContextBand from '@/components/dashboard/MarketContextBand';
 import PerformanceMetricsBar from '@/components/dashboard/PerformanceMetricsBar';
@@ -192,13 +192,20 @@ export default function Dashboard() {
     return list;
   }, [assets, recentSignals, allOps, states, filterSignal, filterTf, search, sortBy]);
 
+  // Comparar: ao abrir, já começa com os 2 primeiros ativos (como antes) — inclusive se os ativos chegarem DEPOIS do clique
+  // (antes, clicar cedo demais deixava os dois seletores vazios).
+  useEffect(() => {
+    if (compareMode && assets.length >= 2 && !compareAId && !compareBId) {
+      setCompareAId(assets[0].id);
+      setCompareBId(assets[1].id);
+    }
+  }, [compareMode, assets, compareAId, compareBId]);
+
   // `selectedAsset` é o retrato de quando o card foi clicado; o poll de
   // `monitored-assets` (60 s) renova `last_scan_at`/`scan_error_since`/`is_active`
   // — sem re-resolver, o frescor mostrado no painel congelava (Codex, PR #461).
   const drawerAsset = selectedAsset ? (assets.find(a => a.id === selectedAsset.id) ?? selectedAsset) : null;
 
-  const compareA = assets.find(a => a.id === compareAId);
-  const compareB = assets.find(a => a.id === compareBId);
 
   const SORT_OPTS = [
     { id: 'default', label: 'Padrão' },
@@ -209,6 +216,20 @@ export default function Dashboard() {
   return (
     <>
       <SignalToast signals={recentSignals} assets={assets} onSelectAsset={setSelectedAsset} />
+
+      <CompareDrawer
+        open={compareMode}
+        onClose={() => setCompareMode(false)}
+        assets={assets}
+        aId={compareAId}
+        bId={compareBId}
+        onChangeA={setCompareAId}
+        onChangeB={setCompareBId}
+        states={states}
+        signals={recentSignals}
+        ops={allOps}
+        dataUnavailable={signalsUnavailable || tradeOpsUnavailable}
+      />
 
       {drawerAsset && (
         <AssetDrawer
@@ -246,19 +267,12 @@ export default function Dashboard() {
                 {ASSET_STALE_GRACE_MIN} min sem leitura), com falha de leitura ou ainda nunca lido.
               </TooltipContent>
             </Tooltip>
-            <button onClick={() => {
-              if (!compareMode && assets.length >= 2) {
-                setCompareAId(assets[0].id);
-                setCompareBId(assets[1].id);
-              }
-              setCompareMode(!compareMode);
-            }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-11px font-mono transition-all hover:opacity-80"
-              style={compareMode
-                ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
-                : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
-              <Swords className="w-3 h-3" />
-              {compareMode ? 'Sair' : 'Comparar'}
+            <button onClick={() => setCompareMode(true)}
+              aria-haspopup="dialog"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs transition-colors hover:bg-white/[0.06]"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid hsl(var(--border))', color: 'rgba(255,255,255,0.75)' }}>
+              <Swords className="w-3.5 h-3.5" />
+              Comparar
             </button>
           </div>
         </div>
@@ -318,40 +332,6 @@ export default function Dashboard() {
             {/* OPORTUNIDADES / OPERAÇÕES — núcleo operacional (achado M-13:
                 hoje no meio da página, deveria ser o conteúdo logo após
                 agora/atenção). */}
-            {/* Compare mode */}
-            {compareMode && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <select value={compareAId || ''} onChange={e => setCompareAId(e.target.value)}
-                    className="px-3 py-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.8)' }}>
-                    <option value="">Selecione Ativo A...</option>
-                    {assets.map(a => <option key={a.id} value={a.id}>{a.display_name}</option>)}
-                  </select>
-                  <span className="text-muted-foreground text-xs font-mono">vs</span>
-                  <select value={compareBId || ''} onChange={e => setCompareBId(e.target.value)}
-                    className="px-3 py-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.8)' }}>
-                    <option value="">Selecione Ativo B...</option>
-                    {assets.map(a => <option key={a.id} value={a.id}>{a.display_name}</option>)}
-                  </select>
-                </div>
-                {compareA && compareB && (
-                  <ComparePanel
-                    assetA={compareA}
-                    assetB={compareB}
-                    statesA={states.filter(s => s.asset_id === compareA.id)}
-                    statesB={states.filter(s => s.asset_id === compareB.id)}
-                    signalA={recentSignals.find(s => s.asset_id === compareA.id && s.source === 'range_filter')}
-                    signalB={recentSignals.find(s => s.asset_id === compareB.id && s.source === 'range_filter')}
-                    opA={allOps.find(o => o.asset_id === compareA.id && ACTIVE_STATUSES.includes(o.status))}
-                    opB={allOps.find(o => o.asset_id === compareB.id && ACTIVE_STATUSES.includes(o.status))}
-                    dataUnavailable={signalsUnavailable || tradeOpsUnavailable}
-                  />
-                )}
-              </div>
-            )}
-
             {/* Assets */}
             <div>
               {/* Search + filters + sort */}

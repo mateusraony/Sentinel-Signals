@@ -85,3 +85,21 @@ describe('ComparePanel — logo do token no cabeçalho de cada coluna', () => {
     expect(screen.getAllByText('ETH/USDT').length).toBeGreaterThan(0);
   });
 });
+
+// Comparar (21/11/2026): a linha "Trade" mostra o estado em português, igual ao cartão do ativo, e não o código cru.
+describe('ComparePanel — estado da operação em português na linha "Trade"', () => {
+  it.each([
+    [{ id: 'o1', status: 'RUNNER_ACTIVE', side: 'BUY' }, 'Runner ativo'],
+    [{ id: 'o2', status: 'SIGNAL_CONFIRMED', side: 'BUY' }, 'Compra ativa'],
+    [{ id: 'o3', status: 'SIGNAL_CONFIRMED', side: 'SELL' }, 'Venda ativa'],
+  ])('operação %j aparece como "%s"', (op, texto) => {
+    renderPanel({ opA: op });
+    expect(screen.getByText(texto)).toBeTruthy();
+    expect(screen.queryByText(op.status)).toBeNull();
+  });
+
+  it('sem operação ativa continua "Livre" (ou "Aguardando" com sinal)', () => {
+    renderPanel({});
+    expect(screen.getAllByText('Livre')).toHaveLength(2);
+  });
+});
