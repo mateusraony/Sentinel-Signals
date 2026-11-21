@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { operationProvenance, PROVENANCE_LABEL, splitByProvenance, provenanceExclusionText } from '@/lib/operationProvenance';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { History, Filter, BarChart2, Activity, ChevronDown, ChevronUp, Search, Copy, Check } from 'lucide-react';
+import { History, Filter, ChevronDown, ChevronUp, Search, Copy, Check } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import PnLChart from '@/components/trades/PnLChart';
 import PerformanceReport from '@/components/trades/PerformanceReport';
@@ -66,12 +66,12 @@ function TradeStory({ op }) {
   const story = buildTradeStory(op, { fmt: (iso) => moment(iso).format('DD/MM/YY HH:mm') });
   if (story.length === 0) return null;
   return (
-    <div className="rounded-lg px-3 py-2.5" role="group" aria-label="A história deste trade"
+    <div className="rounded-md px-3 py-2.5" role="group" aria-label="A história deste trade"
       style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}>
-      <div className="text-9px font-mono text-muted-foreground mb-1.5">📖 A história deste trade</div>
+      <div className="text-11px font-mono text-muted-foreground mb-1.5">📖 A história deste trade</div>
       <ol className="space-y-1">
         {story.map((step) => (
-          <li key={step.key} className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
+          <li key={step.key} className="text-11px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
             {step.text}
           </li>
         ))}
@@ -86,14 +86,14 @@ const INFO_BLOCK_STYLE = { background: 'rgba(255,255,255,0.025)', border: '1px s
 function InfoBlock({ title, ariaLabel, rows }) {
   if (rows.length === 0) return null;
   return (
-    <div className="rounded-lg px-3 py-2.5" role="group" aria-label={ariaLabel} style={INFO_BLOCK_STYLE}>
-      <div className="text-9px font-mono text-muted-foreground mb-1.5">{title}</div>
+    <div className="rounded-md px-3 py-2.5" role="group" aria-label={ariaLabel} style={INFO_BLOCK_STYLE}>
+      <div className="text-11px font-mono text-muted-foreground mb-1.5">{title}</div>
       <dl className="space-y-1">
         {rows.map((row) => (
-          <div key={row.key} className="text-10px font-mono leading-relaxed">
+          <div key={row.key} className="text-11px font-mono leading-relaxed">
             <dt className="inline text-muted-foreground">{row.label}: </dt>
             <dd className="inline" style={{ color: 'rgba(255,255,255,0.8)' }}>{row.value}</dd>
-            {row.hint && <span className="block text-9px" style={{ color: 'rgba(255,255,255,0.55)' }}>{row.hint}</span>}
+            {row.hint && <span className="block text-11px" style={{ color: 'rgba(255,255,255,0.55)' }}>{row.hint}</span>}
           </div>
         ))}
       </dl>
@@ -114,9 +114,9 @@ function ResultBreakdown({ op }) {
   const cost = b.costR === null ? fmtCost(b.costPct, '%') : `${fmtCost(b.costR, 'R')} (${fmtCost(b.costPct, '%')})`;
   const net = b.netR === null ? fmtPct(b.netPct) : `${fmtR(b.netR)} (${fmtPct(b.netPct)})`;
   return (
-    <div className="rounded-lg px-3 py-2.5" role="group" aria-label="Como o resultado foi formado" style={INFO_BLOCK_STYLE}>
-      <div className="text-9px font-mono text-muted-foreground mb-1.5">🧮 Como o resultado foi formado</div>
-      <ul className="space-y-1 text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
+    <div className="rounded-md px-3 py-2.5" role="group" aria-label="Como o resultado foi formado" style={INFO_BLOCK_STYLE}>
+      <div className="text-11px font-mono text-muted-foreground mb-1.5">🧮 Como o resultado foi formado</div>
+      <ul className="space-y-1 text-11px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
         <li>Resultado bruto (antes dos custos): <span style={{ color: 'rgba(255,255,255,0.9)' }}>{gross}</span></li>
         {b.legs.map((leg) => (
           <li key={leg.key} className="pl-3" style={{ color: 'rgba(255,255,255,0.5)' }}>· {leg.label}: {fmtR(leg.r)}</li>
@@ -124,7 +124,7 @@ function ResultBreakdown({ op }) {
         <li>Custos estimados: <span style={{ color: '#dd9a4a' }}>{cost}</span></li>
         <li>Resultado final (líquido): <span className="font-bold" style={{ color: b.netPct >= 0 ? '#5db586' : '#e06a5b' }}>{net}</span></li>
       </ul>
-      <p className="text-9px font-mono mt-1.5 leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>{costModelNote()}</p>
+      <p className="text-11px font-mono mt-1.5 leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>{costModelNote()}</p>
     </div>
   );
 }
@@ -140,6 +140,24 @@ function TradeContext({ op }) {
       <InfoBlock title="🗺️ Plano × realizado" ariaLabel="Plano contra realizado" rows={buildPlanVsActual(op)} />
       <ResultBreakdown op={op} />
     </>
+  );
+}
+
+/**
+ * Barra do resultado em R (só desenho: o número e o % já estão escritos ao lado). Centro = 0R; a esquerda é perda, a direita é ganho;
+ * a escala vai de -1,5R a +3R, que é a faixa que as operações deste painel ocupam (stop = -1R, TP2 = +3R).
+ */
+function RBar({ r, color }) {
+  const MIN = -1.5, MAX = 3;
+  const clamp = Math.max(MIN, Math.min(MAX, r));
+  const zero = (0 - MIN) / (MAX - MIN) * 100;
+  const pos = (clamp - MIN) / (MAX - MIN) * 100;
+  const left = Math.min(zero, pos), width = Math.abs(pos - zero);
+  return (
+    <div aria-hidden="true" data-testid="r-bar" className="relative mt-1.5 h-1.5 w-28 ml-auto rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+      <div className="absolute inset-y-0 rounded-full" style={{ left: `${left}%`, width: `${Math.max(width, 2)}%`, background: color }} />
+      <div className="absolute -inset-y-0.5 w-px" style={{ left: `${zero}%`, background: 'rgba(255,255,255,0.35)' }} />
+    </div>
   );
 }
 
@@ -206,39 +224,39 @@ function HistoryCard({ op, eventCtx = null }) {
           <div className="flex items-center gap-2 flex-wrap">
             <TokenIcon symbol={op.symbol} size={18} />
             <span className="font-bold text-sm text-foreground">{op.symbol?.replace('USDT', '/USDT')}</span>
-            <span className="text-9px font-mono px-1.5 py-0.5 rounded"
+            <span className="text-11px font-mono px-1.5 py-0.5 rounded"
               style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.62)', border: '1px solid rgba(255,255,255,0.07)' }}>
               {timeframeChipLabel(op)}
             </span>
             {op.tier && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="text-9px font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
+                  <span className="text-11px font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
                     style={{ background: 'rgba(141,180,226,0.06)', color: 'rgba(141,180,226,0.6)', border: '1px solid rgba(141,180,226,0.15)' }}>
                     {op.tier}
                   </span>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                   Tier de volatilidade (ATR%) classificado na entrada — ver Pine v13.2 Grupo 03
                 </TooltipContent>
               </Tooltip>
             )}
-            <span className="text-9px font-mono font-bold" style={{ color: isBuy ? '#5db586' : '#e06a5b' }}>
+            <span className="text-11px font-mono font-bold" style={{ color: isBuy ? '#5db586' : '#e06a5b' }}>
               {isBuy ? '▲' : '▼'} {op.side}
             </span>
-            <span className="text-9px font-mono font-semibold px-2 py-0.5 rounded"
+            <span className="text-11px font-mono font-semibold px-2 py-0.5 rounded"
               style={{ background: `${badgeColor}15`, color: badgeColor, border: `1px solid ${badgeColor}30` }}>
               {isBE ? '🟡 Breakeven' : s.label}
             </span>
             {/* Item 278: fora das estatísticas — simulação manual ou encerrada à mão. */}
             {provenanceTag && (
-              <span className="text-9px font-mono font-semibold px-2 py-0.5 rounded"
+              <span className="text-11px font-mono font-semibold px-2 py-0.5 rounded"
                 style={{ background: 'rgba(167,139,250,0.1)', color: '#c4b5fd', border: '1px solid rgba(167,139,250,0.3)' }}>
                 {provenanceTag}
               </span>
             )}
             {op.source === 'backfill' && (
-              <span className="text-9px font-mono font-semibold px-2 py-0.5 rounded flex items-center gap-1"
+              <span className="text-11px font-mono font-semibold px-2 py-0.5 rounded flex items-center gap-1"
                 style={{ background: 'rgba(141,180,226,0.1)', color: '#8db4e2', border: '1px solid rgba(141,180,226,0.3)' }}>
                 <History className="w-2.5 h-2.5" /> Retroativa
               </span>
@@ -246,12 +264,12 @@ function HistoryCard({ op, eventCtx = null }) {
             {op.exit_ambiguous && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="text-9px font-mono font-semibold px-2 py-0.5 rounded cursor-help" tabIndex={0}
+                  <span className="text-11px font-mono font-semibold px-2 py-0.5 rounded cursor-help" tabIndex={0}
                     style={{ background: 'rgba(141,180,226,0.1)', color: '#8db4e2', border: '1px solid rgba(141,180,226,0.3)' }}>
                     ℹ️ Situação rara
                   </span>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                   Nessa vela, o preço tocou o stop e o take ao mesmo tempo — veja detalhes ao expandir
                 </TooltipContent>
               </Tooltip>
@@ -263,10 +281,10 @@ function HistoryCard({ op, eventCtx = null }) {
               clareza acima). Trunca em 2 linhas em telas estreitas em vez de
               forçar o card a crescer descontroladamente; o texto completo +
               evidência numérica continuam no expand pra quem quiser mais. */}
-          <p className="mt-1 text-9px font-mono leading-relaxed line-clamp-2" style={{ color: 'rgba(255,255,255,0.62)' }}>
+          <p className="mt-1 text-11px font-mono leading-relaxed line-clamp-2" style={{ color: 'rgba(255,255,255,0.62)' }}>
             💡 {whyText}
           </p>
-          <div className="flex items-center gap-3 mt-1 text-8px font-mono text-muted-foreground flex-wrap">
+          <div className="flex items-center gap-3 mt-1 text-11px font-mono text-muted-foreground flex-wrap">
             <span>📍 ${formatPrice(op.entry_price)}</span>
             {exitPrice && <span>🚪 ${formatPrice(exitPrice)}</span>}
             {rr && (
@@ -274,7 +292,7 @@ function HistoryCard({ op, eventCtx = null }) {
                 <TooltipTrigger asChild>
                   <span className="cursor-help" tabIndex={0}>⚖️ RR 1:{rr}</span>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                   "R" é a unidade de risco de uma operação: 1R = o valor que seria perdido se o stop fosse atingido. "R:R 1:{rr}" significa que o alvo vale {rr}× o que se arrisca no stop.
                 </TooltipContent>
               </Tooltip>
@@ -293,11 +311,12 @@ function HistoryCard({ op, eventCtx = null }) {
             <div className="text-base font-mono font-bold" style={{ color: isBE ? '#e3b45a' : pnl >= 0 ? '#5db586' : '#e06a5b' }}>
               {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
               {realizedR !== null && (
-                <span className="text-10px font-normal opacity-70"> · {realizedR >= 0 ? '+' : ''}{realizedR.toFixed(2)}R</span>
+                <span className="text-11px font-normal opacity-70"> · {realizedR >= 0 ? '+' : ''}{realizedR.toFixed(2)}R</span>
               )}
             </div>
           ) : <div className="text-sm font-mono text-muted-foreground">—</div>}
-          {op.score > 0 && <div className="text-9px font-mono text-muted-foreground">score {op.score}/100</div>}
+          {realizedR !== null && <RBar r={realizedR} color={isBE ? '#e3b45a' : pnl >= 0 ? '#5db586' : '#e06a5b'} />}
+          {op.score > 0 && <div className="text-11px font-mono text-muted-foreground">score {op.score}/100</div>}
         </div>
 
         <span className="text-muted-foreground">{expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}</span>
@@ -310,10 +329,10 @@ function HistoryCard({ op, eventCtx = null }) {
               que a entrada real aconteceu no passado, detectada só ao
               adicionar/reativar o ativo, não pega ao vivo pelo scan normal. */}
           {op.source === 'backfill' && (
-            <div className="rounded-lg px-3 py-2 flex items-start gap-2"
+            <div className="rounded-md px-3 py-2 flex items-start gap-2"
               style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.25)' }}>
               <History className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#8db4e2' }} />
-              <p className="text-10px font-mono leading-relaxed" style={{ color: '#8db4e2' }}>
+              <p className="text-11px font-mono leading-relaxed" style={{ color: '#8db4e2' }}>
                 Detectada retroativamente{op.backfill_entry_lag_ms != null ? ` — entrada real foi há ${formatBackfillLag(op.backfill_entry_lag_ms)}` : ''}. Não foi pega ao vivo: o ativo foi adicionado/reativado depois, e o Sentinel reconstruiu a operação a partir do histórico.
               </p>
             </div>
@@ -326,20 +345,21 @@ function HistoryCard({ op, eventCtx = null }) {
               já estava encerrada quando isso foi detectado. Puramente
               informativo, mesmo padrão do banner de backfill acima. */}
           {op.exit_ambiguous && (
-            <div className="rounded-lg px-3 py-2 flex items-start gap-2"
+            <div className="rounded-md px-3 py-2 flex items-start gap-2"
               style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.25)' }}>
               <span className="shrink-0 mt-0.5">ℹ️</span>
-              <p className="text-10px font-mono leading-relaxed" style={{ color: '#8db4e2' }}>
+              <p className="text-11px font-mono leading-relaxed" style={{ color: '#8db4e2' }}>
                 Nessa vela, o preço tocou o stop e o take ao mesmo tempo — o gráfico não mostra qual foi primeiro de verdade. Por segurança, o sistema sempre considera que o stop aconteceu primeiro nesses casos raros. Essa operação já foi encerrada com esse resultado.
               </p>
             </div>
           )}
 
           {/* Item 291 — "A história deste trade": o que aconteceu, em ordem e em frases simples (campos que a operação já tem). */}
+          {/* Duas colunas em tela larga (antes: uma fila única de 8 blocos): à esquerda o que aconteceu e os números (história, preços, marcos,
+              linha do tempo, motivos); à direita a conta (o que o sistema via na entrada, plano × realizado, como o resultado foi formado). */}
+          <div className="grid gap-3 lg:grid-cols-2 items-start">
+          <div className="space-y-3 min-w-0">
           <TradeStory op={op} />
-
-          {/* Item 292 — o que o sistema via na entrada, plano × realizado e a conta do resultado (bruto → custos → líquido). */}
-          <TradeContext op={op} />
 
           {/* Price breakdown grid — só TP1/TP2 precisam de tooltip
               (Entrada/Stop Inicial já são autoexplicativos). Texto
@@ -354,18 +374,18 @@ function HistoryCard({ op, eventCtx = null }) {
               { label: '🎯 TP1', value: op.tp1, color: op.tp1_hit ? '#5db586' : '#e3b45a', tooltip: getTp1Tooltip(op) },
               { label: '🏆 TP2', value: op.tp2, color: op.tp2_hit ? '#5db586' : 'rgba(227,180,90,0.6)', tooltip: getTp2Tooltip(op) },
             ].map(({ label, value, color, tooltip }) => (
-              <div key={label} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div key={label} className="rounded-md px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 {tooltip ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <div className="text-9px font-mono text-muted-foreground cursor-help" tabIndex={0}>{label}</div>
+                      <div className="text-11px font-mono text-muted-foreground cursor-help" tabIndex={0}>{label}</div>
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                    <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                       {tooltip}
                     </TooltipContent>
                   </Tooltip>
                 ) : (
-                  <div className="text-9px font-mono text-muted-foreground">{label}</div>
+                  <div className="text-11px font-mono text-muted-foreground">{label}</div>
                 )}
                 <div className="text-sm font-mono font-bold mt-0.5" style={{ color }}>{value ? `$${formatPrice(value)}` : '—'}</div>
               </div>
@@ -373,14 +393,14 @@ function HistoryCard({ op, eventCtx = null }) {
           </div>
 
           {/* Milestones */}
-          <div className="flex flex-wrap gap-2 text-9px font-mono">
+          <div className="flex flex-wrap gap-2 text-11px font-mono">
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="px-2 py-1 rounded cursor-help" tabIndex={0} style={{ background: op.tp1_hit ? 'rgba(93,181,134,0.1)' : 'rgba(255,255,255,0.04)', color: op.tp1_hit ? '#5db586' : 'rgba(255,255,255,0.55)', border: `1px solid ${op.tp1_hit ? 'rgba(93,181,134,0.25)' : 'rgba(255,255,255,0.06)'}` }}>
                   {op.tp1_hit ? '✅' : '○'} TP1
                 </span>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                 {getTp1Tooltip(op)}
               </TooltipContent>
             </Tooltip>
@@ -390,7 +410,7 @@ function HistoryCard({ op, eventCtx = null }) {
                   {op.tp2_hit ? '✅' : '○'} TP2
                 </span>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                 {getTp2Tooltip(op)}
               </TooltipContent>
             </Tooltip>
@@ -409,7 +429,7 @@ function HistoryCard({ op, eventCtx = null }) {
               return (
                 <Tooltip>
                   <TooltipTrigger asChild>{chip}</TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                  <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                     Indicador que filtra o ruído do preço e define uma banda de tendência: o sistema só considera um movimento válido quando o preço rompe essa banda de forma consistente.
                   </TooltipContent>
                 </Tooltip>
@@ -426,7 +446,7 @@ function HistoryCard({ op, eventCtx = null }) {
                     ⬆️ Máx. a favor (MFE) {op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R
                   </span>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                   Maior lucro flutuante já visto nesta operação, em múltiplos do risco inicial (R)
                 </TooltipContent>
               </Tooltip>
@@ -439,7 +459,7 @@ function HistoryCard({ op, eventCtx = null }) {
                     ⬇️ Máx. contra (MAE) {op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R
                   </span>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                   Maior perda flutuante já vista nesta operação, em múltiplos do risco inicial (R)
                 </TooltipContent>
               </Tooltip>
@@ -447,9 +467,9 @@ function HistoryCard({ op, eventCtx = null }) {
           </div>
 
           {/* Timestamps detalhados */}
-          <div className="rounded-lg px-3 py-2.5 space-y-1.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div className="text-9px font-mono text-muted-foreground mb-1">🕐 Linha do Tempo</div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-9px font-mono">
+          <div className="rounded-md px-3 py-2.5 space-y-1.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="text-11px font-mono text-muted-foreground mb-1">🕐 Linha do Tempo</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-11px font-mono">
               <span className="text-muted-foreground">🟢 Sinal gerado: <span className="text-foreground/60">{moment(op.created_date).format('DD/MM/YY HH:mm:ss')}</span></span>
               {op.tp1_hit_at && (
                 <span className="text-muted-foreground">🎯 TP1 atingido: <span style={{ color: '#5db586' }}>{moment(op.tp1_hit_real_time || op.tp1_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.tp1_hit_price ? ` @ $${formatPrice(op.tp1_hit_price)}` : ''}{op.tp1_hit_real_time && <><CandleBoundTag /><DetectionLag realTime={op.tp1_hit_real_time} detectedAt={op.tp1_hit_at} /></>}</span>
@@ -464,22 +484,29 @@ function HistoryCard({ op, eventCtx = null }) {
                 <span className="text-muted-foreground">🔒 Encerrado em: <span className="text-foreground/60">{moment(op.closed_at_real_time || closedAt).format('DD/MM/YY HH:mm:ss')}</span>{op.closed_at_real_time && <>{(op.status === 'STOP_HIT' || op.status === 'TP2_HIT' || op.closed_reason === 'TP1_FULL') && <CandleBoundTag />}<DetectionLag realTime={op.closed_at_real_time} detectedAt={closedAt} /></>}</span>
               )}
             </div>
-            <div className="text-8px font-mono text-muted-foreground mt-1">
+            <div className="text-11px font-mono text-muted-foreground mt-1">
               🕐 Candle: {op.candle_open_time ? moment(op.candle_open_time).utcOffset(-3).format('DD/MM HH:mm') : '—'} → {op.candle_close_time ? moment(op.candle_close_time).utcOffset(-3).format('HH:mm') : '—'} BRT · {op.candle_status === 'CLOSED' ? '✅ Fechado' : '🕯️ Aberto'}
             </div>
           </div>
 
           {/* Signal reasons */}
           {op.signal_reasons?.length > 0 && (
-            <div className="rounded-lg px-3 py-2.5 space-y-1" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div className="text-9px font-mono text-muted-foreground mb-1.5">🔍 Motivos técnicos que geraram o sinal:</div>
+            <div className="rounded-md px-3 py-2.5 space-y-1" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div className="text-11px font-mono text-muted-foreground mb-1.5">🔍 Motivos técnicos que geraram o sinal:</div>
               {op.signal_reasons.map((r, i) => (
-                <div key={i} className="text-9px font-mono flex items-start gap-1.5" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                <div key={i} className="text-11px font-mono flex items-start gap-1.5" style={{ color: 'rgba(255,255,255,0.55)' }}>
                   <span style={{ color: '#5db586', marginTop: 1 }}>·</span> {r}
                 </div>
               ))}
             </div>
           )}
+
+          </div>
+          <div className="space-y-3 min-w-0">
+          {/* Item 292 — o que o sistema via na entrada, plano × realizado e a conta do resultado (bruto → custos → líquido). */}
+          <TradeContext op={op} />
+          </div>
+          </div>
 
           {/* Motivo de encerramento — só aparece aqui quando NÃO há
               decision_snapshot de EXIT: nesse caso o "por quê" (linha
@@ -490,7 +517,7 @@ function HistoryCard({ op, eventCtx = null }) {
               (TIME_STOP/CHOP_EXIT/INVALIDATION/TP1_FULL) — continua útil de
               propósito nos casos que a explicação nova não cobre. */}
           {!decisionOut && op.closed_reason && (
-            <div className="text-9px font-mono px-3 py-2 rounded-lg" style={{ background: 'rgba(221,154,74,0.06)', border: '1px solid rgba(221,154,74,0.15)', color: '#dd9a4a' }}>
+            <div className="text-11px font-mono px-3 py-2 rounded-md" style={{ background: 'rgba(221,154,74,0.06)', border: '1px solid rgba(221,154,74,0.15)', color: '#dd9a4a' }}>
               ⚠️ Motivo de encerramento: {closedReasonLabel(op) ?? op.closed_reason}
             </div>
           )}
@@ -499,7 +526,7 @@ function HistoryCard({ op, eventCtx = null }) {
               compacta do card (sempre visível, sem clique); aqui só o dado
               medido, pra quem quiser o detalhe granular. */}
           {decisionOut?.evidence && (
-            <div className="text-9px font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(141,180,226,0.04)', border: '1px solid rgba(141,180,226,0.1)', color: 'rgba(141,180,226,0.6)' }}>
+            <div className="text-11px font-mono px-3 py-2 rounded-md leading-relaxed" style={{ background: 'rgba(141,180,226,0.04)', border: '1px solid rgba(141,180,226,0.1)', color: 'rgba(141,180,226,0.6)' }}>
               📐 {decisionOut.evidence}
             </div>
           )}
@@ -516,33 +543,34 @@ function DaySummary({ ops }) {
   const wr = counted > 0 ? Math.round((wins / counted) * 100) : 0;
 
   return (
-    <div className="rounded-md p-4" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
-      <div className="text-10px font-mono text-muted-foreground uppercase tracking-widest mb-3">📅 Resumo do Dia — {moment().format('DD/MM/YYYY')}</div>
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {[
-          { label: 'Total', value: todayOps.length, color: '#8db4e2' },
-          { label: '🏆 Win', value: wins, color: '#5db586' },
-          { label: '🟡 BE', value: be, color: '#e3b45a' },
-          { label: '🛑 Loss', value: losses, color: '#e06a5b' },
-          // Achado da varredura pós-Raio-X (2026-09-27): mesma classe de bug
-          // do M-16 (docs/known-risks.md) — "0%" por falta de operação
-          // fechada no dia não é o mesmo que "0% de acerto", mas usava a
-          // cor de atenção (laranja) igual a um resultado ruim de verdade.
-          // Neutro (mesmo `#8db4e2` já usado em Dashboard.jsx pro card
-          // "Alta Prioridade" quando a contagem é 0) até haver operação
-          // contada.
-          { label: 'Win Rate', value: `${wr}%`, color: counted === 0 ? '#8db4e2' : winRateColor(wr) },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="text-center rounded-lg py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div className="text-9px font-mono text-muted-foreground mb-1">{label}</div>
-            <div className="text-lg font-mono font-bold" style={{ color }}>{value}</div>
-          </div>
-        ))}
+    <div className="rounded-md px-4 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2"
+      style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
+      <div className="flex items-center gap-2">
+        <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
+        <h2 className="text-sm font-semibold text-foreground/80">📅 Resumo do dia</h2>
+        <span className="text-xs font-mono text-muted-foreground">{moment().format('DD/MM/YYYY')}</span>
+      </div>
+      <div className="grid grid-cols-5 gap-2 w-full sm:contents">
+      {[
+        { label: 'Total', value: todayOps.length, color: '#8db4e2' },
+        { label: '🏆 Win', value: wins, color: '#5db586' },
+        { label: '🟡 BE', value: be, color: '#e3b45a' },
+        { label: '🛑 Loss', value: losses, color: '#e06a5b' },
+        // Achado da varredura pós-Raio-X (2026-09-27): mesma classe de bug do M-16 (docs/known-risks.md) — "0%" por falta de operação
+        // fechada no dia não é o mesmo que "0% de acerto", mas usava a cor de atenção (laranja) igual a um resultado ruim de verdade.
+        // Neutro (`#8db4e2`, o mesmo do card "Alta Prioridade" do Dashboard com contagem 0) até haver operação contada.
+        { label: 'Win Rate', value: `${wr}%`, color: counted === 0 ? '#8db4e2' : winRateColor(wr) },
+      ].map(({ label, value, color }) => (
+        <div key={label} className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-2">
+          <span className="text-xs font-mono text-muted-foreground">{label}</span>
+          <span className="text-base font-mono font-medium tabular-nums" style={{ color }}>{value}</span>
+        </div>
+      ))}
       </div>
       {totalPnl !== 0 && (
-        <div className="mt-3 text-center">
-          <span className="text-10px font-mono text-muted-foreground">Performance do dia: </span>
-          <span className="text-sm font-mono font-bold" style={{ color: totalPnl >= 0 ? '#5db586' : '#e06a5b' }}>
+        <div className="w-full sm:w-auto sm:ml-auto flex items-baseline gap-2">
+          <span className="text-xs font-mono text-muted-foreground">Performance do dia:</span>
+          <span className="text-sm font-mono font-medium tabular-nums" style={{ color: totalPnl >= 0 ? '#5db586' : '#e06a5b' }}>
             {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}%
           </span>
         </div>
@@ -563,6 +591,7 @@ export default function TradeHistory() {
   const [showChart, setShowChart] = useState(true);
   const [showOverview, setShowOverview] = useState(true); // item 293 — "Visão geral" (relatório + "Como terminaram")
   const [sortBy, setSortBy] = useState('date_desc');
+  const [filtersOpen, setFiltersOpen] = useState(false); // só importa no celular: lá o painel de filtros começa recolhido (em tela larga fica sempre aberto)
   const eventCtx = useOperationEvents();
 
   const { data: operations = [], isLoading, isError, refetch } = useQuery({
@@ -633,6 +662,18 @@ export default function TradeHistory() {
     copy([header, ...lines].join('\n'));
   };
 
+  // Filtros que estão valendo agora (cada um vira uma etiqueta com ✕ — visível mesmo com o painel recolhido no celular).
+  const activeFilters = [
+    search && { key: 'search', label: `Busca: ${search}`, clear: () => setSearch('') },
+    filterTf !== 'all' && { key: 'tf', label: `Gráfico: ${filterTf.toUpperCase()}`, clear: () => setFilterTf('all') },
+    filterSide !== 'all' && { key: 'side', label: `Lado: ${filterSide}`, clear: () => setFilterSide('all') },
+    filterResult !== 'all' && { key: 'result', label: `Resultado: ${{ win: 'Win', be: 'BE', loss: 'Loss' }[filterResult] ?? filterResult}`, clear: () => setFilterResult('all') },
+    filterDateFrom && { key: 'from', label: `De: ${filterDateFrom}`, clear: () => setFilterDateFrom('') },
+    filterDateTo && { key: 'to', label: `Até: ${filterDateTo}`, clear: () => setFilterDateTo('') },
+    filterMinPnl && { key: 'min', label: `P&L mín: ${filterMinPnl}%`, clear: () => setFilterMinPnl('') },
+    filterMaxPnl && { key: 'max', label: `P&L máx: ${filterMaxPnl}%`, clear: () => setFilterMaxPnl('') },
+  ].filter(Boolean);
+
   const inputStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', outline: 'none', fontFamily: 'monospace', fontSize: 10 };
   const filterBtnStyle = (active) => active
     ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
@@ -643,16 +684,16 @@ export default function TradeHistory() {
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Análise de Performance</p>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">Histórico de Trades</h1>
+          <p className="text-xs text-muted-foreground mb-1">Análise de Performance</p>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Histórico de Trades</h1>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <span className="live-dot" style={{ width: 5, height: 5 }} />
-            <span className="text-10px font-mono text-muted-foreground">{history.length} trades fechados</span>
+            <span className="text-11px font-mono text-muted-foreground">{history.length} trades fechados</span>
           </div>
           <button onClick={handleCopy} disabled={filtered.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all disabled:opacity-40"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-11px font-mono transition-all disabled:opacity-40"
             style={copied
               ? { background: 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.25)', color: '#5db586' }
               : { background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.15)', color: '#8db4e2' }}>
@@ -665,36 +706,48 @@ export default function TradeHistory() {
       {/* Day summary */}
       <DaySummary ops={history} />
 
-      {/* P&L Chart */}
-      {filtered.length > 1 && (
-        <div>
-          <button onClick={() => setShowChart(!showChart)} className="flex items-center gap-2 mb-3 group">
-            <BarChart2 className="w-4 h-4" style={{ color: '#8db4e2' }} />
-            <span className="text-sm font-bold text-foreground/80 group-hover:text-foreground transition-colors">Curva de Capital</span>
-            <span className="text-10px font-mono" style={{ color: '#8db4e2' }}>{showChart ? '▲ esconder' : '▼ mostrar'}</span>
-          </button>
-          {showChart && <PnLChart history={filtered} />}
-        </div>
-      )}
-
       {/* Filters */}
       <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="flex items-center gap-2 text-10px font-mono text-muted-foreground mb-1">
-          <Filter className="w-3 h-3" /> Filtros
+        <div className="flex items-center gap-2">
+          <Filter className="w-3 h-3 text-muted-foreground" />
+          <span className="text-xs font-mono text-muted-foreground">Filtros</span>
+          {activeFilters.length > 0 && (
+            <span className="text-11px font-mono px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(141,180,226,0.1)', color: '#8db4e2' }}>
+              {activeFilters.length} {activeFilters.length === 1 ? 'ativo' : 'ativos'}
+            </span>
+          )}
+          {/* Só no celular. `aria-pressed` e não `aria-expanded` de propósito: os testes abrem um card pelo 1º `[aria-expanded]`. */}
+          <button type="button" onClick={() => setFiltersOpen(!filtersOpen)} aria-pressed={filtersOpen}
+            className="md:hidden ml-auto text-11px font-mono px-2 py-1 rounded-md" style={{ color: '#8db4e2' }}>
+            {filtersOpen ? '▲ ocultar' : '▼ mostrar'}
+          </button>
         </div>
 
+        {activeFilters.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" data-testid="filtros-ativos">
+            {activeFilters.map((f) => (
+              <button key={f.key} type="button" onClick={f.clear} aria-label={`Remover filtro ${f.label}`}
+                className="text-11px font-mono px-2 py-0.5 rounded-md transition-all"
+                style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.25)', color: '#8db4e2' }}>
+                {f.label} ✕
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className={`${filtersOpen ? 'block' : 'hidden'} md:block space-y-3`}>
         <div className="flex flex-wrap gap-2">
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <input type="text" placeholder="Buscar ativo..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-6 pr-3 py-1.5 rounded-lg w-40 text-10px" style={inputStyle} />
+              className="pl-6 pr-3 py-1.5 rounded-md w-40 text-11px" style={inputStyle} />
           </div>
 
           {/* Timeframe */}
           {['all', '1h', '4h', '1d'].map(tf => (
             <button key={tf} onClick={() => setFilterTf(tf)}
-              className="text-10px font-mono px-2 py-1.5 rounded-lg transition-all"
+              className="text-11px font-mono px-2 py-1.5 rounded-md transition-all"
               style={filterBtnStyle(filterTf === tf)}>
               {tf === 'all' ? 'Todos TF' : tf.toUpperCase()}
             </button>
@@ -705,7 +758,7 @@ export default function TradeHistory() {
           {/* Side */}
           {[{ id: 'all', label: 'Todos' }, { id: 'BUY', label: '▲ BUY' }, { id: 'SELL', label: '▼ SELL' }].map(s => (
             <button key={s.id} onClick={() => setFilterSide(s.id)}
-              className="text-10px font-mono px-2 py-1.5 rounded-lg transition-all"
+              className="text-11px font-mono px-2 py-1.5 rounded-md transition-all"
               style={filterSide === s.id && s.id === 'BUY' ? { background: 'rgba(93,181,134,0.12)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }
                 : filterSide === s.id && s.id === 'SELL' ? { background: 'rgba(224,106,91,0.12)', border: '1px solid rgba(224,106,91,0.3)', color: '#e06a5b' }
                 : filterBtnStyle(filterSide === s.id)}>
@@ -718,7 +771,7 @@ export default function TradeHistory() {
           {/* Result */}
           {[{ id: 'all', label: 'Todos' }, { id: 'win', label: '🏆 Win' }, { id: 'be', label: '🟡 BE' }, { id: 'loss', label: '🛑 Loss' }].map(r => (
             <button key={r.id} onClick={() => setFilterResult(r.id)}
-              className="text-10px font-mono px-2 py-1.5 rounded-lg transition-all"
+              className="text-11px font-mono px-2 py-1.5 rounded-md transition-all"
               style={filterBtnStyle(filterResult === r.id)}>
               {r.label}
             </button>
@@ -726,23 +779,23 @@ export default function TradeHistory() {
         </div>
 
         <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-9px font-mono text-muted-foreground">Data:</span>
+          <span className="text-11px font-mono text-muted-foreground">Data:</span>
           <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
-            className="px-2 py-1 rounded-lg text-10px" style={inputStyle} />
-          <span className="text-9px font-mono text-muted-foreground">até</span>
+            className="px-2 py-1 rounded-md text-11px" style={inputStyle} />
+          <span className="text-11px font-mono text-muted-foreground">até</span>
           <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
-            className="px-2 py-1 rounded-lg text-10px" style={inputStyle} />
+            className="px-2 py-1 rounded-md text-11px" style={inputStyle} />
 
-          <span className="text-9px font-mono text-muted-foreground ml-2">P&L%:</span>
+          <span className="text-11px font-mono text-muted-foreground ml-2">P&L%:</span>
           <input type="number" placeholder="min" value={filterMinPnl} onChange={e => setFilterMinPnl(e.target.value)}
-            className="px-2 py-1 rounded-lg w-16 text-10px" style={inputStyle} />
-          <span className="text-9px font-mono text-muted-foreground">a</span>
+            className="px-2 py-1 rounded-md w-16 text-11px" style={inputStyle} />
+          <span className="text-11px font-mono text-muted-foreground">a</span>
           <input type="number" placeholder="max" value={filterMaxPnl} onChange={e => setFilterMaxPnl(e.target.value)}
-            className="px-2 py-1 rounded-lg w-16 text-10px" style={inputStyle} />
+            className="px-2 py-1 rounded-md w-16 text-11px" style={inputStyle} />
 
-          <span className="text-9px font-mono text-muted-foreground ml-2">Ordenar:</span>
+          <span className="text-11px font-mono text-muted-foreground ml-2">Ordenar:</span>
           <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-            className="px-2 py-1 rounded-lg text-10px" style={inputStyle}>
+            className="px-2 py-1 rounded-md text-11px" style={inputStyle}>
             <option value="date_desc">📅 Mais recente</option>
             <option value="date_asc">📅 Mais antigo</option>
             <option value="pnl_desc">💹 Maior P&L</option>
@@ -752,17 +805,58 @@ export default function TradeHistory() {
 
           {(search || filterTf !== 'all' || filterSide !== 'all' || filterResult !== 'all' || filterDateFrom || filterDateTo || filterMinPnl || filterMaxPnl) && (
             <button onClick={() => { setSearch(''); setFilterTf('all'); setFilterSide('all'); setFilterResult('all'); setFilterDateFrom(''); setFilterDateTo(''); setFilterMinPnl(''); setFilterMaxPnl(''); }}
-              className="text-9px font-mono px-2 py-1 rounded-lg transition-all"
+              className="text-11px font-mono px-2 py-1 rounded-md transition-all"
               style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
               ✕ Limpar
             </button>
           )}
         </div>
+        </div>
       </div>
+
+      {/* Item 293 — "Visão geral": o relatório de performance que já existe em Operações + "Como terminaram", sobre as operações FILTRADAS. */}
+      {filtered.length > 0 && (
+        <div className="space-y-3">
+          {/* Sem `aria-expanded` de propósito: mesmo padrão do botão "Curva de Capital", e os testes desta tela abrem um card pelo 1º `[aria-expanded]` — um
+              segundo antes dos cards abriria/fecharia esta seção em vez do card. O texto "esconder/mostrar" já diz o estado. */}
+          <button onClick={() => setShowOverview(!showOverview)} className="flex items-center gap-2 group">
+            <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
+            <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground transition-colors">Visão geral</span>
+            <span className="text-11px font-mono" style={{ color: '#8db4e2' }}>{showOverview ? '▲ esconder' : '▼ mostrar'}</span>
+            {!showOverview && <span className="text-xs text-muted-foreground">Relatório de performance, curva de capital e como terminaram</span>}
+          </button>
+          {showOverview && (
+            <div className="space-y-4">
+              {counted > 0 && <PerformanceReport trades={filtered} />}
+              {summary.inconclusiveReason === 'sample_too_small' && counted > 0 && (
+                <p className="text-11px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  Poucas operações contadas ({counted}): esses números oscilam muito e não provam vantagem.
+                </p>
+              )}
+              {/* Curva de Capital ao lado de "Como terminaram" (antes ficava solta no topo, acima dos filtros que ela obedece). */}
+              <div className={`grid gap-4 items-start ${filtered.length > 1 ? 'lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]' : ''}`}>
+                {filtered.length > 1 && (
+                  <div className="min-w-0">
+                    {/* Sem `aria-expanded` de propósito: os testes abrem um card pelo 1º `[aria-expanded]`. O texto "esconder/mostrar" diz o estado. */}
+                    <button onClick={() => setShowChart(!showChart)} className="flex items-center gap-2 mb-3 group">
+                      <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
+                      <span className="text-sm font-semibold text-foreground/80 group-hover:text-foreground transition-colors">Curva de Capital</span>
+                      <span className="text-11px font-mono" style={{ color: '#8db4e2' }}>{showChart ? '▲ esconder' : '▼ mostrar'}</span>
+                      {!showChart && <span className="text-xs text-muted-foreground">Performance acumulada dos {filtered.length} trades</span>}
+                    </button>
+                    {showChart && <PnLChart history={filtered} />}
+                  </div>
+                )}
+                <OutcomeBreakdown ops={filtered} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Summary strip */}
       {filtered.length > 0 && (
-        <div className="flex flex-wrap items-center gap-4 px-4 py-2.5 rounded-md text-10px font-mono"
+        <div className="flex flex-wrap items-center gap-4 px-4 py-2.5 rounded-md text-11px font-mono"
           style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
           <span className="text-muted-foreground">{filtered.length} trades</span>
           <span style={{ color: '#5db586' }}>🏆 {wins} win</span>
@@ -779,7 +873,7 @@ export default function TradeHistory() {
                   ⚠️ {ambiguousCount} ambíguo{ambiguousCount !== 1 ? 's' : ''} ({ambiguousPct}%)*
                 </span>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                 Candle fechado tocou stop e TP no mesmo candle (política: stop vence). Calculado sobre as últimas 200 operações carregadas nesta tela — não o histórico completo de produção.
               </TooltipContent>
             </Tooltip>
@@ -792,33 +886,9 @@ export default function TradeHistory() {
 
       {/* Item 293 — o que está dentro da soma acima que não é decisão do motor. Só aparece quando existe alguma. */}
       {filtered.length > 0 && excludedNote && (
-        <p className="-mt-3 px-1 text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
+        <p className="-mt-3 px-1 text-11px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
           {excludedNote} — não são decisões do motor, mas entram nos números desta tela.
         </p>
-      )}
-
-      {/* Item 293 — "Visão geral": o relatório de performance que já existe em Operações + "Como terminaram", sobre as operações FILTRADAS. */}
-      {filtered.length > 0 && (
-        <div className="space-y-3">
-          {/* Sem `aria-expanded` de propósito: mesmo padrão do botão "Curva de Capital", e os testes desta tela abrem um card pelo 1º `[aria-expanded]` — um
-              segundo antes dos cards abriria/fecharia esta seção em vez do card. O texto "esconder/mostrar" já diz o estado. */}
-          <button onClick={() => setShowOverview(!showOverview)} className="flex items-center gap-2 group">
-            <Activity className="w-4 h-4" style={{ color: '#8db4e2' }} />
-            <span className="text-sm font-bold text-foreground/80 group-hover:text-foreground transition-colors">Visão geral</span>
-            <span className="text-10px font-mono" style={{ color: '#8db4e2' }}>{showOverview ? '▲ esconder' : '▼ mostrar'}</span>
-          </button>
-          {showOverview && (
-            <div className="space-y-4">
-              {counted > 0 && <PerformanceReport trades={filtered} />}
-              {summary.inconclusiveReason === 'sample_too_small' && counted > 0 && (
-                <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                  Poucas operações contadas ({counted}): esses números oscilam muito e não provam vantagem.
-                </p>
-              )}
-              <OutcomeBreakdown ops={filtered} />
-            </div>
-          )}
-        </div>
       )}
 
       {/* Trade cards */}
@@ -831,8 +901,8 @@ export default function TradeHistory() {
           <QueryErrorState message="Não foi possível carregar o histórico agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(24,23,21,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <History className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
+        <div className="rounded-md px-5 py-6 flex flex-wrap items-center gap-x-4 gap-y-3" style={{ background: 'rgba(24,23,21,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <History className="w-5 h-5 shrink-0 text-muted-foreground opacity-40" />
           <p className="text-muted-foreground text-sm">Nenhum trade encontrado com esses filtros.</p>
           {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): o botão
               "✕ Limpar" já existia, mas 49 linhas/2 blocos de JSX longe
@@ -840,7 +910,7 @@ export default function TradeHistory() {
               handler, só aparece quando há filtro ativo de verdade. */}
           {(search || filterTf !== 'all' || filterSide !== 'all' || filterResult !== 'all' || filterDateFrom || filterDateTo || filterMinPnl || filterMaxPnl) && (
             <button onClick={() => { setSearch(''); setFilterTf('all'); setFilterSide('all'); setFilterResult('all'); setFilterDateFrom(''); setFilterDateTo(''); setFilterMinPnl(''); setFilterMaxPnl(''); }}
-              className="mt-3 text-9px font-mono px-2.5 py-1.5 rounded-lg transition-all"
+              className="ml-auto text-11px font-mono px-2.5 py-1.5 rounded-md transition-all"
               style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
               ✕ Limpar filtros
             </button>

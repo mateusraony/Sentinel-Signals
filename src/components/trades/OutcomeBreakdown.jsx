@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { Flag } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { buildOutcomeBreakdown } from '@/lib/tradeOutcomesBreakdown';
 
@@ -16,9 +15,9 @@ export default function OutcomeBreakdown({ ops }) {
     <div className="rounded-md p-4" role="group" aria-label="Como terminaram"
       style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
       <div className="flex items-center gap-2 mb-3">
-        <Flag className="w-4 h-4" style={{ color: '#8db4e2' }} />
-        <h2 className="text-base font-bold text-foreground/80">Como terminaram</h2>
-        <span className="text-11px font-mono text-muted-foreground">({total} trades fechados)</span>
+        <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
+        <h2 className="text-sm font-semibold text-foreground/80">Como terminaram</h2>
+        <span className="text-xs font-mono text-muted-foreground">({total} trades fechados)</span>
       </div>
       <ul className="space-y-2">
         {items.map((item) => (

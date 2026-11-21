@@ -63,3 +63,13 @@ describe('OutcomeBreakdown', () => {
     }
   });
 });
+
+describe('OutcomeBreakdown — título com o visual novo (21/11/2026)', () => {
+  it('o título usa o marcador de cor (sem ícone) e as linhas continuam as mesmas', () => {
+    renderOps([STOP_LOSS, TP2]);
+    const grupo = screen.getByRole('group', { name: 'Como terminaram' });
+    expect(grupo.querySelector('svg')).toBeNull();
+    expect(within(grupo).getByRole('heading', { name: 'Como terminaram' }).className).toMatch(/text-sm/);
+    expect(linhas()).toHaveLength(2);
+  });
+});
