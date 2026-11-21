@@ -187,7 +187,7 @@ export default function Verification() {
   // Contagem do badge do cabeçalho é independente do filtro ativo — sem isso,
   // trocar para a aba "Revisadas"/"Puladas" faria o número de pendentes
   // sumir ou ficar desatualizado.
-  const { data: pendingTasks = [], isError: pendingCountError } = useQuery({
+  const { data: pendingTasks = [], isError: pendingCountError, isLoading: pendingCountLoading } = useQuery({
     queryKey: ['verification-tasks-pending-count'],
     queryFn: () => backend.entities.VerificationTask.filter({ status: 'pending' }, '-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
@@ -268,7 +268,8 @@ export default function Verification() {
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.62)' }}>
             pendentes: não verificado
           </span>
-        ) : (
+        ) : !pendingCountLoading && (
+          // Só afirma a contagem (inclusive "nenhuma pendente") depois que ela carregou — antes disso o selo some, como sempre foi.
           <span className="text-xs font-mono px-3 py-1.5 rounded-md"
             style={pendingCount > 0
               ? { background: 'rgba(227,180,90,0.1)', border: '1px solid rgba(227,180,90,0.25)', color: '#e3b45a' }

@@ -448,4 +448,16 @@ describe('Verification — estrutura nova (21/11/2026)', () => {
     const notas = await screen.findByPlaceholderText('Anotações sobre esta revisão...');
     expect(Number(notas.getAttribute('rows'))).toBeGreaterThan(1);
   });
+
+  it('enquanto a contagem de pendentes carrega, o cabeçalho NÃO afirma "nenhuma pendente"; depois de carregar, afirma', async () => {
+    let liberar;
+    verificationTaskFilterMock.mockImplementation(() => new Promise((resolve) => { liberar = () => resolve([]); }));
+    monitoredAssetListMock.mockResolvedValue([]);
+    tradeOperationListMock.mockResolvedValue([]);
+    renderPage(<Verification />);
+    await screen.findByText('Verificação');
+    expect(screen.queryByText('nenhuma pendente')).toBeNull();
+    liberar();
+    expect(await screen.findByText('nenhuma pendente')).toBeTruthy();
+  });
 });
