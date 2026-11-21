@@ -57,7 +57,7 @@ const OUTCOME_COLORS = { WIN: '#5db586', LOSS: '#e06a5b', BE: '#64748b' };
 
 function Section({ title, children }) {
   return (
-    <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+    <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <h2 className="text-sm font-bold text-foreground">{title}</h2>
       {children}
     </div>
@@ -250,7 +250,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
                   <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} />
                   <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
                   <Tooltip
-                    contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                    contentStyle={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                     formatter={(value, name, props) => [`${value}%`, props.payload.symbol ? <span className="inline-flex items-center gap-1"><TokenIcon symbol={props.payload.symbol} size={12} />{props.payload.symbol}</span> : 'cumulativePct']}
                   />
                   <Area type="monotone" dataKey="cumulativePct" stroke={naiveGradColor} strokeWidth={1.5}
@@ -287,7 +287,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
                     pizza mostrava só a contagem bruta, sem % do total —
                     justamente o dado que mais importa numa pizza. */}
                 <Tooltip
-                  contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                  contentStyle={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                   formatter={(value, name) => {
                     const total = outcomePie.reduce((s, d) => s + d.value, 0);
                     const numValue = Number(value);
@@ -368,7 +368,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
                 <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} tickFormatter={v => fmtUsd(v, 0)} />
                 <ReferenceLine y={initialCapital} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
                 <Tooltip
-                  contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                  contentStyle={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                   formatter={(value, name, props) => [fmtUsd(value), props.payload.symbol ? <span className="inline-flex items-center gap-1"><TokenIcon symbol={props.payload.symbol} size={12} />{props.payload.symbol}</span> : 'capital']}
                 />
                 <Area type="monotone" dataKey="capitalAfter" stroke={realGradColor} strokeWidth={1.5}
@@ -450,7 +450,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                 <XAxis type="number" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} />
                 <YAxis type="category" dataKey="reason" width={160} tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
-                <Tooltip contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }} />
+                <Tooltip contentStyle={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }} />
                 <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'monospace' }} />
                 <Bar dataKey="4h_15m" fill="#8db4e2" />
                 <Bar dataKey="1h_5m" fill="#dd9a4a" />
@@ -789,11 +789,11 @@ function RealPeriodTab() {
       {isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
       ) : isError && allOps.length === 0 ? (
-        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar as operações reais agora." onRetry={refetch} />
         </div>
       ) : !report ? (
-        <div className="rounded-md p-10 text-center" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-10 text-center" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <History className="w-8 h-8 mx-auto mb-3 text-muted-foreground opacity-30" />
           <p className="text-muted-foreground text-sm">Nenhuma operação fechada nesse período.</p>
         </div>
@@ -820,7 +820,7 @@ function UploadPanel({ onLoad, error }) {
     <div className="space-y-4">
       <TriggerBacktestPanel onReportReady={onLoad} />
 
-      <div className="rounded-md p-6 space-y-4 max-w-2xl mx-auto" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="rounded-md p-6 space-y-4 max-w-2xl mx-auto" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="text-center space-y-1">
           <FlaskConical className="w-8 h-8 mx-auto text-muted-foreground opacity-30" />
           <h2 className="text-base font-bold text-foreground">Ou carregue um relatório já gerado</h2>

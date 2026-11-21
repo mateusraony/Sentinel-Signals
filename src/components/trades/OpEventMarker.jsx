@@ -15,13 +15,13 @@ export default function OpEventMarker({ op, ctx, now = Date.now() }) {
     <Tooltip>
       <TooltipTrigger asChild>
         <span tabIndex={0} aria-label={`${markerLabel(hit)}. ${explanation}`} data-op-event-marker
-          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-9px font-mono cursor-help self-start"
+          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-11px font-mono cursor-help self-start"
           style={{ color: '#7dd3fc', background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.30)' }}>
           <CalendarClock className="w-3 h-3" aria-hidden="true" />
           {markerLabel(hit)}
         </span>
       </TooltipTrigger>
-      <TooltipContent className="max-w-[280px] text-10px font-mono normal-case tracking-normal leading-relaxed">{explanation}</TooltipContent>
+      <TooltipContent className="max-w-[280px] text-11px font-mono normal-case tracking-normal leading-relaxed">{explanation}</TooltipContent>
     </Tooltip>
   );
 }

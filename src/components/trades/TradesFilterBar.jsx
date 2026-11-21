@@ -16,10 +16,10 @@ const SIDE_OPTIONS = [{ id: 'all', label: 'Todos' }, { id: 'BUY', label: 'BUY' }
 function Group({ label, options, value, onPick, styleOn = (/** @type {string} */ _id) => ON }) {
   return (
     <div className="flex items-center gap-1.5" role="group" aria-label={label}>
-      <span className="text-9px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.55)' }}>{label}</span>
+      <span className="text-xs" style={{ color: 'rgba(255,255,255,0.62)' }}>{label}</span>
       {options.map((option) => (
         <button key={option.id} type="button" onClick={() => onPick(option.id)} aria-pressed={value === option.id}
-          className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
+          className="text-11px font-mono px-2.5 py-1.5 rounded transition-all"
           style={value === option.id ? styleOn(option.id) : OFF}>
           {option.label}
         </button>
@@ -48,22 +48,21 @@ export default function TradesFilterBar({ filters, onChange, onClear, showDetail
   const activeCount = countActiveFilters(filters);
 
   return (
-    <div className="rounded-md px-3 py-2.5 space-y-2" role="search" aria-label="Filtros das operações"
-      style={{ background: 'rgba(10,13,22,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}>
+    <div className="glass-card rounded-md px-3 py-2.5 space-y-2" role="search" aria-label="Filtros das operações">
       <div className="flex items-center gap-x-4 gap-y-2 flex-wrap">
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" aria-hidden="true" />
           <input type="text" placeholder="Buscar operação..." aria-label="Buscar pela moeda" value={filters.search}
             onChange={(e) => onChange({ search: e.target.value })}
-            className="pl-7 pr-3 h-8 w-44 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="pl-7 pr-3 h-8 w-44 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }} />
         </div>
 
         <label className="flex items-center gap-1.5">
           <Calendar className="w-3 h-3 text-muted-foreground shrink-0" aria-hidden="true" />
-          <span className="text-9px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.55)' }}>Período</span>
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.62)' }}>Período</span>
           <select value={filters.period} onChange={(e) => onChange({ period: e.target.value })}
-            className="h-8 px-2 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="h-8 px-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={filters.period !== 'all' ? { ...ON, colorScheme: 'dark' } : { ...OFF, color: 'rgba(255,255,255,0.75)', colorScheme: 'dark' }}>
             {PERIOD_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>
@@ -77,20 +76,20 @@ export default function TradesFilterBar({ filters, onChange, onClear, showDetail
         <Tooltip>
           <TooltipTrigger asChild>
             <button type="button" onClick={onToggleDetails} aria-pressed={showDetails}
-              className="flex items-center gap-1 text-10px font-mono px-2.5 py-1 rounded-md transition-all"
+              className="flex items-center gap-1 text-11px font-mono px-2.5 py-1.5 rounded transition-all"
               style={showDetails ? ON : OFF}>
               {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               {showDetails ? 'Detalhado' : 'Compacto'}
             </button>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
             Abre ou fecha os detalhes técnicos de todos os cards de operação ao mesmo tempo.
           </TooltipContent>
         </Tooltip>
 
         {activeCount > 0 && (
           <button type="button" onClick={onClear}
-            className="flex items-center gap-1 text-10px font-mono px-2.5 py-1 rounded-md transition-all ml-auto"
+            className="flex items-center gap-1 text-11px font-mono px-2.5 py-1.5 rounded transition-all ml-auto"
             style={{ background: 'rgba(227,180,90,0.1)', border: '1px solid rgba(227,180,90,0.35)', color: '#e3b45a' }}>
             <X className="w-3 h-3" aria-hidden="true" />
             Limpar filtros ({activeCount})
@@ -99,7 +98,7 @@ export default function TradesFilterBar({ filters, onChange, onClear, showDetail
       </div>
 
       {activeCount > 0 && (
-        <p className="text-10px font-mono" role="status" style={{ color: '#e3b45a' }}>
+        <p className="text-11px font-mono" role="status" style={{ color: '#e3b45a' }}>
           Filtros ligados — mostrando {counts.activeShown} de {counts.activeTotal} ativas · {counts.analysisShown} de {counts.analysisTotal} avisos · {counts.closedShown} de {counts.closedTotal} fechadas.
         </p>
       )}

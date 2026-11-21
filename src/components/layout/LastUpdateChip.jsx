@@ -23,7 +23,7 @@ export default function LastUpdateChip() {
       data-last-update-chip
       title={`Última vez que a tela leu o banco. Com a aba aberta atualiza a cada ${minutos} min; com a aba em segundo plano ou fechada não atualiza.`}
       className="fixed bottom-[4.5rem] left-3 z-30 whitespace-nowrap rounded-md px-2 py-1 text-10px font-mono text-muted-foreground md:bottom-3 md:left-16"
-      style={{ background: 'rgba(8,10,18,0.7)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.06)' }}
+      style={{ background: 'rgba(20,19,17,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}
     >
       {formatLastUpdate(ultima, agora)}
     </div>

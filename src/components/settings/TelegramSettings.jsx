@@ -109,7 +109,7 @@ export default function TelegramSettings({ open, onClose }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg rounded-lg p-6"
-        style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        style={{ background: 'rgba(24,23,21,0.98)', border: '1px solid rgba(255,255,255,0.08)' }}>
 
         {/* Header */}
         <DialogHeader>

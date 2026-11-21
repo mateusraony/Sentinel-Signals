@@ -204,7 +204,7 @@ emaFastColor  = input.color(#00d8ff,"Cor EMA rápida",       group = groupStyle)
 emaSlowColor  = input.color(#ffb000,"Cor EMA lenta",        group = groupStyle)
 tp1Color      = input.color(#e3b45a,"Cor TP1",              group = groupStyle)
 stopColor     = input.color(#ff3b6b,"Cor Stop",             group = groupStyle)
-debugBgColor  = input.color(#111827,"Cor fundo Debug",      group = groupStyle)
+debugBgColor  = input.color(#1c1b19,"Cor fundo Debug",      group = groupStyle)
 blockedColor  = input.color(#ff9900,"Cor regime bloqueado", group = groupStyle)
 tier1Color    = input.color(#00d8ff,"Cor Tier 1",           group = groupStyle)
 tier2Color    = input.color(#e3b45a,"Cor Tier 2",           group = groupStyle)
@@ -1204,7 +1204,7 @@ export default function PineScript() {
           </div>
 
           <div className="relative rounded-md overflow-hidden" style={{ border: '1px solid rgba(93,181,134,0.15)' }}>
-            <div className="flex items-center gap-2 px-4 py-2" style={{ background: 'rgba(6,8,15,0.9)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="flex items-center gap-2 px-4 py-2" style={{ background: 'rgba(18,17,15,0.9)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
               <Code2 className="w-3 h-3" style={{ color: '#8db4e2' }} />
               <span className="text-9px font-mono" style={{ color: '#8db4e2' }}>NE_RF_v13.2.pine</span>
               <span className="text-8px font-mono px-1.5 py-0.5 rounded ml-2"
@@ -1222,7 +1222,7 @@ export default function PineScript() {
               onChange={e => setCode(e.target.value)}
               spellCheck={false}
               className="w-full font-mono text-11px outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none leading-relaxed p-4"
-              style={{ background: 'rgba(6,8,15,0.95)', color: 'rgba(93,181,134,0.85)', minHeight: '60vh', tabSize: 4 }}
+              style={{ background: 'rgba(18,17,15,0.95)', color: 'rgba(93,181,134,0.85)', minHeight: '60vh', tabSize: 4 }}
             />
           </div>
 
@@ -1261,7 +1261,7 @@ export default function PineScript() {
 
       {activeTab === 'sync' && (
         <div className="space-y-3" id="pine-tabpanel-sync" role="tabpanel" aria-labelledby="pine-tab-sync">
-          <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(93,181,134,0.12)' }}>
+          <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(24,23,21,0.85)', border: '1px solid rgba(93,181,134,0.12)' }}>
             <div className="text-10px font-mono text-muted-foreground uppercase tracking-widest mb-2">🔗 NE RF v13.2 → Sistema</div>
             {syncNotes.map(note => (
               <div key={note.id} className="flex items-start gap-3 py-2.5 px-3 rounded-lg"
@@ -1298,14 +1298,14 @@ export default function PineScript() {
             Parâmetros NE RF v13.2 por ativo — sincronizados com o scanner:
           </div>
           {assets.length === 0 ? (
-            <div className="rounded-md p-8 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="rounded-md p-8 text-center" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <p className="text-sm text-muted-foreground">Nenhum ativo cadastrado.</p>
             </div>
           ) : (
             <div className="space-y-2">
               {assets.map(asset => (
                 <div key={asset.id} className="rounded-md p-4"
-                  style={{ background: 'rgba(10,13,22,0.85)', border: asset.is_active ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(255,255,255,0.05)' }}>
+                  style={{ background: 'rgba(24,23,21,0.85)', border: asset.is_active ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(255,255,255,0.05)' }}>
                   <div className="flex items-center gap-2 mb-3">
                     <span className="font-bold text-sm text-foreground">{asset.display_name}</span>
                     <span className="text-8px font-mono px-1.5 py-0.5 rounded"

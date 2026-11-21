@@ -163,7 +163,7 @@ export default function CorrelationWidget() {
           </button>
           {showAdd && (
             <div className="absolute top-full right-0 mt-1 rounded-lg overflow-hidden z-20 max-h-48 overflow-y-auto"
-              style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 160 }}>
+              style={{ background: 'rgba(24,23,21,0.98)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 160 }}>
               {addableAssets.length === 0 ? (
                 <div className="px-3 py-2 text-11px font-mono text-muted-foreground">Nenhum outro ativo monitorado</div>
               ) : addableAssets.map(a => (
@@ -202,7 +202,7 @@ export default function CorrelationWidget() {
                 />
                 <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} unit="%" width={38} />
                 <Tooltip
-                  contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                  contentStyle={{ background: 'rgba(24,23,21,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                   formatter={(value, name) => [`${value}%`, String(name).replace('USDT', '')]}
                 />
                 <Legend wrapperStyle={{ fontSize: 9, fontFamily: 'monospace' }} formatter={(v) => <span className="inline-flex items-center gap-1"><TokenIcon symbol={String(v)} size={12} />{String(v).replace('USDT', '')}</span>} />

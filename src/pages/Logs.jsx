@@ -124,7 +124,7 @@ export default function Logs() {
           { label: 'Info', value: logs.filter(l => l.level === 'info').length, color: 'rgba(141,180,226,0.7)', icon: Info },
         ].map(({ label, value, color, icon: Icon }) => (
           <div key={label} className="rounded-md px-4 py-3 flex items-center gap-3"
-            style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <Icon className="w-4 h-4 shrink-0" style={{ color }} />
             <div>
               <div className="text-9px font-mono text-muted-foreground">{label}</div>
@@ -135,7 +135,7 @@ export default function Logs() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-md p-3" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="rounded-md p-3" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-center gap-2 flex-wrap">
           <Filter className="w-3 h-3 text-muted-foreground shrink-0" />
 
@@ -199,11 +199,11 @@ export default function Logs() {
           <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       ) : isError && logs.length === 0 ? (
-        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar os logs agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <ScrollText className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhum log encontrado.</p>
         </div>
@@ -214,7 +214,7 @@ export default function Logs() {
             return (
               <div key={log.id}
                 className="flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.012]"
-                style={{ background: i % 2 === 0 ? 'rgba(10,13,22,0.85)' : 'rgba(12,15,24,0.7)', borderTop: i > 0 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}>
+                style={{ background: i % 2 === 0 ? 'rgba(24,23,21,0.85)' : 'rgba(18,17,16,0.7)', borderTop: i > 0 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}>
 
                 <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
                   <span className="text-8px px-1.5 py-0.5 rounded font-bold uppercase tracking-widest"

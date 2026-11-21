@@ -356,12 +356,12 @@ function Spark({ geo }) {
         <path d={geo.line} fill="none" stroke={BTC.from} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {HORIZONS_MIN.map((n) => {
           const p = markerAt(geo, n);
-          return p && <circle key={n} cx={p.x} cy={p.y} r="4.5" fill="#0b1220" stroke={BTC.from} strokeWidth="2.5" />;
+          return p && <circle key={n} cx={p.x} cy={p.y} r="4.5" fill="#151413" stroke={BTC.from} strokeWidth="2.5" />;
         })}
         {hp && (
           <>
             <line x1={hp.x} x2={hp.x} y1={geo.pad} y2={geo.height - geo.pad + 4} stroke="rgba(255,255,255,0.62)" strokeWidth="1" />
-            <circle cx={hp.x} cy={hp.y} r="5" fill={BTC.from} stroke="#0b1220" strokeWidth="2" />
+            <circle cx={hp.x} cy={hp.y} r="5" fill={BTC.from} stroke="#151413" strokeWidth="2" />
           </>
         )}
         {HORIZONS_MIN.map((n) => (
@@ -376,7 +376,7 @@ function Spark({ geo }) {
             left: `${Math.min(78, Math.max(22, (hp.x / geo.width) * 100))}%`,
             top: `${(hp.y / (geo.height + 12)) * 100}%`,
             transform: hp.y < geo.height / 2 ? TIP_BELOW : TIP_ABOVE,
-            background: 'rgba(8,12,22,0.96)', border: `1px solid ${BTC.from}`, boxShadow: '0 8px 24px -8px rgba(0,0,0,0.85)',
+            background: 'rgba(15,14,13,0.96)', border: `1px solid ${BTC.from}`, boxShadow: '0 8px 24px -8px rgba(0,0,0,0.85)',
           }}>
           <span className="block text-sm font-black leading-none" style={{ color: moveColor(hp.pct) }}>{formatMove(hp.pct)}</span>
           <span className="block text-11px text-muted-foreground mt-1">{hp.m === 0 ? 'na divulgação' : `aos ${hp.m} min`}</span>
@@ -510,7 +510,7 @@ export function ResultCard({ e, now, checkedAtMs, btc }) {
           <div className="flex items-start gap-3.5 min-w-0 flex-1 basis-64">
             <span aria-hidden="true" className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-lg p-0.5 select-none"
               style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`, boxShadow: `0 10px 28px -10px ${accent.from}` }}>
-              <span className="w-full h-full rounded-[0.9rem] flex items-center justify-center text-3xl sm:text-4xl" style={{ background: '#0f1522' }}>
+              <span className="w-full h-full rounded-[0.9rem] flex items-center justify-center text-3xl sm:text-4xl" style={{ background: '#181715' }}>
                 {KIND_EMOJI[e.kind]}
               </span>
             </span>
@@ -607,7 +607,7 @@ export function HistoryCard({ e, now, moves = null }) {
           <div className="flex items-center gap-3">
             <span aria-hidden="true" className="w-11 h-11 shrink-0 rounded-md p-0.5 select-none"
               style={{ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})` }}>
-              <span className="w-full h-full rounded-[0.6rem] flex items-center justify-center text-2xl" style={{ background: '#0f1522' }}>{KIND_EMOJI[e.kind]}</span>
+              <span className="w-full h-full rounded-[0.6rem] flex items-center justify-center text-2xl" style={{ background: '#181715' }}>{KIND_EMOJI[e.kind]}</span>
             </span>
             <div className="min-w-0">
               <p className="text-11px font-mono font-bold tracking-wider whitespace-nowrap" style={{ color: accent.from }}>
@@ -702,7 +702,7 @@ export function ReactionPanel({ kind }) {
         </h4>
         <span className="inline-flex items-center rounded-full px-3 py-1 text-11px font-mono font-bold"
           style={strong
-            ? { background: `linear-gradient(90deg, ${accent.from}, ${accent.to})`, color: '#0b1220' }
+            ? { background: `linear-gradient(90deg, ${accent.from}, ${accent.to})`, color: '#151413' }
             : { background: 'rgba(148,163,184,0.14)', border: '1px solid rgba(148,163,184,0.4)', color: '#cbd5e1' }}>
           {n.chip}
         </span>

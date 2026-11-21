@@ -30,8 +30,10 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
   const suffix = filtered ? ' (com os filtros)' : '';
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" role="group" aria-label="Resumo de agora">
+    <div className="grid grid-cols-2 lg:grid-cols-12 gap-3" role="group" aria-label="Resumo de agora">
       <MetricSummaryCard
+        flat
+        className="col-span-2 lg:col-span-4"
         icon={Target}
         label={`Operações ativas${suffix}`}
         value={String(active.total)}
@@ -41,6 +43,8 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
         valueClassName="text-2xl"
       />
       <MetricSummaryCard
+        flat
+        className="col-span-2 lg:col-span-3"
         icon={ShieldCheck}
         label="Se todas baterem no stop"
         value={formatSignedR(sumR) ?? '—'}
@@ -51,6 +55,8 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
         tooltip="Soma, em R, do resultado de cada operação ativa se o preço voltasse e batesse no stop agora. R = quantas vezes o risco inicial da operação (a distância da entrada ao stop inicial). A soma supõe o mesmo risco em todas as operações (o painel não guarda o tamanho de cada posição), é bruta (sem taxas) e supõe saída exatamente no preço do stop."
       />
       <MetricSummaryCard
+        flat
+        className="lg:col-span-2"
         icon={Eye}
         label={`Avisos em análise${suffix}`}
         value={String(analysisCount)}
@@ -60,6 +66,8 @@ export default function TradesNowSummary({ active, analysisCount, closed, filter
         valueClassName="text-2xl"
       />
       <MetricSummaryCard
+        flat
+        className="col-span-2 lg:col-span-3"
         icon={History}
         label={`Fechadas${suffix}`}
         value={String(closed.total)}

@@ -84,7 +84,7 @@ export default function SignalToast({ signals = [], assets = [], onSelectAsset }
           <div key={sig._toastId}
             className={`rounded-md px-4 py-3 pointer-events-auto animate-in slide-in-from-right-4 fade-in duration-300 motion-reduce:animate-none${asset ? ' cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring' : ''}`}
             style={{
-              background: 'rgba(8,10,18,0.97)',
+              background: 'rgba(20,19,17,0.97)',
               border: `1px solid ${borderColor}`,
               boxShadow: 'none',
             }}

@@ -69,7 +69,7 @@ export default function TopBar() {
       <TelegramSettings open={showTelegram} onClose={() => setShowTelegram(false)} />
       <OwnerKeySettings open={showOwnerKey} onClose={() => setShowOwnerKey(false)} />
       <header className="h-14 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30"
-        style={{ background: 'rgba(8,10,18,0.7)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+        style={{ background: 'rgba(20,19,17,0.7)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
       >
       {/* Left */}
       <div className="flex items-center gap-3">

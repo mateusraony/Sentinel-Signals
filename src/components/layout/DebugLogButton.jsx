@@ -52,7 +52,7 @@ export default function DebugLogButton() {
             aria-label="Debug Log"
             className="fixed bottom-20 right-5 md:bottom-5 z-50 w-10 h-10 rounded-full flex items-center justify-center transition-all"
             style={{
-              background: anomalies.length > 0 ? 'rgba(224,106,91,0.15)' : 'rgba(10,13,22,0.9)',
+              background: anomalies.length > 0 ? 'rgba(224,106,91,0.15)' : 'rgba(24,23,21,0.9)',
               border: anomalies.length > 0 ? '1px solid rgba(224,106,91,0.4)' : '1px solid rgba(255,255,255,0.1)',
               boxShadow: anomalies.length > 0 ? '0 0 16px rgba(224,106,91,0.3)' : '0 4px 20px rgba(0,0,0,0.4)',
             }}>
@@ -76,7 +76,7 @@ export default function DebugLogButton() {
           tailwind.config.js — não gerava nenhum posicionamento vertical. */}
       {open && (
         <div className="fixed bottom-32 right-5 md:bottom-20 z-50 w-96 max-w-[95vw] rounded-lg overflow-hidden"
-          style={{ background: 'rgba(8,10,18,0.97)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 40px rgba(0,0,0,0.6)' }}>
+          style={{ background: 'rgba(20,19,17,0.97)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 40px rgba(0,0,0,0.6)' }}>
 
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3"

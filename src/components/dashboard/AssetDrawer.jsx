@@ -332,7 +332,7 @@ export default function AssetDrawer({
       <SheetContent
         side="right"
         className="w-full sm:max-w-md p-0 flex flex-col gap-0"
-        style={{ background: 'rgba(8,10,18,0.97)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(24px)' }}
+        style={{ background: 'rgba(20,19,17,0.97)', border: '1px solid rgba(255,255,255,0.07)' }}
       >
         {/* Header */}
         <SheetHeader

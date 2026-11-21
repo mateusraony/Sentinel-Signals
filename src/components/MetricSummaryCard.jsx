@@ -13,10 +13,37 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 // `valueClassName` existe só porque PerformanceReport.jsx sempre usou
 // `text-2xl` (não `text-xl` como os outros 2 consumidores) — preserva essa
 // única divergência de pixel sem forçar um valor igual pros 3.
-export function MetricSummaryCard({ icon: Icon, label, value, sublabel = undefined, color, glowColor, tooltip = undefined, valueClassName = 'text-xl' }) {
+//
+// Modo `flat` (21/11/2026, aba Trades): cartão plano igual ao do Dashboard — sem ícone, sem brilho no canto, rótulo em frase normal
+// (não em maiúsculas espaçadas) e número em peso médio. Só a aba Trades liga; Backtest e Relatório Mensal seguem no desenho de antes
+// (com as cores novas) até o usuário pedir o mesmo nelas. `className` deixa o chamador dar larguras diferentes aos cartões.
+/** @param {{ icon?: any, label: any, value: any, sublabel?: any, color?: string, glowColor?: string, tooltip?: string, valueClassName?: string, flat?: boolean, className?: string }} props */
+export function MetricSummaryCard({ icon: Icon, label, value, sublabel = undefined, color, glowColor, tooltip = undefined, valueClassName = 'text-xl', flat = false, className = '' }) {
+  if (flat) {
+    return (
+      <div className={`glass-card rounded-md p-4 ${className}`}>
+        <div className="mb-2">
+          {tooltip ? (
+            <Tooltip>
+              <TooltipTrigger type="button" className="text-xs text-muted-foreground cursor-help underline decoration-dotted underline-offset-2 text-left">
+                {label}
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
+                {tooltip}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <span className="text-xs text-muted-foreground">{label}</span>
+          )}
+        </div>
+        <div className={`${valueClassName} font-medium font-mono tabular-nums leading-none`} style={{ color }}>{value}</div>
+        {sublabel && <div className="text-xs text-muted-foreground mt-2">{sublabel}</div>}
+      </div>
+    );
+  }
   return (
-    <div className="rounded-md p-4 relative overflow-hidden"
-      style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+    <div className={`rounded-md p-4 relative overflow-hidden ${className}`}
+      style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="absolute top-0 right-0 w-24 h-24 rounded-full opacity-10"
         style={{ background: `radial-gradient(circle, ${glowColor}, transparent 70%)`, transform: 'translate(30%, -30%)' }} />
       <div className="flex items-center gap-2 mb-2">

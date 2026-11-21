@@ -776,7 +776,7 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
   return (
     <article className="rounded-lg overflow-hidden flex flex-col"
       style={{
-        background: 'rgba(10,13,22,0.85)',
+        background: 'rgba(24,23,21,0.85)',
         border: '1px solid rgba(255,255,255,0.07)',
         borderLeft: `3px solid ${status.color}`,
       }}>
@@ -898,7 +898,7 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
       </div>
 
       {actions && (
-        <div className="mt-auto" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(6,8,15,0.6)' }}>
+        <div className="mt-auto" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(18,17,15,0.6)' }}>
           {actions}
         </div>
       )}
