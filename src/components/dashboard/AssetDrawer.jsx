@@ -17,11 +17,11 @@ import { QueryErrorState } from '@/components/QueryErrorState';
 // cartão e do chip de saúde (item 277).
 
 const STATE_COLOR = {
-  active_op: '#00e5ff',
-  waiting: '#ffd166',
+  active_op: '#8db4e2',
+  waiting: '#e3b45a',
   expired: '#64748b',
   info: '#60a5fa',
-  unavailable: '#ff9f43',
+  unavailable: '#dd9a4a',
   none: 'rgba(255,255,255,0.5)',
 };
 
@@ -38,9 +38,9 @@ function formatBrt(iso) {
 function Level({ label, value, note = null }) {
   return (
     <div className="min-w-0">
-      <div className="text-8px font-mono text-muted-foreground">{label}</div>
-      <div className="text-10px font-mono text-foreground/80">{value === null ? '—' : `$${formatPrice(value)}`}</div>
-      {note && <div className="text-7px font-mono text-muted-foreground/70">{note}</div>}
+      <div className="text-11px font-mono text-muted-foreground">{label}</div>
+      <div className="text-11px font-mono text-foreground/80">{value === null ? '—' : `$${formatPrice(value)}`}</div>
+      {note && <div className="text-10px font-mono text-muted-foreground/70">{note}</div>}
     </div>
   );
 }
@@ -53,9 +53,9 @@ function DecisionSummary({ card, statesUnavailable }) {
 
   if (state.kind === 'loading') {
     return (
-      <section aria-label="Resumo da decisão" className="rounded-xl p-4"
+      <section aria-label="Resumo da decisão" className="rounded-md p-4"
         style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
-        <div className="text-8px font-mono uppercase tracking-wider text-muted-foreground">Estado</div>
+        <div className="text-11px font-mono uppercase tracking-wider text-muted-foreground">Estado</div>
         <div role="status" className="text-sm font-bold text-muted-foreground">{state.label}</div>
       </section>
     );
@@ -63,8 +63,8 @@ function DecisionSummary({ card, statesUnavailable }) {
 
   if (state.kind === 'unavailable') {
     return (
-      <section aria-label="Resumo da decisão" className="rounded-xl"
-        style={{ background: 'rgba(255,159,67,0.05)', border: '1px solid rgba(255,159,67,0.2)' }}>
+      <section aria-label="Resumo da decisão" className="rounded-md"
+        style={{ background: 'rgba(221,154,74,0.05)', border: '1px solid rgba(221,154,74,0.2)' }}>
         <QueryErrorState message={`${state.label} — por isso o estado desta decisão não pode ser afirmado agora.`} />
       </section>
     );
@@ -75,15 +75,15 @@ function DecisionSummary({ card, statesUnavailable }) {
   const sideTf = [state.side, state.timeframe].filter(Boolean).join(' · ');
 
   return (
-    <section aria-label="Resumo da decisão" className="rounded-xl p-4 space-y-3"
+    <section aria-label="Resumo da decisão" className="rounded-md p-4 space-y-3"
       style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${stateColor}33` }}>
       <div>
-        <div className="text-8px font-mono uppercase tracking-wider text-muted-foreground">Estado</div>
+        <div className="text-11px font-mono uppercase tracking-wider text-muted-foreground">Estado</div>
         <div className="text-sm font-bold" style={{ color: stateColor }}>{state.label}</div>
-        {sideTf && <div className="text-9px font-mono text-muted-foreground">{sideTf}</div>}
+        {sideTf && <div className="text-11px font-mono text-muted-foreground">{sideTf}</div>}
       </div>
 
-      <div className="text-9px font-mono text-muted-foreground">
+      <div className="text-11px font-mono text-muted-foreground">
         {statesUnavailable
           ? 'Último fechamento: não foi possível carregar agora.'
           : quality.lastClose !== null
@@ -98,24 +98,24 @@ function DecisionSummary({ card, statesUnavailable }) {
           <Level label="TP1" value={levels.tp1} />
           <Level label="TP2" value={levels.tp2} />
           <div className="min-w-0">
-            <div className="text-8px font-mono text-muted-foreground">R:R</div>
-            <div className="text-10px font-mono text-foreground/80">{levels.rr === null ? '—' : `1 : ${Number(levels.rr.toFixed(2))}`}</div>
+            <div className="text-11px font-mono text-muted-foreground">R:R</div>
+            <div className="text-11px font-mono text-foreground/80">{levels.rr === null ? '—' : `1 : ${Number(levels.rr.toFixed(2))}`}</div>
           </div>
         </div>
       ) : (
-        <p className="text-9px font-mono text-muted-foreground">Níveis: ainda não definidos — a operação ainda não existe.</p>
+        <p className="text-11px font-mono text-muted-foreground">Níveis: ainda não definidos — a operação ainda não existe.</p>
       )}
 
       {action && (
         <div className="space-y-0.5">
-          <div className="text-10px font-mono font-bold text-foreground/90">{action.headline}</div>
-          <p className="text-9px font-mono text-muted-foreground leading-snug">{action.why}</p>
-          <p className="text-9px font-mono leading-snug" style={{ color: 'rgba(0,229,255,0.75)' }}>{action.userAction}</p>
+          <div className="text-11px font-mono font-bold text-foreground/90">{action.headline}</div>
+          <p className="text-11px font-mono text-muted-foreground leading-snug">{action.why}</p>
+          <p className="text-11px font-mono leading-snug" style={{ color: 'rgba(141,180,226,0.75)' }}>{action.userAction}</p>
         </div>
       )}
 
       {score && (
-        <p className="text-8px font-mono text-muted-foreground/80">
+        <p className="text-11px font-mono text-muted-foreground/80">
           <span className="text-foreground/70">{agreementLabel({ score: score.value })}</span> — {score.note}
         </p>
       )}
@@ -130,8 +130,8 @@ function DecisionSummary({ card, statesUnavailable }) {
 const SCOPE_TAG = { now: 'agora', entry: 'na entrada', signal: 'no sinal' };
 const TF_ORDER = ['1h', '4h', '1d'];
 const DIRECTION_VIEW = {
-  1: { arrow: '↑', word: 'compra', color: 'rgba(0,255,128,0.85)' },
-  [-1]: { arrow: '↓', word: 'venda', color: 'rgba(255,20,120,0.85)' },
+  1: { arrow: '↑', word: 'compra', color: 'rgba(93,181,134,0.85)' },
+  [-1]: { arrow: '↓', word: 'venda', color: 'rgba(224,106,91,0.85)' },
   // 0 = neutro CONHECIDO (o motor gravou "sem direção"); diferente de dado ausente (null → "?").
   0: { arrow: '→', word: 'neutro', color: 'rgba(255,255,255,0.6)' },
 };
@@ -139,13 +139,13 @@ const DIRECTION_VIEW = {
 function Tag({ scope }) {
   const text = SCOPE_TAG[scope];
   if (!text) return null;
-  return <span className="ml-1 text-7px font-mono text-muted-foreground/70">[{text}]</span>;
+  return <span className="ml-1 text-10px font-mono text-muted-foreground/70">[{text}]</span>;
 }
 
 function WhyBlock({ title, children }) {
   return (
     <div className="space-y-1">
-      <div className="text-8px font-mono uppercase tracking-wider text-muted-foreground">{title}</div>
+      <div className="text-11px font-mono uppercase tracking-wider text-muted-foreground">{title}</div>
       {children}
     </div>
   );
@@ -154,11 +154,11 @@ function WhyBlock({ title, children }) {
 function WhySection({ why, consStatus }) {
   const [open, setOpen] = useState(false);
   const { thesis, pros, cons, invalidation, multiTf } = why;
-  const textCls = 'text-9px font-mono text-foreground/80 leading-snug';
-  const emptyCls = 'text-9px font-mono text-muted-foreground leading-snug';
+  const textCls = 'text-11px font-mono text-foreground/80 leading-snug';
+  const emptyCls = 'text-11px font-mono text-muted-foreground leading-snug';
 
   return (
-    <section aria-label="Por quê" className="rounded-xl"
+    <section aria-label="Por quê" className="rounded-md"
       style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
       <button
         type="button"
@@ -167,8 +167,8 @@ function WhySection({ why, consStatus }) {
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-4 py-3 text-left"
       >
-        <span className="text-10px font-mono font-bold text-foreground/90">Por quê?</span>
-        <span aria-hidden="true" className="text-10px font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
+        <span className="text-11px font-mono font-bold text-foreground/90">Por quê?</span>
+        <span aria-hidden="true" className="text-11px font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
       </button>
 
       <div id="decision-why-content" className={`${open ? '' : 'hidden'} px-4 pb-4 space-y-3`}>
@@ -190,7 +190,7 @@ function WhySection({ why, consStatus }) {
               {cons.map(c => (
                 <li key={c.code} className={textCls}>
                   • {c.text}<Tag scope={c.scope} />
-                  {c.evidence && <div className="ml-3 text-8px text-muted-foreground">{c.evidence}</div>}
+                  {c.evidence && <div className="ml-3 text-11px text-muted-foreground">{c.evidence}</div>}
                 </li>
               ))}
             </ul>
@@ -218,16 +218,16 @@ function WhySection({ why, consStatus }) {
               const view = DIRECTION_VIEW[entry?.direction];
               const tag = SCOPE_TAG[entry?.source];
               return (
-                <li key={tf} className="text-9px font-mono"
+                <li key={tf} className="text-11px font-mono"
                   aria-label={`${tf}: ${view ? view.word : 'sem dado'}${tag ? ` (${tag})` : ''}`}>
                   <span className="text-muted-foreground">{tf} </span>
                   <span style={{ color: view ? view.color : 'rgba(255,255,255,0.5)' }}>{view ? view.arrow : '?'}</span>
-                  {view && tag && <span className="ml-0.5 text-7px text-muted-foreground/70">[{tag}]</span>}
+                  {view && tag && <span className="ml-0.5 text-10px text-muted-foreground/70">[{tag}]</span>}
                 </li>
               );
             })}
           </ul>
-          <p className="text-7px font-mono text-muted-foreground/70">↑ compra · ↓ venda · → neutro · ? sem dado</p>
+          <p className="text-10px font-mono text-muted-foreground/70">↑ compra · ↓ venda · → neutro · ? sem dado</p>
         </WhyBlock>
       </div>
     </section>
@@ -243,7 +243,7 @@ const EXECUTOR_LABEL = { browser: 'este navegador', cron: 'o scan agendado (cron
 function Collapsible({ id, title, hint = null, forceMount = true, children }) {
   const [open, setOpen] = useState(false);
   return (
-    <section aria-label={title} className="rounded-xl"
+    <section aria-label={title} className="rounded-md"
       style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
       <button
         type="button"
@@ -252,10 +252,10 @@ function Collapsible({ id, title, hint = null, forceMount = true, children }) {
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-4 py-3 text-left"
       >
-        <span className="text-10px font-mono font-bold text-foreground/90">
+        <span className="text-11px font-mono font-bold text-foreground/90">
           {title}{hint && <span className="ml-2 font-normal text-muted-foreground">{hint}</span>}
         </span>
-        <span aria-hidden="true" className="text-10px font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
+        <span aria-hidden="true" className="text-11px font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
       </button>
       <div id={id} className={`${open ? '' : 'hidden'} px-4 pb-4 space-y-4`}>
         {(open || forceMount) && children}
@@ -266,7 +266,7 @@ function Collapsible({ id, title, hint = null, forceMount = true, children }) {
 
 function TechSection({ card, symbol }) {
   const { source, evaluatedAt } = card.quality;
-  const textCls = 'text-9px font-mono text-foreground/80 leading-snug';
+  const textCls = 'text-11px font-mono text-foreground/80 leading-snug';
   return (
     <Collapsible id="decision-tech-content" title="Dados técnicos" forceMount={false}>
       <WhyBlock title="Funding (só informação)">
@@ -280,7 +280,7 @@ function TechSection({ card, symbol }) {
         </ul>
       </WhyBlock>
       <WhyBlock title="Probabilidade">
-        <p className="text-9px font-mono text-muted-foreground leading-snug">
+        <p className="text-11px font-mono text-muted-foreground leading-snug">
           Indisponível — score e histórico não são probabilidade calibrada.
         </p>
       </WhyBlock>
@@ -289,11 +289,11 @@ function TechSection({ card, symbol }) {
 }
 
 const STATUS_CFG = {
-  SIGNAL_CONFIRMED: { label: 'Entrada Confirmada', color: '#00ff80' },
-  RUNNER_ACTIVE:    { label: 'Runner Ativo',        color: '#ffd166' },
-  TP2_HIT:          { label: 'TP2 Atingido',        color: '#00ff80' },
-  STOP_HIT:         { label: 'Stop Atingido',       color: '#ff1478' },
-  INVALIDATED:      { label: 'Invalidado',          color: '#ff9f43' },
+  SIGNAL_CONFIRMED: { label: 'Entrada Confirmada', color: '#5db586' },
+  RUNNER_ACTIVE:    { label: 'Runner Ativo',        color: '#e3b45a' },
+  TP2_HIT:          { label: 'TP2 Atingido',        color: '#5db586' },
+  STOP_HIT:         { label: 'Stop Atingido',       color: '#e06a5b' },
+  INVALIDATED:      { label: 'Invalidado',          color: '#dd9a4a' },
   CLOSED:           { label: 'Encerrado',           color: '#64748b' },
 };
 
@@ -342,10 +342,10 @@ export default function AssetDrawer({
           <div>
             <SheetTitle className="font-bold text-base text-foreground flex items-center gap-2"><TokenIcon symbol={asset.symbol} size={22} />{asset.display_name}</SheetTitle>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-9px font-mono text-muted-foreground">{asset.exchange?.toUpperCase()}</span>
+              <span className="text-11px font-mono text-muted-foreground">{asset.exchange?.toUpperCase()}</span>
               <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: badge.color, boxShadow: `0 0 4px ${badge.color}`, display: 'inline-block' }} />
-                <span className="text-9px font-mono" style={{ color: badge.color }}>{badge.label}</span>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: badge.color, boxShadow: 'none', display: 'inline-block' }} />
+                <span className="text-11px font-mono" style={{ color: badge.color }}>{badge.label}</span>
               </span>
             </div>
           </div>
@@ -361,14 +361,14 @@ export default function AssetDrawer({
             {/* Trade Operations */}
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <Activity className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
+                <Activity className="w-3.5 h-3.5" style={{ color: '#8db4e2' }} />
                 <span className="text-xs font-bold text-foreground">Operações</span>
-                <span className="text-9px font-mono text-muted-foreground">({assetOps.length})</span>
+                <span className="text-11px font-mono text-muted-foreground">({assetOps.length})</span>
               </div>
               {assetOps.length === 0 && tradeOpsUnavailable ? (
-                <p className="text-10px font-mono" style={{ color: '#ff9f43' }}>Não foi possível carregar as operações agora — falha ao atualizar.</p>
+                <p className="text-11px font-mono" style={{ color: '#dd9a4a' }}>Não foi possível carregar as operações agora — falha ao atualizar.</p>
               ) : assetOps.length === 0 ? (
-                <p className="text-10px font-mono text-muted-foreground">
+                <p className="text-11px font-mono text-muted-foreground">
                   Nenhuma operação registrada ainda — abre aqui quando o motor confirmar um sinal para este ativo.
                 </p>
               ) : (
@@ -381,16 +381,16 @@ export default function AssetDrawer({
                         style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center gap-2">
-                            <span className="text-10px font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>
+                            <span className="text-11px font-mono font-bold" style={{ color: isBuy ? '#5db586' : '#e06a5b' }}>
                               {isBuy ? <TrendingUp className="inline w-3 h-3 mr-0.5" /> : <TrendingDown className="inline w-3 h-3 mr-0.5" />}
                               {op.side}
                             </span>
-                            <span className="text-9px font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
+                            <span className="text-11px font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
                           </div>
-                          <span className="text-9px font-mono" style={{ color: cfg.color }}>{cfg.label}</span>
+                          <span className="text-11px font-mono" style={{ color: cfg.color }}>{cfg.label}</span>
                         </div>
                         {card.levels && card.levels.opId !== null && card.levels.opId === op.id ? (
-                          <p className="text-9px font-mono text-muted-foreground">Níveis no resumo, acima.</p>
+                          <p className="text-11px font-mono text-muted-foreground">Níveis no resumo, acima.</p>
                         ) : (
                         <div className="grid grid-cols-3 gap-1.5">
                           {[
@@ -399,13 +399,13 @@ export default function AssetDrawer({
                             { l: 'TP2', v: op.tp2 },
                           ].map(({ l, v }) => (
                             <div key={l}>
-                              <div className="text-8px font-mono text-muted-foreground">{l}</div>
-                              <div className="text-10px font-mono text-foreground/70">${formatPrice(v)}</div>
+                              <div className="text-11px font-mono text-muted-foreground">{l}</div>
+                              <div className="text-11px font-mono text-foreground/70">${formatPrice(v)}</div>
                             </div>
                           ))}
                         </div>
                         )}
-                        <div className="text-8px font-mono text-muted-foreground mt-1.5 flex items-center gap-1">
+                        <div className="text-11px font-mono text-muted-foreground mt-1.5 flex items-center gap-1">
                           <Clock className="w-2.5 h-2.5" />
                           {moment(op.created_date).format('DD/MM/YY HH:mm')}
                         </div>
@@ -420,20 +420,20 @@ export default function AssetDrawer({
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="w-3.5 h-3.5 flex items-center justify-center">
-                  <span className="w-2 h-2 rounded-full" style={{ background: '#ffd166', boxShadow: '0 0 4px #ffd166', display: 'inline-block' }} />
+                  <span className="w-2 h-2 rounded-full" style={{ background: '#e3b45a', boxShadow: 'none', display: 'inline-block' }} />
                 </span>
                 <span className="text-xs font-bold text-foreground">Sinais Recentes</span>
-                <span className="text-9px font-mono text-muted-foreground">({assetSignals.length})</span>
+                <span className="text-11px font-mono text-muted-foreground">({assetSignals.length})</span>
               </div>
               {assetSignals.length > 0 && (
-                <p className="text-8px font-mono mb-2" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                <p className="text-11px font-mono mb-2" style={{ color: 'rgba(255,255,255,0.55)' }}>
                   "Confl." = confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
                 </p>
               )}
               {assetSignals.length === 0 && signalsUnavailable ? (
-                <p className="text-10px font-mono" style={{ color: '#ff9f43' }}>Não foi possível carregar os sinais agora — falha ao atualizar.</p>
+                <p className="text-11px font-mono" style={{ color: '#dd9a4a' }}>Não foi possível carregar os sinais agora — falha ao atualizar.</p>
               ) : assetSignals.length === 0 ? (
-                <p className="text-10px font-mono text-muted-foreground">
+                <p className="text-11px font-mono text-muted-foreground">
                   Nenhum sinal registrado ainda — aparece aqui quando o scan encontrar uma oportunidade neste ativo.
                 </p>
               ) : (
@@ -443,25 +443,25 @@ export default function AssetDrawer({
                     return (
                       <div key={sig.id} className="flex items-start gap-2 px-3 py-2 rounded-lg"
                         style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                        <span className="mt-0.5 shrink-0 text-10px font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>
+                        <span className="mt-0.5 shrink-0 text-11px font-mono font-bold" style={{ color: isBuy ? '#5db586' : '#e06a5b' }}>
                           {isBuy ? '↑' : '↓'} {sig.signal_type}
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-8px font-mono text-muted-foreground/60 uppercase tracking-wider">TF</span>
-                            <span className="text-9px font-mono text-muted-foreground">{sig.timeframe?.toUpperCase()}</span>
-                            <span className="text-9px font-mono text-foreground/60">${formatPrice(sig.price_at_signal)}</span>
+                            <span className="text-11px font-mono text-muted-foreground/60 uppercase tracking-wider">TF</span>
+                            <span className="text-11px font-mono text-muted-foreground">{sig.timeframe?.toUpperCase()}</span>
+                            <span className="text-11px font-mono text-foreground/60">${formatPrice(sig.price_at_signal)}</span>
                             {sig.context?.score && (
-                              <span className="text-8px font-mono" style={{ color: '#ffd166' }}>
+                              <span className="text-11px font-mono" style={{ color: '#e3b45a' }}>
                                 Confl. {sig.context.score}
                               </span>
                             )}
                           </div>
-                          <p className="text-8px font-mono text-muted-foreground mt-0.5 leading-tight line-clamp-2">
+                          <p className="text-11px font-mono text-muted-foreground mt-0.5 leading-tight line-clamp-2">
                             <span className="text-muted-foreground/60 uppercase tracking-wider">Motivo: </span>
                             {sig.reason}
                           </p>
-                          <div className="text-8px font-mono text-muted-foreground/60 mt-0.5">
+                          <div className="text-11px font-mono text-muted-foreground/60 mt-0.5">
                             <span className="uppercase tracking-wider">Quando: </span>
                             {moment(sig.created_date).fromNow()}
                           </div>

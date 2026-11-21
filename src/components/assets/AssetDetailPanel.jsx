@@ -23,7 +23,7 @@ function ParamCard({ label, value, pineVar, color, tooltip }) {
         <div className="text-8px font-mono text-muted-foreground uppercase tracking-wider">{label}</div>
       )}
       <div className="text-sm font-mono font-bold mt-0.5" style={{ color: color || 'rgba(255,255,255,0.8)' }}>{value}</div>
-      {pineVar && <div className="text-7px font-mono mt-0.5" style={{ color: 'rgba(0,255,128,0.35)' }}>{pineVar}</div>}
+      {pineVar && <div className="text-7px font-mono mt-0.5" style={{ color: 'rgba(93,181,134,0.35)' }}>{pineVar}</div>}
     </div>
   );
 }
@@ -45,9 +45,9 @@ function TFStateCard({ tf, state, enabled, unavailable = false }) {
     // tela vazia acontece quando a query de `states` só FALHOU ao atualizar.
     return (
       <div className="rounded-lg p-3 text-center"
-        style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${unavailable ? 'rgba(255,159,67,0.2)' : 'rgba(255,255,255,0.04)'}` }}>
+        style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${unavailable ? 'rgba(221,154,74,0.2)' : 'rgba(255,255,255,0.04)'}` }}>
         <div className="text-9px font-mono text-muted-foreground">{tf.toUpperCase()}</div>
-        <div className="text-10px font-mono text-muted-foreground mt-1" style={unavailable ? { color: '#ff9f43' } : undefined}>
+        <div className="text-10px font-mono text-muted-foreground mt-1" style={unavailable ? { color: '#dd9a4a' } : undefined}>
           {unavailable ? 'Falha ao carregar' : 'Sem dados'}
         </div>
       </div>
@@ -55,14 +55,14 @@ function TFStateCard({ tf, state, enabled, unavailable = false }) {
   }
 
   const dir = state.rf_direction;
-  const dirColor = dir === 1 ? '#00ff80' : dir === -1 ? '#ff1478' : '#64748b';
+  const dirColor = dir === 1 ? '#5db586' : dir === -1 ? '#e06a5b' : '#64748b';
   const dirLabel = dir === 1 ? '▲ Bull' : dir === -1 ? '▼ Bear' : '— Neu';
   const rsiZone = state.rsi_zone;
-  const rsiColor = rsiZone === 'overbought' ? '#ff1478' : rsiZone === 'oversold' ? '#00ff80' : 'rgba(255,255,255,0.6)';
+  const rsiColor = rsiZone === 'overbought' ? '#e06a5b' : rsiZone === 'oversold' ? '#5db586' : 'rgba(255,255,255,0.6)';
   const macdH = state.macd_histogram || 0;
-  const macdColor = macdH > 0 ? '#00ff80' : macdH < 0 ? '#ff1478' : '#64748b';
+  const macdColor = macdH > 0 ? '#5db586' : macdH < 0 ? '#e06a5b' : '#64748b';
   const emaTrend = state.trend_ema;
-  const emaColor = emaTrend === 'bullish' ? '#00ff80' : emaTrend === 'bearish' ? '#ff1478' : '#64748b';
+  const emaColor = emaTrend === 'bullish' ? '#5db586' : emaTrend === 'bearish' ? '#e06a5b' : '#64748b';
 
   return (
     <div className="rounded-lg p-3 space-y-2"
@@ -75,7 +75,7 @@ function TFStateCard({ tf, state, enabled, unavailable = false }) {
       <div className="space-y-1 text-9px font-mono">
         <div className="flex justify-between">
           <span className="text-muted-foreground">RF Value</span>
-          <span style={{ color: 'rgba(0,229,255,0.7)' }}>${formatPrice(state.rf_filter_value)}</span>
+          <span style={{ color: 'rgba(141,180,226,0.7)' }}>${formatPrice(state.rf_filter_value)}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">RF Band</span>
@@ -151,20 +151,20 @@ export default function AssetDetailPanel({ asset, states, expanded, onToggle, st
   if (!expanded) return null;
 
   return (
-    <div className="mt-3 rounded-xl p-4 space-y-4"
+    <div className="mt-3 rounded-md p-4 space-y-4"
       style={{ background: 'rgba(6,8,15,0.6)', border: '1px solid rgba(255,255,255,0.04)' }}>
 
       {/* Section: RF Parameters */}
       <div>
         <div className="flex items-center gap-1.5 mb-2">
-          <Sliders className="w-3 h-3" style={{ color: '#00e5ff' }} />
+          <Sliders className="w-3 h-3" style={{ color: '#8db4e2' }} />
           <span className="text-9px font-mono font-bold text-muted-foreground uppercase tracking-wider">
             Parâmetros Range Filter
           </span>
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-          <ParamCard label="RF Period" value={asset.rf_period ?? 20} pineVar="rng_per" color="#00e5ff" />
-          <ParamCard label="RF Mult" value={asset.rf_multiplier ?? 3.5} pineVar="rng_qty" color="#00e5ff" />
+          <ParamCard label="RF Period" value={asset.rf_period ?? 20} pineVar="rng_per" color="#8db4e2" />
+          <ParamCard label="RF Mult" value={asset.rf_multiplier ?? 3.5} pineVar="rng_qty" color="#8db4e2" />
           <ParamCard label="RSI Period" value={asset.rsi_period ?? 14} pineVar="rsiLen"
             tooltip="RSI (Índice de Força Relativa): nº de candles usados no cálculo do indicador." />
           <ParamCard label="RSI OB/OS" value={`${asset.rsi_overbought ?? 70}/${asset.rsi_oversold ?? 30}`}
@@ -191,7 +191,7 @@ export default function AssetDetailPanel({ asset, states, expanded, onToggle, st
             return (
               <span key={tf} className="px-1.5 py-0.5 rounded font-bold"
                 style={enabled
-                  ? { background: 'rgba(0,255,128,0.1)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.2)' }
+                  ? { background: 'rgba(93,181,134,0.1)', color: '#5db586', border: '1px solid rgba(93,181,134,0.2)' }
                   : { background: 'rgba(255,255,255,0.03)', color: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 {tf.toUpperCase()}
               </span>
@@ -203,7 +203,7 @@ export default function AssetDetailPanel({ asset, states, expanded, onToggle, st
       {/* Section: Per-TF State */}
       <div>
         <div className="flex items-center gap-1.5 mb-2">
-          <Activity className="w-3 h-3" style={{ color: '#00ff80' }} />
+          <Activity className="w-3 h-3" style={{ color: '#5db586' }} />
           <span className="text-9px font-mono font-bold text-muted-foreground uppercase tracking-wider">
             Estado por Timeframe
           </span>

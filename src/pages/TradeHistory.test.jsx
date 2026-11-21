@@ -141,7 +141,7 @@ describe('TradeHistory — Win Rate "0%" sem operação contada não usa mais co
 
     await screen.findByText('Resumo do Dia', { exact: false });
     const wrValue = screen.getByText('0%');
-    expect(wrValue.style.color).toBe('rgb(0, 229, 255)');
+    expect(wrValue.style.color).toBe('rgb(141, 180, 226)');
   });
 
   it('REGRESSÃO: a "Summary strip" mostra "WR 0%" em cor neutra quando não há operação contada', async () => {
@@ -150,7 +150,7 @@ describe('TradeHistory — Win Rate "0%" sem operação contada não usa mais co
     renderPage(<TradeHistory />);
 
     const wr = await screen.findByText('WR 0%');
-    expect(wr.style.color).toBe('rgb(0, 229, 255)');
+    expect(wr.style.color).toBe('rgb(141, 180, 226)');
   });
 });
 
@@ -351,7 +351,7 @@ describe('TradeHistory — badge de Stop com outcome WIN aparece verde, não ver
 
     await screen.findByText('BTC/USDT');
     const badge = screen.getByText('🛑 Stop');
-    expect(badge.style.color).toBe('rgb(0, 255, 128)');
+    expect(badge.style.color).toBe('rgb(93, 181, 134)');
   });
 });
 
@@ -598,7 +598,7 @@ describe('TradeHistory — contexto da entrada, plano × realizado e formação 
     expect(itens[1]).toBe('Custos estimados: -0.02R (-0.12%)');
     expect(itens[2]).toBe('Resultado final (líquido): -1.02R (-5.12%)');
     // O sinal já está no texto; a cor só reforça: perda em rosa.
-    expect(corDoLiquido(resultado)).toMatch(/#ff1478|rgb\(255, 20, 120\)/i);
+    expect(corDoLiquido(resultado)).toMatch(/#e06a5b|rgb\(224, 106, 91\)/i);
     expect(resultado.textContent).toMatch(/Custos estimados pelo modelo do painel \(taxa 0\.05% na entrada e 0\.05% na saída/);
     expect(resultado.textContent).toMatch(/não são o extrato da corretora/);
   });
@@ -610,7 +610,7 @@ describe('TradeHistory — contexto da entrada, plano × realizado e formação 
     expect(itens[0]).toBe('Resultado bruto (antes dos custos): +0.75R (+3.75%)');
     expect(itens[1]).toBe('· 50% fechado no TP1: +0.75R');
     expect(itens[2]).toBe('· 50% restante, até a saída: +0.00R');
-    expect(corDoLiquido(resultado)).toMatch(/#00ff80|rgb\(0, 255, 128\)/i); // ganho em verde
+    expect(corDoLiquido(resultado)).toMatch(/#5db586|rgb\(93, 181, 134\)/i); // ganho em verde
   });
 
   it('operação legada: sem bloco de entrada, e o que sobra não traz "undefined", "NaN" nem "0/100"', async () => {
@@ -669,7 +669,7 @@ describe('TradeHistory — selo "Aberta durante <evento>"', () => {
     expect(document.querySelectorAll('[data-op-event-marker]').length).toBe(1);
     expect(selo.closest('[data-op-event-marker]').getAttribute('aria-label')).toMatch(/não diz que o evento mexeu no resultado/);
     // o selo está no card do BTC, não no do ETH
-    expect(within(selo.closest('div.rounded-xl')).getByText('BTC/USDT')).toBeTruthy();
+    expect(within(selo.closest('div.rounded-md')).getByText('BTC/USDT')).toBeTruthy();
   });
 
   it('sem o histórico de datas a tela é a mesma de sempre, sem selo', async () => {

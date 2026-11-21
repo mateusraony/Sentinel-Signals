@@ -75,19 +75,18 @@ export default function SignalToast({ signals = [], assets = [], onSelectAsset }
         const isBuy = sig.signal_type === 'BUY';
         const symbol = sig.symbol?.replace('USDT', '/USDT') || sig.symbol;
         const score = sig.context?.score || 0;
-        const borderColor = isBuy ? 'rgba(0,255,128,0.5)' : 'rgba(255,20,120,0.5)';
-        const glowColor = isBuy ? 'rgba(0,255,128,0.15)' : 'rgba(255,20,120,0.15)';
-        const textColor = isBuy ? '#00ff80' : '#ff1478';
+        const borderColor = isBuy ? 'rgba(93,181,134,0.5)' : 'rgba(224,106,91,0.5)';
+        const glowColor = isBuy ? 'rgba(93,181,134,0.15)' : 'rgba(224,106,91,0.15)';
+        const textColor = isBuy ? '#5db586' : '#e06a5b';
         const asset = assets.find(a => a.id === sig.asset_id);
 
         return (
           <div key={sig._toastId}
-            className={`rounded-xl px-4 py-3 pointer-events-auto animate-in slide-in-from-right-4 fade-in duration-300 motion-reduce:animate-none${asset ? ' cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring' : ''}`}
+            className={`rounded-md px-4 py-3 pointer-events-auto animate-in slide-in-from-right-4 fade-in duration-300 motion-reduce:animate-none${asset ? ' cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring' : ''}`}
             style={{
               background: 'rgba(8,10,18,0.97)',
               border: `1px solid ${borderColor}`,
-              boxShadow: `0 0 24px ${glowColor}, 0 4px 20px rgba(0,0,0,0.5)`,
-              backdropFilter: 'blur(20px)',
+              boxShadow: 'none',
             }}
             onClick={() => asset && onSelectAsset?.(asset)}
             {...(asset ? {
@@ -101,7 +100,7 @@ export default function SignalToast({ signals = [], assets = [], onSelectAsset }
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="flex items-center justify-center w-7 h-7 rounded-lg shrink-0"
-                  style={{ background: isBuy ? 'rgba(0,255,128,0.12)' : 'rgba(255,20,120,0.12)', border: `1px solid ${borderColor}` }}>
+                  style={{ background: isBuy ? 'rgba(93,181,134,0.12)' : 'rgba(224,106,91,0.12)', border: `1px solid ${borderColor}` }}>
                   {isBuy
                     ? <TrendingUp className="w-3.5 h-3.5" style={{ color: textColor }} />
                     : <TrendingDown className="w-3.5 h-3.5" style={{ color: textColor }} />
@@ -111,17 +110,17 @@ export default function SignalToast({ signals = [], assets = [], onSelectAsset }
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <TokenIcon symbol={sig.symbol} size={16} />
                     <span className="font-bold text-xs text-foreground">{symbol}</span>
-                    <span className="text-9px font-mono px-1.5 py-0.5 rounded"
-                      style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}>
+                    <span className="text-11px font-mono px-1.5 py-0.5 rounded"
+                      style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.62)' }}>
                       {sig.timeframe?.toUpperCase()}
                     </span>
-                    <span className="text-9px font-mono font-bold" style={{ color: textColor }}>
+                    <span className="text-11px font-mono font-bold" style={{ color: textColor }}>
                       {sig.signal_type}
                     </span>
                   </div>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <div className="text-9px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                      <div className="text-11px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#e3b45a' : 'rgba(255,255,255,0.62)' }}>
                         {/* Auditoria do Telegram (2026-09-29), item 1.11 — só
                             RF carrega score real; sem o guard, fontes
                             SMC/MACD/EMA/RSI mostravam "Score 0/100" como se
@@ -136,7 +135,7 @@ export default function SignalToast({ signals = [], assets = [], onSelectAsset }
                         {score > 0 ? `${agreementLabel({ score })} · ` : ''}{NOTIFICATION_STAGES.SIGNAL_DETECTED.label}
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                    <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                       {AGREEMENT_HINT}
                     </TooltipContent>
                   </Tooltip>

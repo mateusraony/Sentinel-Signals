@@ -12,8 +12,8 @@ describe('signalCardStyle', () => {
     expect(s.label).toBe(`${copy.icon} ${copy.badge}`);
     expect(s.label).toBe('⏳ Esperando confirmação');
     expect(s.labelColor).toBe(copy.color);
-    expect(s.border).toMatch(/^rgba\(255,209,102,/);
-    expect(s.glow).toMatch(/rgba\(255,209,102,/);
+    expect(s.border).toMatch(/^rgba\(227,180,90,/);
+    expect(s.glow).toMatch(/rgba\(227,180,90,/);
     expect(s.dimBadge).toBe(false);
   });
 
@@ -42,7 +42,7 @@ describe('signalCardStyle', () => {
   it('a função só recebe a FASE: a cor não pode depender do lado (item 277)', () => {
     expect(signalCardStyle.length).toBe(1);
     const todos = [SIGNAL_PHASE.WAITING, SIGNAL_PHASE.EXPIRED, SIGNAL_PHASE.INFO].map((p) => JSON.stringify(signalCardStyle(p))).join(' ');
-    // nada de verde (#00ff80 / 0,255,128) nem rosa (#ff1478 / 255,20,120), as cores do lado BUY/SELL
+    // nada de verde (#5db586 / 0,255,128) nem rosa (#e06a5b / 255,20,120), as cores do lado BUY/SELL
     expect(todos).not.toMatch(/00ff80|0,255,128|ff1478|255,20,120/i);
   });
 
@@ -54,29 +54,29 @@ describe('signalCardStyle', () => {
 
 describe('reasonColor', () => {
   it('uma cor por família de motivo (esperando amarelo, piorou laranja, app cinza, info azul)', () => {
-    expect(reasonColor(REASON_KIND.WAITING)).toBe('#ffd166');
-    expect(reasonColor(REASON_KIND.WORSE)).toBe('#ff9f43');
+    expect(reasonColor(REASON_KIND.WAITING)).toBe('#e3b45a');
+    expect(reasonColor(REASON_KIND.WORSE)).toBe('#dd9a4a');
     expect(reasonColor(REASON_KIND.APP)).toBe('#94a3b8');
     expect(reasonColor(REASON_KIND.INFO)).toBe('#60a5fa');
     expect(Object.keys(REASON_COLORS).sort()).toEqual(Object.values(REASON_KIND).sort());
   });
   it('família desconhecida cai no amarelo de "esperando" (nunca undefined)', () => {
-    expect(reasonColor('???')).toBe('#ffd166');
-    expect(reasonColor(undefined)).toBe('#ffd166');
+    expect(reasonColor('???')).toBe('#e3b45a');
+    expect(reasonColor(undefined)).toBe('#e3b45a');
   });
 });
 
 describe('reasonColorFor — o motivo de aviso que já passou não pode parecer ativo', () => {
   it('esperando: cor da família do motivo; já passou / só informação: cinza', () => {
-    expect(reasonColorFor(signalCardStyle(SIGNAL_PHASE.WAITING), REASON_KIND.WORSE)).toBe('#ff9f43');
-    expect(reasonColorFor(signalCardStyle(SIGNAL_PHASE.WAITING), REASON_KIND.WAITING)).toBe('#ffd166');
+    expect(reasonColorFor(signalCardStyle(SIGNAL_PHASE.WAITING), REASON_KIND.WORSE)).toBe('#dd9a4a');
+    expect(reasonColorFor(signalCardStyle(SIGNAL_PHASE.WAITING), REASON_KIND.WAITING)).toBe('#e3b45a');
     for (const phase of [SIGNAL_PHASE.EXPIRED, SIGNAL_PHASE.INFO]) {
       expect(reasonColorFor(signalCardStyle(phase), REASON_KIND.WAITING)).toBe('#94a3b8');
       expect(reasonColorFor(signalCardStyle(phase), REASON_KIND.WORSE)).toBe('#94a3b8');
     }
   });
   it('sem estilo: cai na cor da família (nunca lança)', () => {
-    expect(reasonColorFor(null, REASON_KIND.WORSE)).toBe('#ff9f43');
-    expect(reasonColorFor(undefined, undefined)).toBe('#ffd166');
+    expect(reasonColorFor(null, REASON_KIND.WORSE)).toBe('#dd9a4a');
+    expect(reasonColorFor(undefined, undefined)).toBe('#e3b45a');
   });
 });

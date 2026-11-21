@@ -19,8 +19,8 @@ import { SIGNAL_PHASE, REASON_KIND, phaseCopy } from './signalStatus.js';
 
 /** Cor do motivo ("por que ainda não entrou"): mesma família das fases — esperando amarelo, piorou laranja. */
 export const REASON_COLORS = Object.freeze({
-  [REASON_KIND.WAITING]: '#ffd166',
-  [REASON_KIND.WORSE]: '#ff9f43',
+  [REASON_KIND.WAITING]: '#e3b45a',
+  [REASON_KIND.WORSE]: '#dd9a4a',
   [REASON_KIND.APP]: '#94a3b8',
   [REASON_KIND.INFO]: '#60a5fa',
 });
@@ -47,8 +47,8 @@ export function signalCardStyle(phase) {
     phase,
     label: `${copy.icon} ${copy.badge}`,
     labelColor: copy.color,
-    border: waiting ? 'rgba(255,209,102,0.32)' : null,
-    glow: waiting ? '0 0 18px rgba(255,209,102,0.08)' : null,
+    border: waiting ? 'rgba(227,180,90,0.32)' : null,
+    glow: waiting ? '0 0 18px rgba(227,180,90,0.08)' : null,
     dimBadge: !waiting,
     // Motivo de aviso que já passou (ou que nunca vira operação) em cinza: em âmbar pareceria que ainda está valendo.
     reasonMuted: !waiting,

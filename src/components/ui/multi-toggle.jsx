@@ -23,8 +23,8 @@ export default function MultiToggle({ options, selected, onChange }) {
             className={`text-10px font-mono px-2 py-1 rounded-md transition-all${o.tooltip ? ' cursor-help' : ''}`}
             tabIndex={o.tooltip ? 0 : undefined}
             style={on
-              ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.35)', color: '#00e5ff' }
-              : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.35)' }}>
+              ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.35)', color: '#8db4e2' }
+              : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.55)' }}>
             {o.label}
           </button>
         );

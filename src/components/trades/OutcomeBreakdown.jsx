@@ -13,10 +13,10 @@ export default function OutcomeBreakdown({ ops }) {
   if (total === 0) return null;
 
   return (
-    <div className="rounded-xl p-4" role="group" aria-label="Como terminaram"
+    <div className="rounded-md p-4" role="group" aria-label="Como terminaram"
       style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
       <div className="flex items-center gap-2 mb-3">
-        <Flag className="w-4 h-4" style={{ color: '#00e5ff' }} />
+        <Flag className="w-4 h-4" style={{ color: '#8db4e2' }} />
         <h2 className="text-base font-bold text-foreground/80">Como terminaram</h2>
         <span className="text-10px font-mono text-muted-foreground">({total} trades fechados)</span>
       </div>

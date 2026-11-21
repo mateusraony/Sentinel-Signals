@@ -53,11 +53,11 @@ const CAGR_UNAVAILABLE_LABEL = {
   non_positive_final_capital: 'capital final não positivo',
 };
 
-const OUTCOME_COLORS = { WIN: '#00ff80', LOSS: '#ff1478', BE: '#64748b' };
+const OUTCOME_COLORS = { WIN: '#5db586', LOSS: '#e06a5b', BE: '#64748b' };
 
 function Section({ title, children }) {
   return (
-    <div className="rounded-xl p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+    <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <h2 className="text-sm font-bold text-foreground">{title}</h2>
       {children}
     </div>
@@ -139,7 +139,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
 
   // Round 4 da nova varredura pós-Raio-X (2026-09-27): cor por sinal do
   // total acumulado — mesma fórmula de src/components/trades/PnLChart.jsx.
-  const naiveGradColor = equityCurve.length > 0 && equityCurve[equityCurve.length - 1].cumulativePct >= 0 ? '#00ff80' : '#ff1478';
+  const naiveGradColor = equityCurve.length > 0 && equityCurve[equityCurve.length - 1].cumulativePct >= 0 ? '#5db586' : '#e06a5b';
 
   // Operações reais (mesma fonte que opsFromReport usa em backtestAnalysis.js
   // — não muda a forma de overall.curve) alimentando a curva de capital REAL
@@ -161,7 +161,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
 
   // Round 4 da nova varredura pós-Raio-X (2026-09-27): cor por sinal do
   // retorno total (já calculado em equitySim, usado no card "Capital final").
-  const realGradColor = equitySim?.totalReturnPct >= 0 ? '#00ff80' : '#ff1478';
+  const realGradColor = equitySim?.totalReturnPct >= 0 ? '#5db586' : '#e06a5b';
 
   const outcomePie = useMemo(() => {
     if (!overall) return [];
@@ -200,7 +200,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
   return (
     <div className="space-y-5">
       {!costs.conclusive && (
-        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-11px font-mono" style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.3)', color: '#ff9f43' }}>
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-11px font-mono" style={{ background: 'rgba(221,154,74,0.1)', border: '1px solid rgba(221,154,74,0.3)', color: '#dd9a4a' }}>
           <AlertTriangle className="w-4 h-4 shrink-0" />
           RESULTADO INCONCLUSIVO — {inconclusiveLabel}. Win rate e profit factor abaixo são ruído nesta amostra — inclui a curva de capital real mais abaixo.
         </div>
@@ -209,7 +209,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <MetricSummaryCard icon={overall.expectancyR >= 0 ? TrendingUp : TrendingDown} label="Expectância líquida"
           value={fmtR(overall.expectancyR)} sublabel={`bruta: ${fmtR(overall.grossExpectancyR)}`}
-          color={overall.expectancyR >= 0 ? '#00ff80' : '#ff1478'} glowColor={overall.expectancyR >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'}
+          color={overall.expectancyR >= 0 ? '#5db586' : '#e06a5b'} glowColor={overall.expectancyR >= 0 ? 'rgba(93,181,134,0.4)' : 'rgba(224,106,91,0.4)'}
           tooltip="R = resultado da operação dividido pelo risco inicial (distância entre entrada e stop). Expectância líquida é a média de R por operação, já descontando taxa/slippage/funding (ver 'Custo médio' ao lado); 'bruta' é sem esses custos." />
         <MetricSummaryCard icon={Target} label="Taxa de acerto" value={`${overall.winRate.toFixed(1)}%`}
           sublabel={`${overall.wins}W · ${overall.be}BE · ${overall.losses}L`}
@@ -221,9 +221,9 @@ function ReportBody({ report, hideCascadeTable = false }) {
         <MetricSummaryCard icon={TrendingDown} label="Máx. Drawdown" value={fmtPct(-overall.maxDrawdownPct)}
           color={drawdownColor(overall.maxDrawdownPct)} glowColor={metricGlow(drawdownColor(overall.maxDrawdownPct))} />
         <MetricSummaryCard icon={FlaskConical} label="Operações" value={`${overall.counted}`}
-          sublabel={`${report.totalOps} total · ${report.stillOpenAtCutoff} em aberto`} color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
+          sublabel={`${report.totalOps} total · ${report.stillOpenAtCutoff} em aberto`} color="#8db4e2" glowColor="rgba(141,180,226,0.4)" />
         <MetricSummaryCard icon={AlertTriangle} label="Custo médio" value={fmtR(costs.avgCostR)}
-          sublabel={`${costs.totalCostPct?.toFixed(2)}% do capital`} color="#ff9f43" glowColor="rgba(255,159,67,0.4)" />
+          sublabel={`${costs.totalCostPct?.toFixed(2)}% do capital`} color="#dd9a4a" glowColor="rgba(221,154,74,0.4)" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -246,8 +246,8 @@ function ReportBody({ report, hideCascadeTable = false }) {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="trade" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
-                  <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
+                  <XAxis dataKey="trade" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} />
+                  <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} />
                   <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
                   <Tooltip
                     contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
@@ -315,18 +315,18 @@ function ReportBody({ report, hideCascadeTable = false }) {
               <input type="number" min={1} step={100} value={initialCapital}
                 onChange={e => setInitialCapital(Math.max(1, Number(e.target.value) || DEFAULT_INITIAL_CAPITAL))}
                 className="w-28 px-3 py-1.5 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }} />
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.8)' }} />
             </div>
             <div className="w-40">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-9px font-mono text-muted-foreground">Risco por operação</span>
-                <span className="text-xs font-mono font-bold" style={{ color: '#ffd166' }}>{riskPct}%</span>
+                <span className="text-xs font-mono font-bold" style={{ color: '#e3b45a' }}>{riskPct}%</span>
               </div>
               <Slider value={[riskPct]} min={0.1} max={5} step={0.1} onValueChange={([v]) => setRiskPct(v)} />
             </div>
             {equitySim.accountBlown && (
               <span className="px-2.5 py-1 rounded-md text-10px font-mono font-bold"
-                style={{ background: 'rgba(255,20,120,0.15)', border: '1px solid rgba(255,20,120,0.4)', color: '#ff1478' }}>
+                style={{ background: 'rgba(224,106,91,0.15)', border: '1px solid rgba(224,106,91,0.4)', color: '#e06a5b' }}>
                 CONTA ZERADA
               </span>
             )}
@@ -335,17 +335,17 @@ function ReportBody({ report, hideCascadeTable = false }) {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
             <MetricSummaryCard icon={equitySim.totalReturnPct >= 0 ? TrendingUp : TrendingDown} label="Capital final"
               value={fmtUsd(equitySim.finalCapital)} sublabel={fmtPct(equitySim.totalReturnPct)}
-              color={equitySim.totalReturnPct >= 0 ? '#00ff80' : '#ff1478'} glowColor="rgba(0,229,255,0.4)" />
+              color={equitySim.totalReturnPct >= 0 ? '#5db586' : '#e06a5b'} glowColor="rgba(141,180,226,0.4)" />
             <MetricSummaryCard icon={TrendingDown} label="Drawdown real" value={fmtPct(-equitySim.maxDrawdownPct)}
               sublabel={fmtUsd(-equitySim.maxDrawdownAbs)} color={drawdownColor(equitySim.maxDrawdownPct)} glowColor={metricGlow(drawdownColor(equitySim.maxDrawdownPct))} />
             <MetricSummaryCard icon={Award} label="CAGR"
               value={equitySim.cagrPct === null ? 'N/A' : fmtPct(equitySim.cagrPct)}
               sublabel={equitySim.cagrPct === null ? (CAGR_UNAVAILABLE_LABEL[equitySim.cagrUnavailableReason] || equitySim.cagrUnavailableReason) : `~${equitySim.years?.toFixed(2)} anos`}
-              color="#00e5ff" glowColor="rgba(0,229,255,0.4)"
+              color="#8db4e2" glowColor="rgba(141,180,226,0.4)"
               tooltip="Taxa de crescimento anual composta, extrapolada a partir do período coberto pela simulação — não é garantia de retorno futuro." />
             <MetricSummaryCard icon={FlaskConical} label="Operações dimensionadas" value={`${equitySim.sized}/${equitySim.total}`}
               sublabel={equitySim.unsized > 0 ? `${equitySim.unsized} sem risco definido` : 'todas dimensionadas'}
-              color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
+              color="#8db4e2" glowColor="rgba(141,180,226,0.4)" />
           </div>
 
           <div style={{ height: 220 }} role="img" aria-details={realEquityChart.length > 0 ? realEquityTableId : undefined}
@@ -364,8 +364,8 @@ function ReportBody({ report, hideCascadeTable = false }) {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="trade" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
-                <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} tickFormatter={v => fmtUsd(v, 0)} />
+                <XAxis dataKey="trade" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} />
+                <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} tickFormatter={v => fmtUsd(v, 0)} />
                 <ReferenceLine y={initialCapital} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
                 <Tooltip
                   contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
@@ -430,7 +430,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
                     <td className="px-3 py-2 text-foreground font-semibold">{row.cascade}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{row.counted}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{row.winRate?.toFixed(1)}%</td>
-                    <td className="px-3 py-2 text-right font-bold" style={{ color: row.expectancyR >= 0 ? '#00ff80' : '#ff1478' }}>{fmtR(row.expectancyR)}</td>
+                    <td className="px-3 py-2 text-right font-bold" style={{ color: row.expectancyR >= 0 ? '#5db586' : '#e06a5b' }}>{fmtR(row.expectancyR)}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{row.profitFactor === null ? '∞' : row.profitFactor?.toFixed(2)}</td>
                     <td className="px-3 py-2 text-right text-muted-foreground">{fmtPct(-row.maxDrawdownPct)}</td>
                   </tr>
@@ -448,12 +448,12 @@ function ReportBody({ report, hideCascadeTable = false }) {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={entryFunnelData} layout="vertical" margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis type="number" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
+                <XAxis type="number" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)' }} />
                 <YAxis type="category" dataKey="reason" width={160} tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.5)' }} />
                 <Tooltip contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }} />
                 <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'monospace' }} />
-                <Bar dataKey="4h_15m" fill="#00e5ff" />
-                <Bar dataKey="1h_5m" fill="#ff9f43" />
+                <Bar dataKey="4h_15m" fill="#8db4e2" />
+                <Bar dataKey="1h_5m" fill="#dd9a4a" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -463,7 +463,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
   );
 }
 
-const STATUS_ICON_COLOR = { TP2_HIT: ['🏆 TP2', '#00ff80'], STOP_HIT: ['🛑 Stop', '#ff1478'] };
+const STATUS_ICON_COLOR = { TP2_HIT: ['🏆 TP2', '#5db586'], STOP_HIT: ['🛑 Stop', '#e06a5b'] };
 
 // Tabela de operações individuais da simulação instantânea — o relatório de
 // simulação (JSON/CI) e o de desempenho real não mostram isso (já têm a
@@ -511,13 +511,13 @@ function SimulatedTradesTable({ ops }) {
               return (
                 <tr key={op.id} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
                   <td className="px-3 py-2 text-muted-foreground">{moment(op.created_date).format('DD/MM HH:mm')}</td>
-                  <td className="px-3 py-2 font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</td>
+                  <td className="px-3 py-2 font-bold" style={{ color: isBuy ? '#5db586' : '#e06a5b' }}>{op.side}</td>
                   <td className="px-3 py-2 text-right text-muted-foreground">${op.entry_price?.toFixed(6)}</td>
-                  <td className="px-3 py-2 text-right" style={{ color: '#ff1478' }}>${op.initial_stop?.toFixed(6)}</td>
-                  <td className="px-3 py-2 text-right" style={{ color: '#ffd166' }}>${op.tp1?.toFixed(6)}</td>
-                  <td className="px-3 py-2 text-right" style={{ color: '#00ff80' }}>${op.tp2?.toFixed(6)}</td>
+                  <td className="px-3 py-2 text-right" style={{ color: '#e06a5b' }}>${op.initial_stop?.toFixed(6)}</td>
+                  <td className="px-3 py-2 text-right" style={{ color: '#e3b45a' }}>${op.tp1?.toFixed(6)}</td>
+                  <td className="px-3 py-2 text-right" style={{ color: '#5db586' }}>${op.tp2?.toFixed(6)}</td>
                   <td className="px-3 py-2 text-right text-muted-foreground">{exitPrice != null ? `$${exitPrice.toFixed(6)}` : '—'}</td>
-                  <td className="px-3 py-2 text-right font-bold" style={{ color: pnl >= 0 ? '#00ff80' : '#ff1478' }}>{pnl != null ? fmtPct(pnl) : '—'}</td>
+                  <td className="px-3 py-2 text-right font-bold" style={{ color: pnl >= 0 ? '#5db586' : '#e06a5b' }}>{pnl != null ? fmtPct(pnl) : '—'}</td>
                   <td className="px-3 py-2" style={{ color }}>{label}</td>
                 </tr>
               );
@@ -536,10 +536,10 @@ const QBT_TIMEFRAMES = [
 ];
 const QBT_CANDLE_OPTIONS = [200, 500, 1000];
 const QBT_SLIDERS = [
-  { key: 'atrMult', label: 'ATR Mult', min: 0.5, max: 5, step: 0.1, color: '#ff1478' },
-  { key: 'tp1R', label: 'TP1 (R)', min: 0.5, max: 4, step: 0.1, color: '#ffd166' },
-  { key: 'rfPeriod', label: 'RF Period', min: 5, max: 50, step: 1, color: '#00e5ff' },
-  { key: 'rfMult', label: 'RF Mult', min: 0.5, max: 8, step: 0.1, color: '#00ff80' },
+  { key: 'atrMult', label: 'ATR Mult', min: 0.5, max: 5, step: 0.1, color: '#e06a5b' },
+  { key: 'tp1R', label: 'TP1 (R)', min: 0.5, max: 4, step: 0.1, color: '#e3b45a' },
+  { key: 'rfPeriod', label: 'RF Period', min: 5, max: 50, step: 1, color: '#8db4e2' },
+  { key: 'rfMult', label: 'RF Mult', min: 0.5, max: 8, step: 0.1, color: '#5db586' },
   { key: 'minScore', label: 'Min Score', min: 50, max: 100, step: 1, color: '#a78bfa' },
 ];
 
@@ -606,7 +606,7 @@ function QuickBacktestTab() {
     <div className="space-y-4">
       <Section title="Configuração do Backtest">
         {assetsError && assets.length === 0 && (
-          <div className="rounded-lg p-4" style={{ background: 'rgba(255,159,67,0.06)', border: '1px solid rgba(255,159,67,0.2)' }}>
+          <div className="rounded-lg p-4" style={{ background: 'rgba(221,154,74,0.06)', border: '1px solid rgba(221,154,74,0.2)' }}>
             <QueryErrorState message="Não foi possível carregar os ativos agora — o seletor abaixo está vazio e 'Executar Backtest' fica desativado até a próxima atualização." onRetry={refetchAssets} />
           </div>
         )}
@@ -615,7 +615,7 @@ function QuickBacktestTab() {
             <label className="text-9px font-mono text-muted-foreground block mb-1">Ativo</label>
             <select value={assetId} onChange={e => setAssetId(e.target.value)}
               className="w-full px-3 py-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.8)' }}>
               <option value="">Selecione...</option>
               {assets.map(a => <option key={a.id} value={a.id}>{a.display_name || a.symbol}</option>)}
             </select>
@@ -627,8 +627,8 @@ function QuickBacktestTab() {
                 <button key={tf.id} onClick={() => setTimeframe(tf.id)}
                   className="flex-1 px-3 py-2 rounded-lg text-11px font-mono font-bold transition-all"
                   style={timeframe === tf.id
-                    ? { background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.4)', color: '#00e5ff' }
-                    : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)' }}>
+                    ? { background: 'rgba(141,180,226,0.15)', border: '1px solid rgba(141,180,226,0.4)', color: '#8db4e2' }
+                    : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.62)' }}>
                   {tf.label}
                 </button>
               ))}
@@ -639,7 +639,7 @@ function QuickBacktestTab() {
             <label className="text-9px font-mono text-muted-foreground block mb-1">Período (candles)</label>
             <select value={candleCount} onChange={e => setCandleCount(Number(e.target.value))}
               className="w-full px-3 py-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.8)' }}>
               {QBT_CANDLE_OPTIONS.map(n => <option key={n} value={n}>{n} candles</option>)}
             </select>
           </div>
@@ -647,8 +647,8 @@ function QuickBacktestTab() {
 
         <div className="pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
           <div className="flex items-center gap-1.5 mb-1">
-            <Sparkles className="w-3.5 h-3.5" style={{ color: '#ffd166' }} />
-            <span className="text-10px font-mono font-bold" style={{ color: '#ffd166' }}>AJUSTE FINO (WHAT-IF)</span>
+            <Sparkles className="w-3.5 h-3.5" style={{ color: '#e3b45a' }} />
+            <span className="text-10px font-mono font-bold" style={{ color: '#e3b45a' }}>AJUSTE FINO (WHAT-IF)</span>
             <span className="text-9px font-mono text-muted-foreground">— altere para testar cenários sem afetar o scanner</span>
           </div>
           <p className="text-9px font-mono text-muted-foreground/70 mb-3">
@@ -672,7 +672,7 @@ function QuickBacktestTab() {
         <div className="flex items-center gap-3 pt-1">
           <button onClick={handleRun} disabled={!asset || status === 'running'}
             className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-11px font-mono font-bold transition-all disabled:opacity-40"
-            style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>
+            style={{ background: 'rgba(93,181,134,0.1)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }}>
             {status === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
             {status === 'running' ? 'Simulando...' : 'Executar Backtest'}
           </button>
@@ -684,7 +684,7 @@ function QuickBacktestTab() {
         </div>
 
         {status === 'error' && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(224,106,91,0.1)', border: '1px solid rgba(224,106,91,0.3)', color: '#e06a5b' }}>
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{errorMsg}
           </div>
         )}
@@ -771,15 +771,15 @@ function RealPeriodTab() {
           <button key={p.id} onClick={() => setPreset(p.id)}
             className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
             style={preset === p.id
-              ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
-              : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+              ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: 'rgba(141,180,226,0.9)' }
+              : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
             {p.label}
           </button>
         ))}
       </div>
 
       {!isLoading && allOps.length === REAL_OPS_LIMIT && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.3)', color: '#ff9f43' }}>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(221,154,74,0.1)', border: '1px solid rgba(221,154,74,0.3)', color: '#dd9a4a' }}>
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           Mostrando só as {REAL_OPS_LIMIT} operações mais recentes — pode haver operações mais antigas fora deste limite,
           então períodos longos ("Tudo", "Ano") podem estar incompletos.
@@ -789,11 +789,11 @@ function RealPeriodTab() {
       {isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
       ) : isError && allOps.length === 0 ? (
-        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar as operações reais agora." onRetry={refetch} />
         </div>
       ) : !report ? (
-        <div className="rounded-xl p-10 text-center" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-10 text-center" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <History className="w-8 h-8 mx-auto mb-3 text-muted-foreground opacity-30" />
           <p className="text-muted-foreground text-sm">Nenhuma operação fechada nesse período.</p>
         </div>
@@ -820,7 +820,7 @@ function UploadPanel({ onLoad, error }) {
     <div className="space-y-4">
       <TriggerBacktestPanel onReportReady={onLoad} />
 
-      <div className="rounded-xl p-6 space-y-4 max-w-2xl mx-auto" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="rounded-md p-6 space-y-4 max-w-2xl mx-auto" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="text-center space-y-1">
           <FlaskConical className="w-8 h-8 mx-auto text-muted-foreground opacity-30" />
           <h2 className="text-base font-bold text-foreground">Ou carregue um relatório já gerado</h2>
@@ -833,7 +833,7 @@ function UploadPanel({ onLoad, error }) {
 
         <button onClick={() => fileRef.current?.click()}
           className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-11px font-mono font-bold transition-all"
-          style={{ background: 'rgba(0,229,255,0.08)', border: '1px dashed rgba(0,229,255,0.3)', color: '#00e5ff' }}>
+          style={{ background: 'rgba(141,180,226,0.08)', border: '1px dashed rgba(141,180,226,0.3)', color: '#8db4e2' }}>
           <Upload className="w-4 h-4" />Selecionar backtest-report.json
         </button>
         <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={handleFile} />
@@ -849,12 +849,12 @@ function UploadPanel({ onLoad, error }) {
         />
         <button onClick={() => onLoad(pasted)} disabled={!pasted.trim()}
           className="w-full px-4 py-2 rounded-lg text-10px font-mono font-bold transition-all disabled:opacity-40"
-          style={{ background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>
+          style={{ background: 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }}>
           Analisar relatório colado
         </button>
 
         {error && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(224,106,91,0.1)', border: '1px solid rgba(224,106,91,0.3)', color: '#e06a5b' }}>
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{error}
           </div>
         )}
@@ -942,8 +942,8 @@ function JsonReportTab() {
               <button onClick={handleApplyToScanner} disabled={!report.reproducibility?.pineConfig || applyStatus === 'applying'}
                 className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-10px font-mono font-bold transition-all disabled:opacity-40"
                 style={{
-                  background: applyStatus === 'applied' ? 'rgba(0,255,128,0.15)' : 'rgba(0,255,128,0.08)',
-                  border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80',
+                  background: applyStatus === 'applied' ? 'rgba(93,181,134,0.15)' : 'rgba(93,181,134,0.08)',
+                  border: '1px solid rgba(93,181,134,0.3)', color: '#5db586',
                 }}>
                 {applyStatus === 'applying' ? <Loader2 className="w-3 h-3 animate-spin" /> : applyStatus === 'applied' ? <CheckCircle2 className="w-3 h-3" /> : <Rocket className="w-3 h-3" />}
                 {applyStatus === 'applying' ? 'Aplicando...' : applyStatus === 'applied' ? 'Aplicado!' : applyStatus === 'error' ? 'Erro' : 'Aplicar ao Scanner'}
@@ -1011,8 +1011,8 @@ export default function Backtest() {
             <button key={t.id} onClick={() => setTab(t.id)}
               className="flex items-center gap-1.5 text-10px font-mono px-3 py-2 rounded-lg transition-all"
               style={tab === t.id
-                ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}>
+                ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
+                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.62)' }}>
               <t.icon className="w-3 h-3" />{t.label}
             </button>
           ))}

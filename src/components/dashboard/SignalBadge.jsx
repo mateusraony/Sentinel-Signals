@@ -12,7 +12,7 @@ export default function SignalBadge({ signal, size = 'md' }) {
   if (isNone) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-md font-mono font-semibold"
-        style={{ padding: pad, fontSize: fs, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)' }}
+        style={{ padding: pad, fontSize: fs, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.55)' }}
       >
         <Minus className={iconSize} />
         <span>—</span>

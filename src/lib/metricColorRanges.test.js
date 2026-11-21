@@ -3,47 +3,47 @@ import { drawdownColor, winRateColor, profitFactorColor, profitFactorLabel, metr
 
 describe('drawdownColor', () => {
   it('acima de 15% é vermelho', () => {
-    expect(drawdownColor(15.1)).toBe('#ff1478');
+    expect(drawdownColor(15.1)).toBe('#e06a5b');
   });
   it('entre 8% e 15% é laranja', () => {
-    expect(drawdownColor(8.1)).toBe('#ff9f43');
-    expect(drawdownColor(15)).toBe('#ff9f43');
+    expect(drawdownColor(8.1)).toBe('#dd9a4a');
+    expect(drawdownColor(15)).toBe('#dd9a4a');
   });
   it('8% ou menos é verde', () => {
-    expect(drawdownColor(8)).toBe('#00ff80');
-    expect(drawdownColor(0)).toBe('#00ff80');
+    expect(drawdownColor(8)).toBe('#5db586');
+    expect(drawdownColor(0)).toBe('#5db586');
   });
 });
 
 describe('winRateColor', () => {
   it('50% ou mais é verde', () => {
-    expect(winRateColor(50)).toBe('#00ff80');
-    expect(winRateColor(75)).toBe('#00ff80');
+    expect(winRateColor(50)).toBe('#5db586');
+    expect(winRateColor(75)).toBe('#5db586');
   });
   it('abaixo de 50% é laranja', () => {
-    expect(winRateColor(49.9)).toBe('#ff9f43');
-    expect(winRateColor(0)).toBe('#ff9f43');
+    expect(winRateColor(49.9)).toBe('#dd9a4a');
+    expect(winRateColor(0)).toBe('#dd9a4a');
   });
 });
 
 describe('profitFactorColor', () => {
   it('pf >= 1.5 é verde (Saudável)', () => {
-    expect(profitFactorColor(1.5)).toBe('#00ff80');
-    expect(profitFactorColor(3)).toBe('#00ff80');
+    expect(profitFactorColor(1.5)).toBe('#5db586');
+    expect(profitFactorColor(3)).toBe('#5db586');
   });
   it('1 <= pf < 1.5 é laranja (Marginal)', () => {
-    expect(profitFactorColor(1)).toBe('#ff9f43');
-    expect(profitFactorColor(1.49)).toBe('#ff9f43');
+    expect(profitFactorColor(1)).toBe('#dd9a4a');
+    expect(profitFactorColor(1.49)).toBe('#dd9a4a');
   });
   it('pf < 1 é vermelho (Baixo)', () => {
-    expect(profitFactorColor(0.99)).toBe('#ff1478');
-    expect(profitFactorColor(0)).toBe('#ff1478');
+    expect(profitFactorColor(0.99)).toBe('#e06a5b');
+    expect(profitFactorColor(0)).toBe('#e06a5b');
   });
   it('pf null com vitórias (só ganhos, nenhuma perda) é verde', () => {
-    expect(profitFactorColor(null, true)).toBe('#00ff80');
+    expect(profitFactorColor(null, true)).toBe('#5db586');
   });
   it('pf null sem vitórias (amostra só com empates) é vermelho', () => {
-    expect(profitFactorColor(null, false)).toBe('#ff1478');
+    expect(profitFactorColor(null, false)).toBe('#e06a5b');
   });
 });
 
@@ -65,8 +65,8 @@ describe('profitFactorLabel', () => {
 
 describe('metricGlow', () => {
   it('cada uma das 3 cores retornadas pelas funções acima tem um glow correspondente', () => {
-    expect(metricGlow('#00ff80')).toBe('rgba(0,255,128,0.4)');
-    expect(metricGlow('#ff9f43')).toBe('rgba(255,159,67,0.4)');
-    expect(metricGlow('#ff1478')).toBe('rgba(255,20,120,0.4)');
+    expect(metricGlow('#5db586')).toBe('rgba(93,181,134,0.4)');
+    expect(metricGlow('#dd9a4a')).toBe('rgba(221,154,74,0.4)');
+    expect(metricGlow('#e06a5b')).toBe('rgba(224,106,91,0.4)');
   });
 });

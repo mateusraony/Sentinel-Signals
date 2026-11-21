@@ -13,13 +13,13 @@ const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="rounded-lg px-3 py-2 text-10px font-mono space-y-1"
+    <div className="rounded-lg px-3 py-2 text-11px font-mono space-y-1"
       style={{ background: 'rgba(6,8,15,0.95)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
       <div className="text-muted-foreground flex items-center gap-1.5"><TokenIcon symbol={d.symbol} size={12} />{d.label}</div>
-      <div style={{ color: d.pnl >= 0 ? '#00ff80' : '#ff1478' }}>
+      <div style={{ color: d.pnl >= 0 ? '#5db586' : '#e06a5b' }}>
         Trade: {d.pnl >= 0 ? '+' : ''}{d.pnl?.toFixed(2)}%
       </div>
-      <div style={{ color: d.cumulative >= 0 ? '#00ff80' : '#ff1478' }}>
+      <div style={{ color: d.cumulative >= 0 ? '#5db586' : '#e06a5b' }}>
         Acumulado: {d.cumulative >= 0 ? '+' : ''}{d.cumulative?.toFixed(2)}%
       </div>
       <div className="text-muted-foreground">{d.status}</div>
@@ -74,29 +74,29 @@ export default function PerformanceOverview() {
 
   if (total === 0) return null;
 
-  const pnlColor = totalPnl >= 0 ? '#00ff80' : '#ff1478';
-  const wrColor = winRate >= 60 ? '#00ff80' : winRate >= 45 ? '#ffd166' : '#ff1478';
+  const pnlColor = totalPnl >= 0 ? '#5db586' : '#e06a5b';
+  const wrColor = winRate >= 60 ? '#5db586' : winRate >= 45 ? '#e3b45a' : '#e06a5b';
 
   const metrics = [
     { icon: Award, label: 'Win Rate', value: `${winRate}%`, color: wrColor },
     { icon: TrendingUp, label: 'Retorno Acum.', value: `${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}%`, color: pnlColor },
-    { icon: Target, label: 'Trades', value: `${wins}W / ${be}BE / ${losses}L`, color: '#00e5ff' },
-    { icon: BarChart2, label: 'Avg Win / Loss', value: `+${avgWin}% / -${avgLoss}%`, color: '#ffd166' },
+    { icon: Target, label: 'Trades', value: `${wins}W / ${be}BE / ${losses}L`, color: '#8db4e2' },
+    { icon: BarChart2, label: 'Avg Win / Loss', value: `+${avgWin}% / -${avgLoss}%`, color: '#e3b45a' },
   ];
 
   return (
-    <div className="rounded-xl p-4 space-y-4"
-      style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(20px)' }}>
+    <div className="rounded-md p-4 space-y-4"
+      style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.07)' }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <BarChart2 className="w-4 h-4" style={{ color: '#00e5ff' }} />
+          <BarChart2 className="w-4 h-4" style={{ color: '#8db4e2' }} />
           <span className="text-sm font-bold text-foreground">Performance Consolidada</span>
-          <span className="text-9px font-mono text-muted-foreground">— {total} trades fechados</span>
+          <span className="text-11px font-mono text-muted-foreground">— {total} trades fechados</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#00ff80', boxShadow: '0 0 5px #00ff80' }} />
-          <span className="text-9px font-mono text-muted-foreground">Atualizado em tempo real</span>
+          <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#5db586', boxShadow: 'none' }} />
+          <span className="text-11px font-mono text-muted-foreground">Atualizado em tempo real</span>
         </div>
       </div>
 
@@ -107,7 +107,7 @@ export default function PerformanceOverview() {
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <MetricIcon className="w-3.5 h-3.5 shrink-0" style={{ color }} />
             <div className="min-w-0">
-              <div className="text-8px font-mono text-muted-foreground leading-none mb-0.5">{label}</div>
+              <div className="text-11px font-mono text-muted-foreground leading-none mb-0.5">{label}</div>
               <div className="text-xs font-mono font-bold truncate" style={{ color }}>{value}</div>
             </div>
           </div>
@@ -118,8 +118,8 @@ export default function PerformanceOverview() {
       {chartData.length > 1 && (
         <>
           <div className="flex items-center justify-between">
-            <span className="text-9px font-mono text-muted-foreground">Evolução do Saldo Acumulado (%)</span>
-            <span className="text-9px font-mono font-bold" style={{ color: pnlColor }}>
+            <span className="text-11px font-mono text-muted-foreground">Evolução do Saldo Acumulado (%)</span>
+            <span className="text-11px font-mono font-bold" style={{ color: pnlColor }}>
               {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}% total
             </span>
           </div>
@@ -139,10 +139,10 @@ export default function PerformanceOverview() {
                     usado só no tooltip), mesmo padrão de
                     TradeEntryMarkers.jsx. */}
                 <XAxis dataKey="date"
-                  tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 9, fontFamily: 'monospace' }}
+                  tick={{ fill: 'rgba(255,255,255,0.62)', fontSize: 9, fontFamily: 'monospace' }}
                   axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={30} />
                 <YAxis
-                  tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.45)', fontFamily: 'monospace' }}
+                  tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.62)', fontFamily: 'monospace' }}
                   tickLine={false} axisLine={false}
                   tickFormatter={v => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`}
                 />
@@ -156,7 +156,7 @@ export default function PerformanceOverview() {
                   fill="url(#perfGrad)"
                   dot={(props) => {
                     const { cx, cy, payload } = props;
-                    const dotColor = payload.pnl >= 0 ? '#00ff80' : '#ff1478';
+                    const dotColor = payload.pnl >= 0 ? '#5db586' : '#e06a5b';
                     return <circle key={`dot-${payload.label}`} cx={cx} cy={cy} r={3} fill={dotColor} strokeWidth={0} />;
                   }}
                   activeDot={{ r: 4, strokeWidth: 0 }}

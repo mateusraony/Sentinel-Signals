@@ -229,7 +229,7 @@ export default function Dashboard() {
                 {/* Item 277: saúde real dos ativos no lugar do "Dados em tempo real" fixo. */}
                 <DataHealthChip assets={assets} isLoading={loadingAssets} isError={assetsError} />
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                 Preços e indicadores vêm da última leitura salva no banco — normalmente do
                 scan automático (a cada ~{SCAN_CADENCE_MIN} min, via Binance Spot). Se esta aba ficar aberta
                 por mais de 1h, o próprio navegador também roda um scan (Binance Futures)
@@ -247,7 +247,7 @@ export default function Dashboard() {
             }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-11px font-mono transition-all hover:opacity-80"
               style={compareMode
-                ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
+                ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
                 : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
               <Swords className="w-3 h-3" />
               {compareMode ? 'Sair' : 'Comparar'}
@@ -277,7 +277,7 @@ export default function Dashboard() {
                 página. */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Bell className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
+                <Bell className="w-3.5 h-3.5" style={{ color: '#8db4e2' }} />
                 <h2 className="text-sm font-bold text-foreground tracking-tight">Agora</h2>
               </div>
               <div className="space-y-3">
@@ -291,17 +291,17 @@ export default function Dashboard() {
                 por "são todos números" junto do resto das stats). */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Clock className="w-3.5 h-3.5" style={{ color: '#ffd166' }} />
+                <Clock className="w-3.5 h-3.5" style={{ color: '#e3b45a' }} />
                 <h2 className="text-sm font-bold text-foreground tracking-tight">Atenção</h2>
               </div>
               <div className="space-y-3">
                 <VerificationWidget />
                 <div className="grid grid-cols-2 gap-3">
                   <StatsCard icon={Bell} label="Alta Prioridade" value={highPriorityCount}
-                    color={highPriorityCount > 0 ? '#ff9f43' : '#00e5ff'}
-                    glowColor={highPriorityCount > 0 ? 'rgba(255,159,67,0.1)' : 'rgba(0,229,255,0.1)'}
+                    color={highPriorityCount > 0 ? '#dd9a4a' : '#8db4e2'}
+                    glowColor={highPriorityCount > 0 ? 'rgba(221,154,74,0.1)' : 'rgba(141,180,226,0.1)'}
                     error={signalsUnavailable || tradeOpsUnavailable} />
-                  <StatsCard icon={Clock} label="Aguardando" value={waitingCount} color="#ffd166" glowColor="rgba(255,209,102,0.1)" error={signalsUnavailable || tradeOpsUnavailable} />
+                  <StatsCard icon={Clock} label="Aguardando" value={waitingCount} color="#e3b45a" glowColor="rgba(227,180,90,0.1)" error={signalsUnavailable || tradeOpsUnavailable} />
                 </div>
               </div>
             </div>
@@ -315,14 +315,14 @@ export default function Dashboard() {
                 <div className="flex items-center gap-3 flex-wrap">
                   <select value={compareAId || ''} onChange={e => setCompareAId(e.target.value)}
                     className="px-3 py-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.8)' }}>
                     <option value="">Selecione Ativo A...</option>
                     {assets.map(a => <option key={a.id} value={a.id}>{a.display_name}</option>)}
                   </select>
                   <span className="text-muted-foreground text-xs font-mono">vs</span>
                   <select value={compareBId || ''} onChange={e => setCompareBId(e.target.value)}
                     className="px-3 py-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.8)' }}>
                     <option value="">Selecione Ativo B...</option>
                     {assets.map(a => <option key={a.id} value={a.id}>{a.display_name}</option>)}
                   </select>
@@ -346,10 +346,10 @@ export default function Dashboard() {
             {/* Visão rápida — os 4 contadores que não pedem ação imediata
                 (os 2 que pedem já estão em "Atenção" acima). */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatsCard icon={Coins} label="Monitorados" value={assets.length} color="#00e5ff" glowColor="rgba(0,229,255,0.1)" error={assetsError && assets.length === 0} />
-              <StatsCard icon={Target} label="Operações Ativas" value={activeOpsCount} color="#00ff80" glowColor="rgba(0,255,128,0.1)" error={tradeOpsUnavailable} />
-              <StatsCard icon={TrendingUp} label="Sinais BUY" value={buySignals} color="#00ff80" glowColor="rgba(0,255,128,0.1)" error={signalsUnavailable} />
-              <StatsCard icon={TrendingDown} label="Sinais SELL" value={sellSignals} color="#ff1478" glowColor="rgba(255,20,120,0.1)" error={signalsUnavailable} />
+              <StatsCard icon={Coins} label="Monitorados" value={assets.length} color="#8db4e2" glowColor="rgba(141,180,226,0.1)" error={assetsError && assets.length === 0} />
+              <StatsCard icon={Target} label="Operações Ativas" value={activeOpsCount} color="#5db586" glowColor="rgba(93,181,134,0.1)" error={tradeOpsUnavailable} />
+              <StatsCard icon={TrendingUp} label="Sinais BUY" value={buySignals} color="#5db586" glowColor="rgba(93,181,134,0.1)" error={signalsUnavailable} />
+              <StatsCard icon={TrendingDown} label="Sinais SELL" value={sellSignals} color="#e06a5b" glowColor="rgba(224,106,91,0.1)" error={signalsUnavailable} />
             </div>
 
             {/* Assets */}
@@ -364,7 +364,7 @@ export default function Dashboard() {
                     placeholder="Buscar ativo..."
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="w-full pl-7 pr-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring transition-all"
+                    className="w-full pl-7 pr-3 py-1.5 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring transition-all"
                     style={{
                       background: 'rgba(255,255,255,0.04)',
                       border: '1px solid rgba(255,255,255,0.08)',
@@ -376,16 +376,16 @@ export default function Dashboard() {
                 {/* Signal filters */}
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {[
-                    { id: 'all', label: 'Todos', color: '#00e5ff' },
-                    { id: 'BUY', label: '↑ BUY', color: '#00ff80' },
-                    { id: 'SELL', label: '↓ SELL', color: '#ff1478' },
-                    { id: 'high', label: '★ Alta Prio', color: '#ff9f43' },
+                    { id: 'all', label: 'Todos', color: '#8db4e2' },
+                    { id: 'BUY', label: '↑ BUY', color: '#5db586' },
+                    { id: 'SELL', label: '↓ SELL', color: '#e06a5b' },
+                    { id: 'high', label: '★ Alta Prio', color: '#dd9a4a' },
                   ].map(f => (
                     <button key={f.id} onClick={() => setFilterSignal(f.id)}
-                      className="text-9px font-mono px-2 py-1 rounded-md transition-all"
+                      className="text-11px font-mono px-2 py-1 rounded-md transition-all"
                       style={filterSignal === f.id
                         ? { background: `${f.color}18`, border: `1px solid ${f.color}50`, color: f.color }
-                        : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
+                        : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
                       {f.label}
                     </button>
                   ))}
@@ -394,10 +394,10 @@ export default function Dashboard() {
                   <div className="w-px h-4 mx-0.5" style={{ background: 'rgba(255,255,255,0.08)' }} />
                   {['all', '1h', '4h', '1d'].map(tf => (
                     <button key={tf} onClick={() => setFilterTf(tf)}
-                      className="text-9px font-mono px-2 py-1 rounded-md transition-all"
+                      className="text-11px font-mono px-2 py-1 rounded-md transition-all"
                       style={filterTf === tf
-                        ? { background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.4)', color: '#00e5ff' }
-                        : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
+                        ? { background: 'rgba(141,180,226,0.15)', border: '1px solid rgba(141,180,226,0.4)', color: '#8db4e2' }
+                        : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
                       {tf === 'all' ? 'TF All' : tf.toUpperCase()}
                     </button>
                   ))}
@@ -409,10 +409,10 @@ export default function Dashboard() {
                   <div className="flex items-center gap-1">
                     {SORT_OPTS.map(s => (
                       <button key={s.id} onClick={() => setSortBy(s.id)}
-                        className="text-9px font-mono px-2 py-1 rounded-md transition-all"
+                        className="text-11px font-mono px-2 py-1 rounded-md transition-all"
                         style={sortBy === s.id
-                          ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
-                          : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
+                          ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: 'rgba(141,180,226,0.9)' }
+                          : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
                         {s.label}
                       </button>
                     ))}
@@ -422,21 +422,21 @@ export default function Dashboard() {
 
               {/* Count label */}
               <div className="flex items-center gap-2 mb-2">
-                <Coins className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
+                <Coins className="w-3.5 h-3.5" style={{ color: '#8db4e2' }} />
                 <h2 className="text-sm font-bold text-foreground tracking-tight">Ativos</h2>
-                <span className="text-9px font-mono text-muted-foreground">({displayAssets.length})</span>
+                <span className="text-11px font-mono text-muted-foreground">({displayAssets.length})</span>
               </div>
 
               {loadingAssets ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {[1,2,3].map(i => <div key={i} className="glass-card rounded-xl h-52 shimmer" />)}
+                  {[1,2,3].map(i => <div key={i} className="glass-card rounded-md h-52 shimmer" />)}
                 </div>
               ) : assetsError && assets.length === 0 ? (
-                <div className="glass-card rounded-xl p-8">
+                <div className="glass-card rounded-md p-8">
                   <QueryErrorState message="Não foi possível carregar os ativos monitorados agora." onRetry={refetchAssets} />
                 </div>
               ) : assets.length === 0 ? (
-                <div className="glass-card rounded-xl p-12 text-center">
+                <div className="glass-card rounded-md p-12 text-center">
                   <Coins className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
                   <p className="text-muted-foreground text-sm">Nenhum ativo monitorado.</p>
                   {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27):
@@ -450,11 +450,11 @@ export default function Dashboard() {
                 </div>
               ) : displayAssets.length === 0 ? (
                 statesUnavailable && filterTf !== 'all' ? (
-                  <div className="glass-card rounded-xl p-8">
+                  <div className="glass-card rounded-md p-8">
                     <QueryErrorState message="Não foi possível carregar os indicadores por timeframe agora — o filtro de TF pode estar escondendo ativos incorretamente." onRetry={refetchStates} />
                   </div>
                 ) : (
-                  <div className="glass-card rounded-xl p-8 text-center">
+                  <div className="glass-card rounded-md p-8 text-center">
                     <p className="text-muted-foreground text-sm">Nenhum ativo encontrado.</p>
                   </div>
                 )

@@ -26,19 +26,19 @@ const CATEGORY_COLORS = Object.fromEntries(Object.entries(CATEGORY_ACCENTS).map(
 
 // Cor pela urgência (paleta do Dashboard): longe = ciano; nas próximas 24 h = amarelo; em até 1 h ou recém-saído = laranja.
 const TONES = {
-  distante: { color: '#00e5ff', bg: 'rgba(0,229,255,0.06)', border: 'rgba(0,229,255,0.22)', head: 'Próximo evento' },
-  proximo: { color: '#00e5ff', bg: 'rgba(0,229,255,0.06)', border: 'rgba(0,229,255,0.22)', head: 'Próximo evento' },
-  em24h: { color: '#ffd166', bg: 'rgba(255,209,102,0.07)', border: 'rgba(255,209,102,0.28)', head: 'Nas próximas 24 h' },
-  iminente: { color: '#ff9f43', bg: 'rgba(255,159,67,0.08)', border: 'rgba(255,159,67,0.32)', head: 'Em menos de 1 h' },
-  agora: { color: '#ff9f43', bg: 'rgba(255,159,67,0.10)', border: 'rgba(255,159,67,0.35)', head: 'Acabou de sair' },
+  distante: { color: '#8db4e2', bg: 'rgba(141,180,226,0.06)', border: 'rgba(141,180,226,0.22)', head: 'Próximo evento' },
+  proximo: { color: '#8db4e2', bg: 'rgba(141,180,226,0.06)', border: 'rgba(141,180,226,0.22)', head: 'Próximo evento' },
+  em24h: { color: '#e3b45a', bg: 'rgba(227,180,90,0.07)', border: 'rgba(227,180,90,0.28)', head: 'Nas próximas 24 h' },
+  iminente: { color: '#dd9a4a', bg: 'rgba(221,154,74,0.08)', border: 'rgba(221,154,74,0.32)', head: 'Em menos de 1 h' },
+  agora: { color: '#dd9a4a', bg: 'rgba(221,154,74,0.10)', border: 'rgba(221,154,74,0.35)', head: 'Acabou de sair' },
   pendente: { color: '#94a3b8', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)', head: 'Data a confirmar' },
 };
 
 const KIND_ICONS = { NFP: Briefcase, CPI: ShoppingCart, PPI: Factory, PCE: Wallet, FOMC: Landmark };
 const STATUS_CHIPS = {
-  oficial: { text: 'Data oficial', color: '#00ff80', Icon: BadgeCheck },
-  confirmada: { text: 'Data confirmada', color: '#00ff80', Icon: BadgeCheck },
-  a_confirmar: { text: 'Data a confirmar', color: '#ffd166', Icon: Clock },
+  oficial: { text: 'Data oficial', color: '#5db586', Icon: BadgeCheck },
+  confirmada: { text: 'Data confirmada', color: '#5db586', Icon: BadgeCheck },
+  a_confirmar: { text: 'Data a confirmar', color: '#e3b45a', Icon: Clock },
 };
 
 /**
@@ -94,10 +94,10 @@ function ImpactDots({ impact }) {
       <span className="inline-flex gap-0.5" aria-hidden="true">
         {[1, 2, 3].map((i) => (
           <span key={i} className="w-1.5 h-1.5 rounded-full"
-            style={{ background: i <= impact ? '#00e5ff' : 'rgba(255,255,255,0.16)' }} />
+            style={{ background: i <= impact ? '#8db4e2' : 'rgba(255,255,255,0.16)' }} />
         ))}
       </span>
-      <span className="text-10px font-mono text-muted-foreground">{label}</span>
+      <span className="text-11px font-mono text-muted-foreground">{label}</span>
     </span>
   );
 }
@@ -107,7 +107,7 @@ function StatusChip({ status }) {
   if (!chip) return null;
   const { Icon } = chip;
   return (
-    <span className="inline-flex items-center gap-1 text-10px font-mono" style={{ color: chip.color }}>
+    <span className="inline-flex items-center gap-1 text-11px font-mono" style={{ color: chip.color }}>
       <Icon className="w-3 h-3" aria-hidden="true" />
       {chip.text}
     </span>
@@ -117,7 +117,7 @@ function StatusChip({ status }) {
 /** Etiqueta do tipo de notícia: ícone + rótulo na cor da categoria (cor + texto, nunca só cor). */
 function CategoryTag({ category, Icon }) {
   return (
-    <span className="inline-flex items-center gap-1 text-10px font-mono font-bold uppercase tracking-wider"
+    <span className="inline-flex items-center gap-1 text-11px font-mono font-bold uppercase tracking-wider"
       style={{ color: CATEGORY_COLORS[category] }}>
       <Icon className="w-3 h-3" aria-hidden="true" />
       {CATEGORY_META[category].label}
@@ -130,7 +130,7 @@ function ValueLines({ text }) {
   return splitValueText(text).map((p, i) => (
     <span key={`${p.key}-${i}`} className="block">
       {p.value}
-      {p.label && <span className="ml-1 text-10px font-normal text-muted-foreground">{p.label}</span>}
+      {p.label && <span className="ml-1 text-11px font-normal text-muted-foreground">{p.label}</span>}
     </span>
   ));
 }
@@ -149,14 +149,14 @@ function ValueSlots({ e, compact = false }) {
       <dl className={compact ? 'flex gap-3' : 'flex gap-2'}>
         {slots.map((s) => (
           <div key={s.key} className={compact ? '' : 'rounded-lg px-3 py-1.5'} style={compact ? undefined : SOFT}>
-            <dt className="text-10px font-mono uppercase tracking-wider text-muted-foreground">{s.label}</dt>
+            <dt className="text-11px font-mono uppercase tracking-wider text-muted-foreground">{s.label}</dt>
             <dd className={compact ? 'text-11px font-mono font-bold text-foreground tabular-nums' : 'text-base font-bold font-mono text-foreground tabular-nums'}>
-              {s.text === null ? <span className="text-10px font-normal text-muted-foreground">aguardando</span> : <ValueLines text={s.text} />}
+              {s.text === null ? <span className="text-11px font-normal text-muted-foreground">aguardando</span> : <ValueLines text={s.text} />}
             </dd>
           </div>
         ))}
       </dl>
-      {e.values?.source && <span className="text-10px font-mono text-muted-foreground">Fonte: {e.values.source}</span>}
+      {e.values?.source && <span className="text-11px font-mono text-muted-foreground">Fonte: {e.values.source}</span>}
     </div>
   );
 }
@@ -177,22 +177,22 @@ function ReleaseHistory({ items, now, reactions }) {
   const shown = open ? items : items.slice(0, HISTORY_SHOWN);
   return (
     <section aria-label="Últimas divulgações" className="space-y-2">
-      <h3 className="flex items-center gap-1.5 text-10px font-mono uppercase tracking-wider text-muted-foreground">
+      <h3 className="flex items-center gap-1.5 text-11px font-mono uppercase tracking-wider text-muted-foreground">
         <History className="w-3 h-3" aria-hidden="true" />
         Últimas divulgações
       </h3>
       <ul className="flex flex-col gap-3">
         {shown.map((e) => <HistoryCard key={e.id} e={e} now={now} moves={reactions?.get(e.id)?.moves} />)}
       </ul>
-      <p className="text-10px font-mono text-muted-foreground">
+      <p className="text-11px font-mono text-muted-foreground">
         {historySourceNote(shown)}
       </p>
       {shown.some((e) => lastMove(reactions?.get(e.id)?.moves)) && (
-        <p className="text-10px font-mono text-muted-foreground">O BTC (2 casas) vem das velas de 1 minuto da Binance e só mostra o que aconteceu depois; não prova que a divulgação causou o movimento.</p>
+        <p className="text-11px font-mono text-muted-foreground">O BTC (2 casas) vem das velas de 1 minuto da Binance e só mostra o que aconteceu depois; não prova que a divulgação causou o movimento.</p>
       )}
       {items.length > HISTORY_SHOWN && (
         <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
-          className="flex items-center gap-1 text-10px font-mono text-muted-foreground hover:text-foreground transition-colors">
+          className="flex items-center gap-1 text-11px font-mono text-muted-foreground hover:text-foreground transition-colors">
           {open ? <ChevronUp className="w-3 h-3" aria-hidden="true" /> : <ChevronDown className="w-3 h-3" aria-hidden="true" />}
           {open ? 'Mostrar menos' : `Ver todas (${items.length})`}
         </button>
@@ -212,7 +212,7 @@ function NextEventCard({ e, now }) {
   const hot = urgency === 'iminente' || urgency === 'agora';
   return (
     <article aria-label="Próximo evento"
-      className="rounded-xl p-3 sm:p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+      className="rounded-md p-3 sm:p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
       style={{ background: tone.bg, border: `1px solid ${tone.border}` }}>
       <div className="flex items-start gap-3 min-w-0">
         {/* O ícone fica na cor da CATEGORIA (emprego/inflação/juros); a URGÊNCIA fica no fundo, na contagem e no ponto. */}
@@ -222,7 +222,7 @@ function NextEventCard({ e, now }) {
         </span>
         <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="inline-flex items-center gap-1.5 text-10px font-mono uppercase tracking-wider font-bold" style={{ color: tone.color }}>
+            <span className="inline-flex items-center gap-1.5 text-11px font-mono uppercase tracking-wider font-bold" style={{ color: tone.color }}>
               {hot && <span className="w-1.5 h-1.5 rounded-full animate-pulse motion-reduce:animate-none" style={{ background: tone.color }} aria-hidden="true" />}
               {tone.head}
             </span>
@@ -244,7 +244,7 @@ function NextEventCard({ e, now }) {
         <p className="text-2xl sm:text-3xl font-bold font-mono tabular-nums leading-none" style={{ color: tone.color }}>
           {formatCountdownBare(msUntil)}
         </p>
-        <p className="mt-1 text-10px font-mono text-muted-foreground">{justOut ? 'o número acabou de sair' : 'faltam'}</p>
+        <p className="mt-1 text-11px font-mono text-muted-foreground">{justOut ? 'o número acabou de sair' : 'faltam'}</p>
         <div className="mt-2 h-1 rounded-full overflow-hidden" aria-hidden="true" style={{ background: 'rgba(255,255,255,0.08)' }}>
           <div className="h-full rounded-full transition-all"
             style={{ width: `${Math.round(approachFraction(msUntil) * 100)}%`, background: tone.color }} />
@@ -266,7 +266,7 @@ function EventTile({ e, now }) {
       <CategoryTag category={meta.category} Icon={Icon} />
       <p className="text-xs font-semibold text-foreground leading-tight">
         {meta.title}
-        <span className="ml-1.5 text-10px font-mono font-normal text-muted-foreground">({meta.short})</span>
+        <span className="ml-1.5 text-11px font-mono font-normal text-muted-foreground">({meta.short})</span>
       </p>
       <ImpactDots impact={meta.impact} />
       <ValueSlots e={e} compact />
@@ -277,7 +277,7 @@ function EventTile({ e, now }) {
           {formatEventClock(e.startsAtUtc)}
         </time>
         {!pending && (
-          <span className="text-10px font-mono" style={{ color: tone.color }}>
+          <span className="text-11px font-mono" style={{ color: tone.color }}>
             {e.phase === 'agora' ? 'acabou de sair' : formatCountdown(e.startMs - now)}
           </span>
         )}
@@ -292,10 +292,10 @@ function DayColumn({ g, now }) {
   return (
     <div className="flex flex-col gap-1.5 min-w-0 sm:snap-start">
       <div className="flex items-baseline gap-1.5 px-0.5">
-        <span className="text-10px font-mono font-bold tracking-wider" style={{ color: today ? '#ffd166' : 'rgba(255,255,255,0.55)' }}>{g.weekday}</span>
+        <span className="text-11px font-mono font-bold tracking-wider" style={{ color: today ? '#e3b45a' : 'rgba(255,255,255,0.55)' }}>{g.weekday}</span>
         <span className="text-lg font-bold text-foreground tabular-nums leading-none">{g.day}</span>
-        <span className="text-10px font-mono text-muted-foreground">/{g.month}</span>
-        <span className="ml-auto text-10px font-mono whitespace-nowrap" style={{ color: today ? '#ffd166' : 'rgba(255,255,255,0.45)' }}>{g.relative}</span>
+        <span className="text-11px font-mono text-muted-foreground">/{g.month}</span>
+        <span className="ml-auto text-11px font-mono whitespace-nowrap" style={{ color: today ? '#e3b45a' : 'rgba(255,255,255,0.62)' }}>{g.relative}</span>
       </div>
       <ul className="flex flex-col gap-1.5 flex-1">
         {g.items.map((e) => <EventTile key={e.id} e={e} now={now} />)}
@@ -319,7 +319,7 @@ function MarketContextBandInner() {
   if (state === BAND_STATES.OFF) {
     return (
       <button type="button" onClick={() => toggle(true)}
-        className="flex items-center gap-1.5 text-10px font-mono text-muted-foreground hover:text-foreground transition-colors">
+        className="flex items-center gap-1.5 text-11px font-mono text-muted-foreground hover:text-foreground transition-colors">
         <Eye className="w-3 h-3" aria-hidden="true" />
         Mostrar agenda de eventos dos EUA
       </button>
@@ -331,14 +331,14 @@ function MarketContextBandInner() {
   const header = (
     <div className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-2 min-w-0">
-        <CalendarClock className="w-3.5 h-3.5 shrink-0" style={{ color: '#00e5ff' }} aria-hidden="true" />
+        <CalendarClock className="w-3.5 h-3.5 shrink-0" style={{ color: '#8db4e2' }} aria-hidden="true" />
         <h2 className="text-sm font-bold text-foreground tracking-tight">Agenda de eventos dos EUA</h2>
         {state === BAND_STATES.FRESH && age && (
-          <span className="hidden sm:inline text-10px font-mono text-muted-foreground">· checada {age}</span>
+          <span className="hidden sm:inline text-11px font-mono text-muted-foreground">· checada {age}</span>
         )}
       </div>
       <button type="button" onClick={() => toggle(false)} aria-label="Ocultar agenda de eventos"
-        className="flex items-center gap-1 text-10px font-mono text-muted-foreground hover:text-foreground transition-colors shrink-0">
+        className="flex items-center gap-1 text-11px font-mono text-muted-foreground hover:text-foreground transition-colors shrink-0">
         <EyeOff className="w-3 h-3" aria-hidden="true" />
         Ocultar
       </button>
@@ -347,7 +347,7 @@ function MarketContextBandInner() {
 
   if (state === BAND_STATES.UNAVAILABLE) {
     return (
-      <section aria-label="Agenda de eventos dos EUA" className="rounded-xl px-4 py-3 space-y-1.5" style={BOX}>
+      <section aria-label="Agenda de eventos dos EUA" className="rounded-md px-4 py-3 space-y-1.5" style={BOX}>
         {header}
         <p className="text-11px font-mono text-muted-foreground">
           Agenda indisponível no momento. Isso não afeta sinais nem operações.
@@ -366,10 +366,10 @@ function MarketContextBandInner() {
   const groups = groupEventsByDay(rest, now);
   const history = releaseHistory(events, now);
   return (
-    <section aria-label="Agenda de eventos dos EUA" className="rounded-xl px-4 py-3 space-y-3" style={BOX}>
+    <section aria-label="Agenda de eventos dos EUA" className="rounded-md px-4 py-3 space-y-3" style={BOX}>
       {header}
       {state === BAND_STATES.STALE && (
-        <p className="flex items-start gap-1.5 text-11px font-mono" style={{ color: '#ffd166' }}>
+        <p className="flex items-start gap-1.5 text-11px font-mono" style={{ color: '#e3b45a' }}>
           <Clock className="w-3 h-3 mt-0.5 shrink-0" aria-hidden="true" />
           <span>
             {age ? `Última checagem ${age}` : 'Sem hora da última checagem'} — a agenda pode estar desatualizada; confira a data antes de confiar.
@@ -394,7 +394,7 @@ function MarketContextBandInner() {
           )}
           {groups.length > 0 && (
             <div className="space-y-2">
-              {featured && <h3 className="text-10px font-mono uppercase tracking-wider text-muted-foreground">Nos próximos dias</h3>}
+              {featured && <h3 className="text-11px font-mono uppercase tracking-wider text-muted-foreground">Nos próximos dias</h3>}
               {/* Uma coluna por dia COM evento, lado a lado (rola para o lado se não couber); no celular as colunas empilham.
                   Dias sem evento não ganham coluna: a agenda real tem ~2 eventos por semana, e 5 colunas vazias seriam só ruído. */}
               <div role="region" aria-label="Próximos dias com evento" tabIndex={0}
@@ -405,7 +405,7 @@ function MarketContextBandInner() {
           )}
           {(total > MAX_EVENTS_SHOWN || expanded) && (
             <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
-              className="flex items-center gap-1 text-10px font-mono text-muted-foreground hover:text-foreground transition-colors">
+              className="flex items-center gap-1 text-11px font-mono text-muted-foreground hover:text-foreground transition-colors">
               {expanded ? <ChevronUp className="w-3 h-3" aria-hidden="true" /> : <ChevronDown className="w-3 h-3" aria-hidden="true" />}
               {expanded ? 'Mostrar menos' : `Ver todos (${total})`}
             </button>
@@ -413,7 +413,7 @@ function MarketContextBandInner() {
         </>
       )}
       <ReleaseHistory items={history} now={now} reactions={reactions} />
-      <p className="text-10px font-mono text-muted-foreground">
+      <p className="text-11px font-mono text-muted-foreground">
         Só informação — não altera sinais nem operações.
       </p>
     </section>

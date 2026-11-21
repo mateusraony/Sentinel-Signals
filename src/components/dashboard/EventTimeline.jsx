@@ -29,11 +29,11 @@ export function CandleBoundTag() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="text-8px text-muted-foreground/50 cursor-help" tabIndex={0}>
+        <span className="text-11px text-muted-foreground/50 cursor-help" tabIndex={0}>
           {' '}(vela)
         </span>
       </TooltipTrigger>
-      <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+      <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
         Fechamento da vela que confirmou o toque — cota máxima; o cruzamento real do nível pode ter sido antes, dentro da mesma vela (só há dado OHLC, sem tick intrabar)
       </TooltipContent>
     </Tooltip>
@@ -58,11 +58,11 @@ export function DetectionLag({ realTime, detectedAt }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="text-8px text-amber-500/80 cursor-help" tabIndex={0}>
+        <span className="text-11px text-amber-500/80 cursor-help" tabIndex={0}>
           {' '}(detectado {label} depois)
         </span>
       </TooltipTrigger>
-      <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+      <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
         Diferença entre o fechamento real do candle e quando o scan detectou/gravou — atraso grande aqui indica falha do cron ou queda de cota
       </TooltipContent>
     </Tooltip>
@@ -73,10 +73,10 @@ export function DetectionLag({ realTime, detectedAt }) {
  * Uma linha: "Aberta · 05/09 08:15". Compacta de propósito — é registro de
  * auditoria, não manchete.
  */
-export function EventRow({ event, color = 'rgba(255,255,255,0.45)' }) {
+export function EventRow({ event, color = 'rgba(255,255,255,0.62)' }) {
   return (
-    <div className="flex items-baseline gap-1.5 text-9px font-mono leading-relaxed">
-      <span className="shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}>{event.label}</span>
+    <div className="flex items-baseline gap-1.5 text-11px font-mono leading-relaxed">
+      <span className="shrink-0" style={{ color: 'rgba(255,255,255,0.55)' }}>{event.label}</span>
       <span style={{ color }}>{fmtBRT(event.at)}</span>
       {event.candleBound && <CandleBoundTag />}
       <DetectionLag realTime={event.at} detectedAt={event.detectedAt} />
@@ -92,7 +92,7 @@ export function EventTimeline({ events, title = 'Horários (BRT)' }) {
   return (
     <div className="space-y-0.5">
       {title && (
-        <div className="text-8px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.28)' }}>
+        <div className="text-11px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.28)' }}>
           🕐 {title}
         </div>
       )}

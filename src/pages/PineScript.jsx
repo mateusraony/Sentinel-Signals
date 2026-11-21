@@ -202,12 +202,12 @@ bearColor     = input.color(#ff0583,"Cor tendência baixa",  group = groupStyle)
 neutralColor  = input.color(#cccccc,"Cor neutra",           group = groupStyle)
 emaFastColor  = input.color(#00d8ff,"Cor EMA rápida",       group = groupStyle)
 emaSlowColor  = input.color(#ffb000,"Cor EMA lenta",        group = groupStyle)
-tp1Color      = input.color(#ffd166,"Cor TP1",              group = groupStyle)
+tp1Color      = input.color(#e3b45a,"Cor TP1",              group = groupStyle)
 stopColor     = input.color(#ff3b6b,"Cor Stop",             group = groupStyle)
 debugBgColor  = input.color(#111827,"Cor fundo Debug",      group = groupStyle)
 blockedColor  = input.color(#ff9900,"Cor regime bloqueado", group = groupStyle)
 tier1Color    = input.color(#00d8ff,"Cor Tier 1",           group = groupStyle)
-tier2Color    = input.color(#ffd166,"Cor Tier 2",           group = groupStyle)
+tier2Color    = input.color(#e3b45a,"Cor Tier 2",           group = groupStyle)
 tier3Color    = input.color(#ff9900,"Cor Tier 3",           group = groupStyle)
 ema200Color   = input.color(#9b59b6,"Cor EMA 200",          group = groupStyle)
 
@@ -1137,21 +1137,21 @@ export default function PineScript() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 text-9px font-mono px-2 py-1 rounded"
-            style={{ background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.2)', color: '#00ff80' }}>
-            <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#00ff80', boxShadow: '0 0 4px #00ff80' }} />
+            style={{ background: 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.2)', color: '#5db586' }}>
+            <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#5db586', boxShadow: 'none' }} />
             v13.2 · MTF 4h + Entrada 15m
           </div>
           {/* Auto-sync indicator */}
           <div className="flex items-center gap-1.5 text-9px font-mono px-2 py-1 rounded"
             style={{
-              background: syncStatus === 'syncing' ? 'rgba(0,229,255,0.1)' : syncStatus === 'synced' ? 'rgba(0,255,128,0.1)' : syncStatus === 'error' ? 'rgba(255,20,120,0.1)' : 'rgba(0,229,255,0.06)',
-              border: syncStatus === 'syncing' ? '1px solid rgba(0,229,255,0.3)' : syncStatus === 'synced' ? '1px solid rgba(0,255,128,0.3)' : syncStatus === 'error' ? '1px solid rgba(255,20,120,0.3)' : '1px solid rgba(0,229,255,0.15)',
+              background: syncStatus === 'syncing' ? 'rgba(141,180,226,0.1)' : syncStatus === 'synced' ? 'rgba(93,181,134,0.1)' : syncStatus === 'error' ? 'rgba(224,106,91,0.1)' : 'rgba(141,180,226,0.06)',
+              border: syncStatus === 'syncing' ? '1px solid rgba(141,180,226,0.3)' : syncStatus === 'synced' ? '1px solid rgba(93,181,134,0.3)' : syncStatus === 'error' ? '1px solid rgba(224,106,91,0.3)' : '1px solid rgba(141,180,226,0.15)',
             }}>
             <Zap className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} style={{
-              color: syncStatus === 'syncing' ? '#00e5ff' : syncStatus === 'synced' ? '#00ff80' : syncStatus === 'error' ? '#ff1478' : 'rgba(0,229,255,0.5)',
+              color: syncStatus === 'syncing' ? '#8db4e2' : syncStatus === 'synced' ? '#5db586' : syncStatus === 'error' ? '#e06a5b' : 'rgba(141,180,226,0.5)',
             }} />
             <span style={{
-              color: syncStatus === 'syncing' ? '#00e5ff' : syncStatus === 'synced' ? '#00ff80' : syncStatus === 'error' ? '#ff1478' : 'rgba(0,229,255,0.5)',
+              color: syncStatus === 'syncing' ? '#8db4e2' : syncStatus === 'synced' ? '#5db586' : syncStatus === 'error' ? '#e06a5b' : 'rgba(141,180,226,0.5)',
             }}>
               {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? '✓ Auto-sync OK' : syncStatus === 'error' ? 'Erro na sincronização' : 'Auto-sync ativo'}
             </span>
@@ -1173,8 +1173,8 @@ export default function PineScript() {
             aria-controls={`pine-tabpanel-${tab.id}`}
             className="text-10px font-mono px-3 py-2 rounded-lg transition-all"
             style={activeTab === tab.id
-              ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
-              : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}>
+              ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
+              : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.62)' }}>
             {tab.label}
           </button>
         ))}
@@ -1185,30 +1185,30 @@ export default function PineScript() {
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={handleSave}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono font-bold transition-all"
-              style={{ background: saved ? 'rgba(0,255,128,0.15)' : 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>
+              style={{ background: saved ? 'rgba(93,181,134,0.15)' : 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }}>
               {saved ? <CheckCircle2 className="w-3 h-3" /> : <Save className="w-3 h-3" />}
               {saved ? 'Salvo!' : 'Salvar'}
             </button>
             <button onClick={handleCopy}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
-              style={{ background: 'rgba(0,229,255,0.07)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
+              style={{ background: 'rgba(141,180,226,0.07)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
               <Copy className="w-3 h-3" />
               {copied ? 'Copiado!' : 'Copiar'}
             </button>
             <button onClick={handleReset}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
-              style={{ background: 'rgba(255,159,67,0.07)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+              style={{ background: 'rgba(221,154,74,0.07)', border: '1px solid rgba(221,154,74,0.2)', color: '#dd9a4a' }}>
               <RotateCcw className="w-3 h-3" />Restaurar v13.2
             </button>
             <span className="text-9px font-mono text-muted-foreground ml-auto">Auto-salvo · {code.split('\n').length} linhas</span>
           </div>
 
-          <div className="relative rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,255,128,0.15)' }}>
+          <div className="relative rounded-md overflow-hidden" style={{ border: '1px solid rgba(93,181,134,0.15)' }}>
             <div className="flex items-center gap-2 px-4 py-2" style={{ background: 'rgba(6,8,15,0.9)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              <Code2 className="w-3 h-3" style={{ color: '#00e5ff' }} />
-              <span className="text-9px font-mono" style={{ color: '#00e5ff' }}>NE_RF_v13.2.pine</span>
+              <Code2 className="w-3 h-3" style={{ color: '#8db4e2' }} />
+              <span className="text-9px font-mono" style={{ color: '#8db4e2' }}>NE_RF_v13.2.pine</span>
               <span className="text-8px font-mono px-1.5 py-0.5 rounded ml-2"
-                style={{ background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
+                style={{ background: 'rgba(141,180,226,0.1)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
                 @version=6
               </span>
               <div className="flex gap-1 ml-auto">
@@ -1222,17 +1222,17 @@ export default function PineScript() {
               onChange={e => setCode(e.target.value)}
               spellCheck={false}
               className="w-full font-mono text-11px outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none leading-relaxed p-4"
-              style={{ background: 'rgba(6,8,15,0.95)', color: 'rgba(0,255,128,0.85)', minHeight: '60vh', tabSize: 4 }}
+              style={{ background: 'rgba(6,8,15,0.95)', color: 'rgba(93,181,134,0.85)', minHeight: '60vh', tabSize: 4 }}
             />
           </div>
 
           <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-9px font-mono"
-            style={{ background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.12)', color: 'rgba(0,229,255,0.6)' }}>
+            style={{ background: 'rgba(141,180,226,0.05)', border: '1px solid rgba(141,180,226,0.12)', color: 'rgba(141,180,226,0.6)' }}>
             <Info className="w-3 h-3 shrink-0 mt-0.5" />
             <span>
-              <strong style={{ color: '#00e5ff' }}>Sincronização automática ativa.</strong> Ao salvar, o sistema
+              <strong style={{ color: '#8db4e2' }}>Sincronização automática ativa.</strong> Ao salvar, o sistema
               extrai os parâmetros do Pine Script (rng_per, rng_qty, minScore, ATR mult, TP1R, etc.) e os
-              aplica automaticamente ao scanner e aos ativos — <strong style={{ color: '#00ff80' }}>sem precisar
+              aplica automaticamente ao scanner e aos ativos — <strong style={{ color: '#5db586' }}>sem precisar
               alterar nada no bot</strong>. Os mesmos parâmetros também aparecem em{' '}
               <Link to="/settings" className="font-bold underline underline-offset-2">Ajuste Fino</Link>
               {' '}— quem salvar por último vence. Os parâmetros ativos são:
@@ -1249,10 +1249,10 @@ export default function PineScript() {
               { label: 'TP1 %', value: parsedConfig.tp1QtyPercent, pine: 'tp1QtyPercent' },
             ].map(p => (
               <div key={p.label} className="rounded-lg px-2 py-2 text-center"
-                style={{ background: 'rgba(0,255,128,0.04)', border: '1px solid rgba(0,255,128,0.1)' }}>
+                style={{ background: 'rgba(93,181,134,0.04)', border: '1px solid rgba(93,181,134,0.1)' }}>
                 <div className="text-8px font-mono text-muted-foreground">{p.label}</div>
-                <div className="text-sm font-mono font-bold" style={{ color: '#00ff80' }}>{p.value}</div>
-                <div className="text-7px font-mono" style={{ color: 'rgba(0,255,128,0.35)' }}>{p.pine}</div>
+                <div className="text-sm font-mono font-bold" style={{ color: '#5db586' }}>{p.value}</div>
+                <div className="text-7px font-mono" style={{ color: 'rgba(93,181,134,0.35)' }}>{p.pine}</div>
               </div>
             ))}
           </div>
@@ -1261,7 +1261,7 @@ export default function PineScript() {
 
       {activeTab === 'sync' && (
         <div className="space-y-3" id="pine-tabpanel-sync" role="tabpanel" aria-labelledby="pine-tab-sync">
-          <div className="rounded-xl p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(0,255,128,0.12)' }}>
+          <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(93,181,134,0.12)' }}>
             <div className="text-10px font-mono text-muted-foreground uppercase tracking-widest mb-2">🔗 NE RF v13.2 → Sistema</div>
             {syncNotes.map(note => (
               <div key={note.id} className="flex items-start gap-3 py-2.5 px-3 rounded-lg"
@@ -1271,13 +1271,13 @@ export default function PineScript() {
                   <div className="text-10px font-mono font-bold text-foreground">{note.label}</div>
                   <div className="text-9px font-mono text-muted-foreground mt-0.5">{note.desc}</div>
                 </div>
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0 ml-auto mt-0.5" style={{ color: '#00ff80' }} />
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0 ml-auto mt-0.5" style={{ color: '#5db586' }} />
               </div>
             ))}
           </div>
 
-          <div className="rounded-xl p-4 space-y-2" style={{ background: 'rgba(255,159,67,0.05)', border: '1px solid rgba(255,159,67,0.15)' }}>
-            <div className="flex items-center gap-2 text-10px font-mono" style={{ color: '#ff9f43' }}>
+          <div className="rounded-md p-4 space-y-2" style={{ background: 'rgba(221,154,74,0.05)', border: '1px solid rgba(221,154,74,0.15)' }}>
+            <div className="flex items-center gap-2 text-10px font-mono" style={{ color: '#dd9a4a' }}>
               <AlertTriangle className="w-3.5 h-3.5" />
               <span className="font-bold">Fluxo de entrada 4h → 15m</span>
             </div>
@@ -1298,20 +1298,20 @@ export default function PineScript() {
             Parâmetros NE RF v13.2 por ativo — sincronizados com o scanner:
           </div>
           {assets.length === 0 ? (
-            <div className="rounded-xl p-8 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="rounded-md p-8 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <p className="text-sm text-muted-foreground">Nenhum ativo cadastrado.</p>
             </div>
           ) : (
             <div className="space-y-2">
               {assets.map(asset => (
-                <div key={asset.id} className="rounded-xl p-4"
-                  style={{ background: 'rgba(10,13,22,0.85)', border: asset.is_active ? '1px solid rgba(0,255,128,0.1)' : '1px solid rgba(255,255,255,0.05)' }}>
+                <div key={asset.id} className="rounded-md p-4"
+                  style={{ background: 'rgba(10,13,22,0.85)', border: asset.is_active ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(255,255,255,0.05)' }}>
                   <div className="flex items-center gap-2 mb-3">
                     <span className="font-bold text-sm text-foreground">{asset.display_name}</span>
                     <span className="text-8px font-mono px-1.5 py-0.5 rounded"
                       style={asset.is_active
-                        ? { background: 'rgba(0,255,128,0.1)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.2)' }
-                        : { background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.3)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                        ? { background: 'rgba(93,181,134,0.1)', color: '#5db586', border: '1px solid rgba(93,181,134,0.2)' }
+                        : { background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.55)', border: '1px solid rgba(255,255,255,0.07)' }}>
                       {asset.is_active ? 'ATIVO' : 'INATIVO'}
                     </span>
                   </div>
@@ -1328,7 +1328,7 @@ export default function PineScript() {
                         style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
                         <div className="text-8px font-mono text-muted-foreground">{p.label}</div>
                         <div className="text-sm font-mono font-bold text-foreground mt-0.5">{p.value}</div>
-                        <div className="text-7px font-mono" style={{ color: 'rgba(0,255,128,0.4)' }}>{p.pine}</div>
+                        <div className="text-7px font-mono" style={{ color: 'rgba(93,181,134,0.4)' }}>{p.pine}</div>
                       </div>
                     ))}
                   </div>

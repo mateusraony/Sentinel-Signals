@@ -3,11 +3,11 @@ import { Search, Calendar, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { PERIOD_OPTIONS, countActiveFilters } from '@/lib/tradesOverview';
 
-const ON = { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' };
-const OFF = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)' };
+const ON = { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: 'rgba(141,180,226,0.9)' };
+const OFF = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.62)' };
 const SIDE_ON = {
-  BUY: { background: 'rgba(0,255,128,0.12)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' },
-  SELL: { background: 'rgba(255,20,120,0.12)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' },
+  BUY: { background: 'rgba(93,181,134,0.12)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' },
+  SELL: { background: 'rgba(224,106,91,0.12)', border: '1px solid rgba(224,106,91,0.3)', color: '#e06a5b' },
 };
 const TF_OPTIONS = [{ id: 'all', label: 'Todos' }, { id: '1h', label: '1H' }, { id: '4h', label: '4H' }, { id: '1d', label: '1D' }];
 const SIDE_OPTIONS = [{ id: 'all', label: 'Todos' }, { id: 'BUY', label: 'BUY' }, { id: 'SELL', label: 'SELL' }];
@@ -16,7 +16,7 @@ const SIDE_OPTIONS = [{ id: 'all', label: 'Todos' }, { id: 'BUY', label: 'BUY' }
 function Group({ label, options, value, onPick, styleOn = (/** @type {string} */ _id) => ON }) {
   return (
     <div className="flex items-center gap-1.5" role="group" aria-label={label}>
-      <span className="text-9px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>
+      <span className="text-9px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.55)' }}>{label}</span>
       {options.map((option) => (
         <button key={option.id} type="button" onClick={() => onPick(option.id)} aria-pressed={value === option.id}
           className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
@@ -48,7 +48,7 @@ export default function TradesFilterBar({ filters, onChange, onClear, showDetail
   const activeCount = countActiveFilters(filters);
 
   return (
-    <div className="rounded-xl px-3 py-2.5 space-y-2" role="search" aria-label="Filtros das operações"
+    <div className="rounded-md px-3 py-2.5 space-y-2" role="search" aria-label="Filtros das operações"
       style={{ background: 'rgba(10,13,22,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="flex items-center gap-x-4 gap-y-2 flex-wrap">
         <div className="relative">
@@ -61,7 +61,7 @@ export default function TradesFilterBar({ filters, onChange, onClear, showDetail
 
         <label className="flex items-center gap-1.5">
           <Calendar className="w-3 h-3 text-muted-foreground shrink-0" aria-hidden="true" />
-          <span className="text-9px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.35)' }}>Período</span>
+          <span className="text-9px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.55)' }}>Período</span>
           <select value={filters.period} onChange={(e) => onChange({ period: e.target.value })}
             className="h-8 px-2 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={filters.period !== 'all' ? { ...ON, colorScheme: 'dark' } : { ...OFF, color: 'rgba(255,255,255,0.75)', colorScheme: 'dark' }}>
@@ -91,7 +91,7 @@ export default function TradesFilterBar({ filters, onChange, onClear, showDetail
         {activeCount > 0 && (
           <button type="button" onClick={onClear}
             className="flex items-center gap-1 text-10px font-mono px-2.5 py-1 rounded-md transition-all ml-auto"
-            style={{ background: 'rgba(255,209,102,0.1)', border: '1px solid rgba(255,209,102,0.35)', color: '#ffd166' }}>
+            style={{ background: 'rgba(227,180,90,0.1)', border: '1px solid rgba(227,180,90,0.35)', color: '#e3b45a' }}>
             <X className="w-3 h-3" aria-hidden="true" />
             Limpar filtros ({activeCount})
           </button>
@@ -99,7 +99,7 @@ export default function TradesFilterBar({ filters, onChange, onClear, showDetail
       </div>
 
       {activeCount > 0 && (
-        <p className="text-10px font-mono" role="status" style={{ color: '#ffd166' }}>
+        <p className="text-10px font-mono" role="status" style={{ color: '#e3b45a' }}>
           Filtros ligados — mostrando {counts.activeShown} de {counts.activeTotal} ativas · {counts.analysisShown} de {counts.analysisTotal} avisos · {counts.closedShown} de {counts.closedTotal} fechadas.
         </p>
       )}

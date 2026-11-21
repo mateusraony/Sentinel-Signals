@@ -13,26 +13,26 @@ export default function RecentAlertsList({ signals = [], unavailable = false, as
     <div>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Activity className="w-4 h-4" style={{ color: '#00ff80' }} />
+          <Activity className="w-4 h-4" style={{ color: '#5db586' }} />
           <h2 className="text-base font-bold text-foreground tracking-tight">Alertas Recentes</h2>
-          <span className="text-10px font-mono px-1.5 py-0.5 rounded"
-            style={{ background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.2)', color: 'rgba(0,255,128,0.7)' }}
+          <span className="text-11px font-mono px-1.5 py-0.5 rounded"
+            style={{ background: 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.2)', color: 'rgba(93,181,134,0.7)' }}
           >{rangeFilterSignals.length}</span>
         </div>
         {/* Achado A-14 do Raio-X de UI/UX: feed mostrava no máximo 8 itens
             sem indicar que /alerts tem o resto (mais volume + filtros). */}
-        <Link to="/alerts" className="flex items-center gap-0.5 text-10px font-mono text-muted-foreground hover:text-foreground transition-colors">
+        <Link to="/alerts" className="flex items-center gap-0.5 text-11px font-mono text-muted-foreground hover:text-foreground transition-colors">
           Ver todos <ChevronRight className="w-3 h-3" />
         </Link>
       </div>
 
-      <div className="glass-card rounded-xl overflow-hidden">
+      <div className="glass-card rounded-md overflow-hidden">
         {unavailable ? (
           <div className="text-center py-12 text-muted-foreground">
             <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center"
-              style={{ background: 'rgba(255,159,67,0.06)', border: '1px solid rgba(255,159,67,0.15)' }}
+              style={{ background: 'rgba(221,154,74,0.06)', border: '1px solid rgba(221,154,74,0.15)' }}
             >
-              <WifiOff className="w-5 h-5" style={{ color: '#ff9f43', opacity: 0.6 }} />
+              <WifiOff className="w-5 h-5" style={{ color: '#dd9a4a', opacity: 0.6 }} />
             </div>
             <p className="text-sm">Não foi possível carregar os alertas recentes agora.</p>
           </div>
@@ -68,13 +68,13 @@ export default function RecentAlertsList({ signals = [], unavailable = false, as
                     <div className="flex items-center gap-2">
                       <TokenIcon symbol={signal.symbol} size={18} />
                       <span className="text-sm font-semibold text-foreground">{signal.symbol}</span>
-                      <span className="text-10px font-mono text-muted-foreground">{signal.timeframe?.toUpperCase()}</span>
+                      <span className="text-11px font-mono text-muted-foreground">{signal.timeframe?.toUpperCase()}</span>
                       <PriorityBadge priority={signal.priority} />
                     </div>
                     <p className="text-11px text-muted-foreground truncate mt-0.5">{signal.reason}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-10px font-mono text-muted-foreground">{moment(signal.created_date).fromNow()}</span>
+                    <span className="text-11px font-mono text-muted-foreground">{moment(signal.created_date).fromNow()}</span>
                     <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 </div>

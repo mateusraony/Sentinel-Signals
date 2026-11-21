@@ -26,9 +26,9 @@ import { translateSignalContext } from '@/lib/signalContextTranslation';
 import { priorityLabel } from '@/lib/signalStatus';
 
 const PRIORITY_CONFIG = {
-  high:   { color: '#ff9f43', bg: 'rgba(255,159,67,0.12)', border: 'rgba(255,159,67,0.3)', label: priorityLabel('high') },
+  high:   { color: '#dd9a4a', bg: 'rgba(221,154,74,0.12)', border: 'rgba(221,154,74,0.3)', label: priorityLabel('high') },
   medium: { color: 'rgba(255,255,255,0.5)', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', label: priorityLabel('medium') },
-  low:    { color: 'rgba(255,255,255,0.3)', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.07)', label: priorityLabel('low') },
+  low:    { color: 'rgba(255,255,255,0.55)', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.07)', label: priorityLabel('low') },
 };
 
 export default function Alerts() {
@@ -106,7 +106,7 @@ export default function Alerts() {
               onClick={() => setConfirmingDismissAll(filtered.map(s => s.id))}
               disabled={dismissMutation.isPending}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-80"
-              style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+              style={{ background: 'rgba(221,154,74,0.08)', border: '1px solid rgba(221,154,74,0.2)', color: '#dd9a4a' }}>
               <X className="w-3 h-3" />Arquivar todos
             </button>
           )}
@@ -116,11 +116,11 @@ export default function Alerts() {
       {/* Stats row */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Alta Prioridade', value: highCount, color: '#ff9f43', icon: AlertTriangle },
-          { label: 'BUY', value: buyCount, color: '#00ff80', icon: TrendingUp },
-          { label: 'SELL', value: sellCount, color: '#ff1478', icon: TrendingDown },
+          { label: 'Alta Prioridade', value: highCount, color: '#dd9a4a', icon: AlertTriangle },
+          { label: 'BUY', value: buyCount, color: '#5db586', icon: TrendingUp },
+          { label: 'SELL', value: sellCount, color: '#e06a5b', icon: TrendingDown },
         ].map(({ label, value, color, icon: Icon }) => (
-          <div key={label} className="rounded-xl px-4 py-3 flex items-center gap-3"
+          <div key={label} className="rounded-md px-4 py-3 flex items-center gap-3"
             style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <Icon className="w-4 h-4 shrink-0" style={{ color }} />
             <div>
@@ -132,7 +132,7 @@ export default function Alerts() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="rounded-md p-3 space-y-2" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-center gap-2 flex-wrap">
           <Filter className="w-3 h-3 text-muted-foreground shrink-0" />
 
@@ -146,14 +146,14 @@ export default function Alerts() {
           <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />
 
           {/* Tipo */}
-          {[{ id: 'all', label: 'Todos' }, { id: 'BUY', label: '▲ BUY', color: '#00ff80' }, { id: 'SELL', label: '▼ SELL', color: '#ff1478' }].map(f => (
+          {[{ id: 'all', label: 'Todos' }, { id: 'BUY', label: '▲ BUY', color: '#5db586' }, { id: 'SELL', label: '▼ SELL', color: '#e06a5b' }].map(f => (
             <button key={f.id} onClick={() => setFilterType(f.id)}
               className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all"
               style={filterType === f.id && f.color
                 ? { background: `${f.color}15`, border: `1px solid ${f.color}40`, color: f.color }
                 : filterType === f.id
-                ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+                ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
+                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
               {f.label}
             </button>
           ))}
@@ -165,8 +165,8 @@ export default function Alerts() {
             <button key={f.id} onClick={() => setFilterPriority(f.id)}
               className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all"
               style={filterPriority === f.id
-                ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+                ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
+                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
               {f.label}
             </button>
           ))}
@@ -180,8 +180,8 @@ export default function Alerts() {
                 className={`text-9px font-mono px-2 py-1.5 rounded-lg transition-all${src !== 'all' ? ' cursor-help' : ''}`}
                 tabIndex={src !== 'all' ? 0 : undefined}
                 style={filterSource === src
-                  ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
-                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+                  ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
+                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
                 {src === 'all' ? 'Todas Fontes' : longSourceLabel(src)}
               </button>
             );
@@ -199,7 +199,7 @@ export default function Alerts() {
           {hasActiveFilters && (
             <button onClick={() => { setSearch(''); setFilterSource('all'); setFilterPriority('all'); setFilterType('all'); }}
               className="ml-auto text-9px font-mono px-2 py-1.5 rounded-lg flex items-center gap-1 transition-all"
-              style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
+              style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
               <X className="w-3 h-3" />Limpar
             </button>
           )}
@@ -212,11 +212,11 @@ export default function Alerts() {
           <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       ) : isError && signals.length === 0 ? (
-        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar os alertas agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <Bell className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhum alerta com esses filtros.</p>
           {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): botão
@@ -225,7 +225,7 @@ export default function Alerts() {
           {hasActiveFilters && (
             <button onClick={() => { setSearch(''); setFilterSource('all'); setFilterPriority('all'); setFilterType('all'); }}
               className="mt-3 text-9px font-mono px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 transition-all"
-              style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
+              style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
               <X className="w-3 h-3" />Limpar filtros
             </button>
           )}
@@ -245,15 +245,15 @@ export default function Alerts() {
               <div key={signal.id}
                 tabIndex={0}
                 aria-label={`${signal.symbol?.replace('USDT', '/USDT')} — ver detalhes do alerta`}
-                className="rounded-xl px-4 py-3 flex items-center gap-3 transition-all duration-200 cursor-pointer group hover:scale-[1.002] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="rounded-md px-4 py-3 flex items-center gap-3 transition-all duration-200 cursor-pointer group focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 style={{
                   background: 'rgba(10,13,22,0.82)',
                   backdropFilter: 'blur(12px)',
                   border: signal.priority === 'high'
-                    ? (isBuy ? '1px solid rgba(0,255,128,0.3)' : '1px solid rgba(255,20,120,0.3)')
-                    : (isBuy ? '1px solid rgba(0,255,128,0.1)' : '1px solid rgba(255,20,120,0.1)'),
+                    ? (isBuy ? '1px solid rgba(93,181,134,0.3)' : '1px solid rgba(224,106,91,0.3)')
+                    : (isBuy ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(224,106,91,0.1)'),
                   boxShadow: signal.priority === 'high'
-                    ? (isBuy ? '0 0 16px rgba(0,255,128,0.08)' : '0 0 16px rgba(255,20,120,0.08)')
+                    ? (isBuy ? '0 0 16px rgba(93,181,134,0.08)' : '0 0 16px rgba(224,106,91,0.08)')
                     : 'none',
                 }}
                 onClick={() => setSelectedSignal(signal)}
@@ -268,13 +268,13 @@ export default function Alerts() {
                 }}>
 
                 {/* Side bar */}
-                <div className="w-0.5 self-stretch rounded-full shrink-0" style={{ background: isBuy ? '#00ff80' : '#ff1478' }} />
+                <div className="w-0.5 self-stretch rounded-full shrink-0" style={{ background: isBuy ? '#5db586' : '#e06a5b' }} />
 
                 {/* Signal badge */}
                 <span className="flex items-center gap-1 text-xs font-mono font-bold px-3 py-1.5 rounded-lg shrink-0"
                   style={isBuy
-                    ? { background: 'rgba(0,255,128,0.15)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.4)', boxShadow: '0 0 10px rgba(0,255,128,0.12)' }
-                    : { background: 'rgba(255,20,120,0.15)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.4)', boxShadow: '0 0 10px rgba(255,20,120,0.12)' }}>
+                    ? { background: 'rgba(93,181,134,0.15)', color: '#5db586', border: '1px solid rgba(93,181,134,0.4)', boxShadow: 'none' }
+                    : { background: 'rgba(224,106,91,0.15)', color: '#e06a5b', border: '1px solid rgba(224,106,91,0.4)', boxShadow: 'none' }}>
                   {isBuy ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                   {signal.signal_type}
                 </span>
@@ -285,14 +285,14 @@ export default function Alerts() {
                     <TokenIcon symbol={signal.symbol} size={18} />
                     <span className="font-bold text-sm text-foreground">{signal.symbol?.replace('USDT', '/USDT')}</span>
                     <span className="text-9px font-mono px-1.5 py-0.5 rounded"
-                      style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                      style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.62)', border: '1px solid rgba(255,255,255,0.07)' }}>
                       {signal.timeframe?.toUpperCase()}
                     </span>
                     {SIGNAL_SOURCES[signal.source]?.tooltip ? (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="text-8px font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
-                            style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.5)', border: '1px solid rgba(0,229,255,0.12)' }}>
+                            style={{ background: 'rgba(141,180,226,0.06)', color: 'rgba(141,180,226,0.5)', border: '1px solid rgba(141,180,226,0.12)' }}>
                             {longSourceLabel(signal.source)}
                           </span>
                         </TooltipTrigger>
@@ -302,7 +302,7 @@ export default function Alerts() {
                       </Tooltip>
                     ) : (
                       <span className="text-8px font-mono px-1.5 py-0.5 rounded"
-                        style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.5)', border: '1px solid rgba(0,229,255,0.12)' }}>
+                        style={{ background: 'rgba(141,180,226,0.06)', color: 'rgba(141,180,226,0.5)', border: '1px solid rgba(141,180,226,0.12)' }}>
                         {longSourceLabel(signal.source)}
                       </span>
                     )}
@@ -311,7 +311,7 @@ export default function Alerts() {
                       {prio.label}
                     </span>
                     {Number.isFinite(signal.context?.score) && signal.context.score > 0 && (
-                      <span className="text-8px font-mono" style={{ color: signal.context.score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.3)' }}>
+                      <span className="text-8px font-mono" style={{ color: signal.context.score >= 85 ? '#e3b45a' : 'rgba(255,255,255,0.55)' }}>
                         {agreementLabel({ score: signal.context.score })}
                       </span>
                     )}
@@ -328,7 +328,7 @@ export default function Alerts() {
                       ${signal.price_at_signal?.toLocaleString(undefined, { maximumFractionDigits: 4 })}
                     </span>
                   )}
-                  <span className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                  <span className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.62)' }}>
                     {moment(signal.created_date).format('DD/MM HH:mm')}
                   </span>
                   <button
@@ -348,7 +348,7 @@ export default function Alerts() {
         <DialogContent style={{ background: 'rgba(14,17,28,0.97)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)' }}>
           <DialogHeader>
             <DialogTitle className="font-mono flex items-center gap-2 text-sm">
-              <span style={{ color: selectedSignal?.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>
+              <span style={{ color: selectedSignal?.signal_type === 'BUY' ? '#5db586' : '#e06a5b' }}>
                 {selectedSignal?.signal_type === 'BUY' ? '▲' : '▼'} {selectedSignal?.signal_type}
               </span>
               {selectedSignal?.symbol?.replace('USDT', '/USDT')} — {selectedSignal?.timeframe?.toUpperCase()}
@@ -395,7 +395,7 @@ export default function Alerts() {
                         {rows.map((row) => (
                           <div key={row.label} className="flex items-center gap-2 text-xs">
                             {Number.isFinite(row.direction) ? (
-                              <span style={{ color: row.direction === 1 ? '#00ff80' : '#ff1478' }}>
+                              <span style={{ color: row.direction === 1 ? '#5db586' : '#e06a5b' }}>
                                 {row.direction === 1 ? '↑' : '↓'}
                               </span>
                             ) : null}
@@ -415,8 +415,8 @@ export default function Alerts() {
                       corrigido pro timestamp nesta mesma rodada, aqui é o
                       único controle visível pra revelar o payload. */}
                   <details>
-                    <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.45)' }}>ver dados técnicos →</summary>
-                    <pre className="mt-1 text-10px font-mono overflow-x-auto" style={{ color: 'rgba(0,255,128,0.7)' }}>
+                    <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.62)' }}>ver dados técnicos →</summary>
+                    <pre className="mt-1 text-10px font-mono overflow-x-auto" style={{ color: 'rgba(93,181,134,0.7)' }}>
                       {JSON.stringify(selectedSignal.context, null, 2)}
                     </pre>
                   </details>

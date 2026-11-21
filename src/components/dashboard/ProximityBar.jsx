@@ -52,10 +52,10 @@ export default function ProximityBar({ state }) {
       style={{ background: `rgba(${NEUTRAL},0.06)`, border: `1px solid rgba(${NEUTRAL},${alpha})` }}
     >
       <div className="flex items-center justify-between mb-1">
-        <span className="text-10px font-mono font-semibold" style={{ color: `rgba(${NEUTRAL},0.9)` }}>
+        <span className="text-11px font-mono font-semibold" style={{ color: `rgba(${NEUTRAL},0.9)` }}>
           📏 Distância até a linha do filtro
         </span>
-        <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>{distance.toFixed(2)}%</span>
+        <span className="text-11px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>{distance.toFixed(2)}%</span>
       </div>
       <div className="relative h-1.5 w-full rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
         <div
@@ -63,7 +63,7 @@ export default function ProximityBar({ state }) {
           style={{ width: `${progress}%`, background: `rgba(${NEUTRAL},0.6)` }}
         />
       </div>
-      <p className="text-8px font-mono mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
+      <p className="text-11px font-mono mt-1" style={{ color: 'rgba(255,255,255,0.55)' }}>
         Só mostra o quanto o preço está perto da linha — não indica sinal próximo.
       </p>
     </div>

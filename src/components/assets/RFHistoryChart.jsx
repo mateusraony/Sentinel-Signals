@@ -15,7 +15,7 @@ const DISPLAY_BARS = 60;
 const FETCH_LIMIT = 200;
 
 function dirColor(dir) {
-  return dir === 1 ? '#00ff80' : dir === -1 ? '#ff1478' : '#64748b';
+  return dir === 1 ? '#5db586' : dir === -1 ? '#e06a5b' : '#64748b';
 }
 
 function stdDevPct(values) {
@@ -95,13 +95,13 @@ export default function RFHistoryChart({ asset }) {
       else if (direction[i] === -1) downBars += 1;
     }
     const bias = upBars > downBars ? 'Alta' : downBars > upBars ? 'Baixa' : 'Neutro';
-    const biasColor = upBars > downBars ? '#00ff80' : downBars > upBars ? '#ff1478' : '#64748b';
+    const biasColor = upBars > downBars ? '#5db586' : downBars > upBars ? '#e06a5b' : '#64748b';
 
     const first = chartData[0];
     const last = chartData[chartData.length - 1];
     const rfChangePct = first && last && first.rf ? ((last.rf - first.rf) / first.rf) * 100 : 0;
     const stability = Math.abs(rfChangePct) < 2 ? 'Estável' : Math.abs(rfChangePct) < 5 ? 'Moderada' : 'Volátil';
-    const stabColor = Math.abs(rfChangePct) < 2 ? '#00ff80' : Math.abs(rfChangePct) < 5 ? '#ffd166' : '#ff1478';
+    const stabColor = Math.abs(rfChangePct) < 2 ? '#5db586' : Math.abs(rfChangePct) < 5 ? '#e3b45a' : '#e06a5b';
 
     return { chartData, flips, volatilityPct, bias, biasColor, rfChangePct, stability, stabColor };
   }, [candles, asset.rf_period, asset.rf_multiplier]);
@@ -126,7 +126,7 @@ export default function RFHistoryChart({ asset }) {
       {/* Header + timeframe filter */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1.5">
-          <BarChart2 className="w-3 h-3" style={{ color: '#00e5ff' }} />
+          <BarChart2 className="w-3 h-3" style={{ color: '#8db4e2' }} />
           <span className="text-9px font-mono font-bold text-muted-foreground uppercase tracking-wider">
             Histórico Range Filter
           </span>
@@ -136,8 +136,8 @@ export default function RFHistoryChart({ asset }) {
             <button key={tf} onClick={() => setTimeframe(tf)}
               className="px-2 py-0.5 rounded text-9px font-mono font-bold transition-all"
               style={timeframe === tf
-                ? { background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.4)', color: '#00e5ff' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+                ? { background: 'rgba(141,180,226,0.15)', border: '1px solid rgba(141,180,226,0.4)', color: '#8db4e2' }
+                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
               {tf.toUpperCase()}
             </button>
           ))}
@@ -165,13 +165,13 @@ export default function RFHistoryChart({ asset }) {
           <div className="grid grid-cols-4 gap-1.5">
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
               <div className="text-7px font-mono text-muted-foreground uppercase">Mudança RF</div>
-              <div className="text-10px font-mono font-bold" style={{ color: analysis.rfChangePct >= 0 ? '#00ff80' : '#ff1478' }}>
+              <div className="text-10px font-mono font-bold" style={{ color: analysis.rfChangePct >= 0 ? '#5db586' : '#e06a5b' }}>
                 {analysis.rfChangePct >= 0 ? '+' : ''}{analysis.rfChangePct.toFixed(2)}%
               </div>
             </div>
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
               <div className="text-7px font-mono text-muted-foreground uppercase">Volatilidade</div>
-              <div className="text-10px font-mono font-bold" style={{ color: '#00e5ff' }}>{analysis.volatilityPct.toFixed(2)}%</div>
+              <div className="text-10px font-mono font-bold" style={{ color: '#8db4e2' }}>{analysis.volatilityPct.toFixed(2)}%</div>
             </div>
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
               <div className="text-7px font-mono text-muted-foreground uppercase">Flips de direção</div>
@@ -192,7 +192,7 @@ export default function RFHistoryChart({ asset }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                 <YAxis
                   domain={['auto', 'auto']}
-                  tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 9, fontFamily: 'monospace' }}
+                  tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 9, fontFamily: 'monospace' }}
                   tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   tickFormatter={(v) => formatPrice(v)}
@@ -200,7 +200,7 @@ export default function RFHistoryChart({ asset }) {
                 />
                 <XAxis
                   dataKey="time"
-                  tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9, fontFamily: 'monospace' }}
+                  tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 9, fontFamily: 'monospace' }}
                   tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   minTickGap={40}
@@ -215,9 +215,9 @@ export default function RFHistoryChart({ asset }) {
                     return [value, name];
                   }}
                 />
-                <Area type="monotone" dataKey="band" stroke="none" fill="rgba(0,229,255,0.08)" isAnimationActive={false} />
+                <Area type="monotone" dataKey="band" stroke="none" fill="rgba(141,180,226,0.08)" isAnimationActive={false} />
                 <Line type="monotone" dataKey="price" stroke="rgba(255,255,255,0.55)" strokeWidth={1} dot={false} />
-                <Line type="monotone" dataKey="rf" stroke="#00e5ff" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#00e5ff' }} />
+                <Line type="monotone" dataKey="rf" stroke="#8db4e2" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#8db4e2' }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -253,8 +253,8 @@ export default function RFHistoryChart({ asset }) {
               <span style={{ color: dirColor(d.dir) }}>
                 {d.dir === 1 ? '▲' : d.dir === -1 ? '▼' : '—'} {d.tf?.toUpperCase()}
               </span>
-              <span style={{ color: d.signal === 'BUY' ? '#00ff80' : '#ff1478' }}>{d.signal}</span>
-              <span style={{ color: '#00e5ff' }}>${formatPrice(d.rf)}</span>
+              <span style={{ color: d.signal === 'BUY' ? '#5db586' : '#e06a5b' }}>{d.signal}</span>
+              <span style={{ color: '#8db4e2' }}>${formatPrice(d.rf)}</span>
               <span className="text-muted-foreground">${formatPrice(d.price)}</span>
             </div>
           ))}

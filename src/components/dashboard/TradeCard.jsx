@@ -42,27 +42,27 @@ const STATUS_CONFIG = {
   SIGNAL_CONFIRMED: {
     label: 'Entrada confirmada', short: 'Ativa',
     desc: 'Aguardando preço atingir TP1',
-    color: '#00ff80', bg: 'rgba(0,255,128,0.08)', border: 'rgba(0,255,128,0.28)',
+    color: '#5db586', bg: 'rgba(93,181,134,0.08)', border: 'rgba(93,181,134,0.28)',
   },
   RUNNER_ACTIVE: {
     label: 'Runner ativo', short: 'Runner',
     desc: 'TP1 atingido — trailing stop ativo',
-    color: '#ffd166', bg: 'rgba(255,209,102,0.08)', border: 'rgba(255,209,102,0.28)',
+    color: '#e3b45a', bg: 'rgba(227,180,90,0.08)', border: 'rgba(227,180,90,0.28)',
   },
   TP2_HIT: {
     label: 'TP2 atingido', short: 'TP2',
     desc: 'Operação encerrada com lucro máximo',
-    color: '#00ff80', bg: 'rgba(0,255,128,0.1)', border: 'rgba(0,255,128,0.4)',
+    color: '#5db586', bg: 'rgba(93,181,134,0.1)', border: 'rgba(93,181,134,0.4)',
   },
   STOP_HIT: {
     label: 'Stop atingido', short: 'Stop',
     desc: 'Operação encerrada por stop',
-    color: '#ff1478', bg: 'rgba(255,20,120,0.08)', border: 'rgba(255,20,120,0.28)',
+    color: '#e06a5b', bg: 'rgba(224,106,91,0.08)', border: 'rgba(224,106,91,0.28)',
   },
   INVALIDATED: {
     label: 'Invalidado', short: 'Inválido',
     desc: 'Condição técnica deixou de existir',
-    color: '#ff9f43', bg: 'rgba(255,159,67,0.08)', border: 'rgba(255,159,67,0.28)',
+    color: '#dd9a4a', bg: 'rgba(221,154,74,0.08)', border: 'rgba(221,154,74,0.28)',
   },
   CLOSED: {
     label: 'Encerrado', short: 'Fechado',
@@ -83,11 +83,11 @@ const MARKET_SOURCE_LABEL = { spot: 'Spot', futures: 'Futures' };
 // Uma cor = um significado. Estrutura fica neutra de propósito: o card antigo
 // pintava tudo de neon, e quando tudo grita nada chama atenção.
 const LEVEL_COLOR = {
-  stop: '#ff1478',
-  stopBe: '#ffd166',
+  stop: '#e06a5b',
+  stopBe: '#e3b45a',
   entry: 'rgba(255,255,255,0.75)',
-  tp1: '#ffd166',
-  tp2: '#00ff80',
+  tp1: '#e3b45a',
+  tp2: '#5db586',
 };
 
 // A postura do stop vem da comparação stop × entrada — nunca de `tp1_hit`.
@@ -95,12 +95,12 @@ const LEVEL_COLOR = {
 // então um runner antigo pode ter o stop bem além da entrada: chamar isso de
 // "breakeven" esconderia lucro já garantido.
 const STOP_POSTURE_LABEL = { risk: 'Stop', breakeven: 'Stop (BE)', locked: 'Stop 🔒' };
-const STOP_POSTURE_COLOR = { risk: LEVEL_COLOR.stop, breakeven: LEVEL_COLOR.stopBe, locked: '#00ff80' };
+const STOP_POSTURE_COLOR = { risk: LEVEL_COLOR.stop, breakeven: LEVEL_COLOR.stopBe, locked: '#5db586' };
 
 function levelColor(key, op) {
   if (key === 'stop') return STOP_POSTURE_COLOR[stopPosture(op)] ?? LEVEL_COLOR.stop;
-  if (key === 'tp1') return op.tp1_hit ? '#00ff80' : LEVEL_COLOR.tp1;
-  if (key === 'tp2') return op.tp2_hit ? '#00ff80' : LEVEL_COLOR.tp2;
+  if (key === 'tp1') return op.tp1_hit ? '#5db586' : LEVEL_COLOR.tp1;
+  if (key === 'tp2') return op.tp2_hit ? '#5db586' : LEVEL_COLOR.tp2;
   return LEVEL_COLOR.entry;
 }
 
@@ -131,9 +131,9 @@ const RAIL_ZONE = {
     label: 'risco já eliminado',
     style: { background: 'repeating-linear-gradient(135deg, rgba(255,255,255,0.22) 0 3px, rgba(255,255,255,0.05) 3px 6px)' },
   },
-  risk: { label: 'risco em jogo', style: { background: 'rgba(255,20,120,0.6)' } },
-  locked: { label: 'lucro protegido', style: { background: 'rgba(0,255,128,0.85)' } },
-  reward: { label: 'falta buscar', style: { background: 'rgba(0,255,128,0.18)' } },
+  risk: { label: 'risco em jogo', style: { background: 'rgba(224,106,91,0.6)' } },
+  locked: { label: 'lucro protegido', style: { background: 'rgba(93,181,134,0.85)' } },
+  reward: { label: 'falta buscar', style: { background: 'rgba(93,181,134,0.18)' } },
 };
 const RAIL_LABEL_ROW_PX = 13;
 const INITIAL_STOP_COLOR = 'rgba(255,255,255,0.5)';
@@ -160,7 +160,7 @@ function LevelRail({ op, price, isStale, isOpen }) {
   const { levels } = describeProximity(op, price);
   if (levels.length === 0) return null;
 
-  const needleColor = isStale ? '#ff9f43' : '#00e5ff';
+  const needleColor = isStale ? '#dd9a4a' : '#8db4e2';
   const { rows, labels } = rail
     ? layoutRailLabels(rail.markers.map((m) => ({ key: m.key, pos: m.pos, text: railLabelText(m.key, op) })))
     : { rows: 0, labels: [] };
@@ -186,7 +186,7 @@ function LevelRail({ op, price, isStale, isOpen }) {
                     background: railLabelColor(label.key, op), opacity: 0.35, transform: 'translateX(-50%)',
                   }} />
                 )}
-                <span className="absolute text-8px font-mono font-semibold uppercase tracking-wide whitespace-nowrap leading-none"
+                <span className="absolute text-11px font-mono font-semibold uppercase tracking-wide whitespace-nowrap leading-none"
                   data-rail-label={label.key}
                   style={{ ...railAnchorStyle(label), bottom: label.row * RAIL_LABEL_ROW_PX + 4, color: railLabelColor(label.key, op) }}>
                   {label.text}
@@ -228,7 +228,7 @@ function LevelRail({ op, price, isStale, isOpen }) {
                   left: `${rail.pricePos}%`,
                   width: 4,
                   background: needleColor,
-                  boxShadow: `0 0 6px ${needleColor}`,
+                  boxShadow: 'none',
                   transform: 'translateX(-50%)',
                   opacity: rail.priceOutOfRange || isStale ? 0.55 : 1,
                 }} />
@@ -237,14 +237,14 @@ function LevelRail({ op, price, isStale, isOpen }) {
 
           <div className="relative w-full h-5" aria-hidden="true">
             {nowLabel && (
-              <span className="absolute text-8px font-mono font-semibold uppercase tracking-wide whitespace-nowrap leading-none"
+              <span className="absolute text-11px font-mono font-semibold uppercase tracking-wide whitespace-nowrap leading-none"
                 style={{ ...railAnchorStyle(nowLabel), top: 11, color: needleColor }}>
                 {nowLabel.text}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-x-2.5 gap-y-0.5 flex-wrap text-8px font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>
+          <div className="flex items-center gap-x-2.5 gap-y-0.5 flex-wrap text-11px font-mono" style={{ color: 'rgba(255,255,255,0.62)' }}>
             {/* A legenda fala do que está EM JOGO ("falta buscar", "risco em jogo") — numa operação encerrada seria mentira. */}
             {isOpen && rail.zones.map((zone) => (
               <span key={zone.key} className="flex items-center gap-1" data-rail-legend={zone.key}>
@@ -253,7 +253,7 @@ function LevelRail({ op, price, isStale, isOpen }) {
               </span>
             ))}
             {!rail.isBuy && (
-              <span style={{ color: 'rgba(255,255,255,0.3)' }}>
+              <span style={{ color: 'rgba(255,255,255,0.55)' }}>
                 {isOpen ? '· ' : ''}venda: o lucro cresce para a direita (preço caindo)
               </span>
             )}
@@ -268,14 +268,14 @@ function LevelRail({ op, price, isStale, isOpen }) {
             <>
               <div className="flex items-center gap-1 mb-0.5">
                 <span className="w-1 h-1 rounded-full shrink-0" style={{ background: color }} />
-                <span className="text-8px font-mono uppercase tracking-wide truncate"
-                  style={{ color: 'rgba(255,255,255,0.4)' }}>{levelLabel(level.key, op)}</span>
+                <span className="text-11px font-mono uppercase tracking-wide truncate"
+                  style={{ color: 'rgba(255,255,255,0.62)' }}>{levelLabel(level.key, op)}</span>
               </div>
               <div className="text-11px font-mono font-semibold truncate leading-tight" style={{ color }}>
                 {formatPrice(level.price)}
               </div>
-              <div className="text-9px font-mono truncate leading-tight"
-                style={{ color: level.isNearest ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)' }}>
+              <div className="text-11px font-mono truncate leading-tight"
+                style={{ color: level.isNearest ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.55)' }}>
                 {level.pct === null
                   ? '—'
                   : `${level.position === 'above' ? '↑' : level.position === 'below' ? '↓' : '='} ${Math.abs(level.pct).toFixed(2)}%`}
@@ -290,7 +290,7 @@ function LevelRail({ op, price, isStale, isOpen }) {
               <TooltipTrigger asChild>
                 <div className="min-w-0 cursor-help" tabIndex={0}>{cellBody}</div>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                 {`O preço precisa andar ${formatSignedPct(level.pct)} para chegar em ${levelLabel(level.key, op)}.`}
               </TooltipContent>
             </Tooltip>
@@ -308,7 +308,7 @@ function MilestoneLine({ op, price, isStale }) {
 
   const isRisk = milestone.kind === 'risk';
   const posture = stopPosture(op);
-  const color = isRisk ? (STOP_POSTURE_COLOR[posture] ?? '#ff1478') : '#00ff80';
+  const color = isRisk ? (STOP_POSTURE_COLOR[posture] ?? '#e06a5b') : '#5db586';
   const distance = milestone.absPct.toFixed(2);
   const riskText = posture === 'locked'
     ? 'até o stop, que já protege lucro'
@@ -330,11 +330,11 @@ function MilestoneLine({ op, price, isStale }) {
       {isStale && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="ml-auto text-9px shrink-0 cursor-help" tabIndex={0} style={{ color: '#ff9f43' }}>
+            <span className="ml-auto text-11px shrink-0 cursor-help" tabIndex={0} style={{ color: '#dd9a4a' }}>
               ⚠️
             </span>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
             Calculado sobre a última cotação recebida.
           </TooltipContent>
         </Tooltip>
@@ -348,7 +348,7 @@ function MilestoneLine({ op, price, isStale }) {
 // A palavra na tela é "protegido", não "garantido": o stop do Sentinel é
 // virtual e o preço pode pular o nível — a dica diz isso.
 const GUARANTEE_TONE = {
-  profit: { lead: '🛡️ Lucro protegido', color: '#00ff80' },
+  profit: { lead: '🛡️ Lucro protegido', color: '#5db586' },
   zero: { lead: '🟡 Breakeven', color: LEVEL_COLOR.stopBe },
   loss: { lead: '🛑 Risco em jogo', color: LEVEL_COLOR.stop },
 };
@@ -376,11 +376,11 @@ function GuaranteeLine({ op }) {
       )}{' '}
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="text-8px uppercase tracking-widest cursor-help whitespace-nowrap" tabIndex={0} style={{ color: 'rgba(255,255,255,0.35)' }}>
+          <span className="text-11px uppercase tracking-widest cursor-help whitespace-nowrap" tabIndex={0} style={{ color: 'rgba(255,255,255,0.55)' }}>
             bruto · no preço do stop
           </span>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+        <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
           Conta feita no preço do stop, sem descontar taxas nem funding. O stop do Sentinel é virtual (nenhuma ordem fica na corretora): se o preço pular o nível, o resultado real pode ser pior. R = quantas vezes o risco inicial (a distância da entrada até o stop inicial).
         </TooltipContent>
       </Tooltip>
@@ -397,10 +397,10 @@ function OpenStory({ op }) {
   return (
     <div className="rounded-lg px-3 py-2.5" role="group" aria-label="A história até agora"
       style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}>
-      <div className="text-9px font-mono text-muted-foreground mb-1.5">📖 A história até agora</div>
+      <div className="text-11px font-mono text-muted-foreground mb-1.5">📖 A história até agora</div>
       <ol className="space-y-1">
         {story.map((step) => (
-          <li key={step.key} className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
+          <li key={step.key} className="text-11px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.7)' }}>
             {step.text}
           </li>
         ))}
@@ -419,9 +419,9 @@ function BackfillBanner({ op }) {
   const lag = formatBackfillLag(op.backfill_entry_lag_ms);
   return (
     <div className="rounded-lg px-3 py-2 flex items-start gap-2"
-      style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.25)' }}>
-      <History className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#00e5ff' }} />
-      <p className="text-10px font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
+      style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.25)' }}>
+      <History className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#8db4e2' }} />
+      <p className="text-11px font-mono leading-relaxed" style={{ color: '#8db4e2' }}>
         Detectada retroativamente{lag ? ` — entrada real foi há ${lag}` : ''}. Não foi pega ao vivo: o ativo foi adicionado/reativado depois, e o Sentinel reconstruiu a operação a partir do histórico.
       </p>
     </div>
@@ -436,7 +436,7 @@ function ProvenanceBanner({ op }) {
   if (!text) return null;
   return (
     <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.3)' }}>
-      <p className="text-10px font-mono leading-relaxed" style={{ color: '#c4b5fd' }}>{text}</p>
+      <p className="text-11px font-mono leading-relaxed" style={{ color: '#c4b5fd' }}>{text}</p>
     </div>
   );
 }
@@ -449,8 +449,8 @@ function ProvenanceBanner({ op }) {
 function AmbiguousExitBanner({ op }) {
   if (!op.exit_ambiguous) return null;
   return (
-    <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.25)' }}>
-      <p className="text-10px font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
+    <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.25)' }}>
+      <p className="text-11px font-mono leading-relaxed" style={{ color: '#8db4e2' }}>
         ℹ️ Nessa vela, o preço tocou o stop e o take ao mesmo tempo — o gráfico não mostra qual foi primeiro de verdade. Por segurança, o sistema sempre considera que o stop aconteceu primeiro nesses casos raros. Essa operação já foi encerrada com esse resultado.
       </p>
     </div>
@@ -464,17 +464,17 @@ export function ScoreBar({ score }) {
   // virava "0/100" inventado.
   if (!Number.isFinite(score)) return null;
   const pct = Math.max(0, Math.min(100, score));
-  const color = pct >= 85 ? '#00ff80' : pct >= 65 ? '#ffd166' : '#ff9f43';
+  const color = pct >= 85 ? '#5db586' : pct >= 65 ? '#e3b45a' : '#dd9a4a';
   return (
     <div className="space-y-0.5">
       <div className="flex items-center gap-2">
         <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
-          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color, boxShadow: `0 0 6px ${color}60` }} />
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color, boxShadow: 'none' }} />
         </div>
-        <span className="text-10px font-mono font-bold" style={{ color }}>{agreementLabel({ score: pct })}</span>
-        <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>regras alinhadas</span>
+        <span className="text-11px font-mono font-bold" style={{ color }}>{agreementLabel({ score: pct })}</span>
+        <span className="text-11px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>regras alinhadas</span>
       </div>
-      <p className="text-8px font-mono leading-tight" style={{ color: 'rgba(255,255,255,0.25)' }}>
+      <p className="text-11px font-mono leading-tight" style={{ color: 'rgba(255,255,255,0.55)' }}>
         {AGREEMENT_HINT}
       </p>
     </div>
@@ -493,12 +493,12 @@ function TFTrendRow({ op }) {
   return (
     <div className="flex items-center gap-3 flex-wrap">
       {tfs.map(([tf, dir]) => {
-        const color = dir === 1 ? '#00ff80' : dir === -1 ? '#ff1478' : '#64748b';
+        const color = dir === 1 ? '#5db586' : dir === -1 ? '#e06a5b' : '#64748b';
         const icon = dir === 1 ? '▲' : dir === -1 ? '▼' : '—';
         const label = dir === 1 ? 'Bull' : dir === -1 ? 'Bear' : 'Neu';
         return (
-          <span key={tf} className="flex items-center gap-1 text-9px font-mono">
-            <span style={{ color: 'rgba(255,255,255,0.3)' }}>{tf.toUpperCase()}</span>
+          <span key={tf} className="flex items-center gap-1 text-11px font-mono">
+            <span style={{ color: 'rgba(255,255,255,0.55)' }}>{tf.toUpperCase()}</span>
             <span style={{ color }}>{icon} {label}</span>
           </span>
         );
@@ -521,10 +521,10 @@ function TFTrendRow({ op }) {
 // review, PR #318, achou este banner anunciando "encerrado no lucro" nesse
 // caso.
 const STOP_HIT_BANNER = {
-  WIN: { text: '💰 Stop travou lucro — encerrado no lucro', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
-  BE:  { text: '🟡 Stop no breakeven — sem prejuízo', color: LEVEL_COLOR.stopBe, bg: 'rgba(255,209,102,0.06)' },
+  WIN: { text: '💰 Stop travou lucro — encerrado no lucro', color: '#5db586', bg: 'rgba(93,181,134,0.06)' },
+  BE:  { text: '🟡 Stop no breakeven — sem prejuízo', color: LEVEL_COLOR.stopBe, bg: 'rgba(227,180,90,0.06)' },
 };
-const STOP_HIT_BANNER_DEFAULT = { text: '🛑 Stop atingido — operação encerrada pela proteção inicial', color: LEVEL_COLOR.stop, bg: 'rgba(255,20,120,0.06)' };
+const STOP_HIT_BANNER_DEFAULT = { text: '🛑 Stop atingido — operação encerrada pela proteção inicial', color: LEVEL_COLOR.stop, bg: 'rgba(224,106,91,0.06)' };
 // Achado da varredura geral (2026-09-18): quando classifyOutcome cai em
 // LOSS/UNKNOWN mas o TP1 já tinha sido atingido, o stop que fechou a
 // operação não é mais o "inicial" — é o breakeven/trilha pós-TP1
@@ -533,7 +533,7 @@ const STOP_HIT_BANNER_DEFAULT = { text: '🛑 Stop atingido — operação encer
 // trilha) depois do TP1."). O texto abaixo do banner (OperationDecisionNote)
 // já dizia isso — o banner alegando "proteção inicial" ao lado contradizia
 // diretamente a própria explicação da operação.
-const STOP_HIT_BANNER_DEFAULT_POST_TP1 = { text: '🛑 Stop atingido — operação encerrada pela proteção pós-TP1', color: LEVEL_COLOR.stop, bg: 'rgba(255,20,120,0.06)' };
+const STOP_HIT_BANNER_DEFAULT_POST_TP1 = { text: '🛑 Stop atingido — operação encerrada pela proteção pós-TP1', color: LEVEL_COLOR.stop, bg: 'rgba(224,106,91,0.06)' };
 const CLOSED_BANNER_DEFAULT = { text: '✖ Operação encerrada manualmente', color: '#64748b', bg: 'rgba(100,116,139,0.06)' };
 
 // CLOSED cobre 3 encerramentos automáticos do motor (Time Stop, Chop Exit,
@@ -550,18 +550,18 @@ function closedBanner(op) {
 
 function StatusBanner({ op }) {
   const banners = {
-    SIGNAL_CONFIRMED: { text: '👀 Monitorando — aguardar preço avançar para TP1', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
-    RUNNER_ACTIVE:    { text: '🏃 Runner ativo — 50% realizado no TP1, deixar correr', color: '#ffd166', bg: 'rgba(255,209,102,0.06)' },
-    TP2_HIT:          { text: '🏆 Encerrado no TP2 — alvo final atingido', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
+    SIGNAL_CONFIRMED: { text: '👀 Monitorando — aguardar preço avançar para TP1', color: '#5db586', bg: 'rgba(93,181,134,0.06)' },
+    RUNNER_ACTIVE:    { text: '🏃 Runner ativo — 50% realizado no TP1, deixar correr', color: '#e3b45a', bg: 'rgba(227,180,90,0.06)' },
+    TP2_HIT:          { text: '🏆 Encerrado no TP2 — alvo final atingido', color: '#5db586', bg: 'rgba(93,181,134,0.06)' },
     STOP_HIT:         STOP_HIT_BANNER[classifyOutcome(op)] ?? (op.tp1_hit ? STOP_HIT_BANNER_DEFAULT_POST_TP1 : STOP_HIT_BANNER_DEFAULT),
-    INVALIDATED:      { text: '⚠️ Sinal invalidado — não operar agora', color: '#ff9f43', bg: 'rgba(255,159,67,0.06)' },
+    INVALIDATED:      { text: '⚠️ Sinal invalidado — não operar agora', color: '#dd9a4a', bg: 'rgba(221,154,74,0.06)' },
     CLOSED:           closedBanner(op),
   };
   const b = banners[op.status];
   if (!b) return null;
   return (
     <div className="rounded-lg px-3 py-2" style={{ background: b.bg, border: `1px solid ${b.color}22` }}>
-      <p className="text-10px font-mono leading-relaxed" style={{ color: b.color }}>{b.text}</p>
+      <p className="text-11px font-mono leading-relaxed" style={{ color: b.color }}>{b.text}</p>
     </div>
   );
 }
@@ -599,7 +599,7 @@ function OperationDecisionNote({ op }) {
   const evidence = friendly ?? explainOperationDecision(op).evidence;
   if (!evidence) return null;
   return (
-    <div className="text-9px font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.12)', color: 'rgba(255,255,255,0.5)' }}>
+    <div className="text-11px font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(141,180,226,0.04)', border: '1px solid rgba(141,180,226,0.12)', color: 'rgba(255,255,255,0.5)' }}>
       📐 {evidence}
     </div>
   );
@@ -616,7 +616,7 @@ function EntryReasons({ op }) {
   return (
     <div className="space-y-2" role="group" aria-label="Por que entrou">
       {reasons.length > 0 && (
-        <div className="text-9px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.45)' }}>
+        <div className="text-11px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.62)' }}>
           🧩 Por que entrou — regras a favor na hora do aviso: {reasons.length}
         </div>
       )}
@@ -626,22 +626,22 @@ function EntryReasons({ op }) {
           {reasons.map((reason, i) => {
             const points = formatReasonPoints(reason.points);
             return (
-              <li key={`${reason.raw}-${i}`} className="text-10px font-mono leading-relaxed pl-2"
-                style={{ borderLeft: '2px solid rgba(0,255,128,0.35)' }}>
+              <li key={`${reason.raw}-${i}`} className="text-11px font-mono leading-relaxed pl-2"
+                style={{ borderLeft: '2px solid rgba(93,181,134,0.35)' }}>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-semibold" style={{ color: 'rgba(255,255,255,0.85)' }}>{reason.title}</span>
                   {points && (
-                    <span className="text-9px shrink-0 whitespace-nowrap" style={{ color: '#00ff80' }}>+{points}</span>
+                    <span className="text-11px shrink-0 whitespace-nowrap" style={{ color: '#5db586' }}>+{points}</span>
                   )}
                 </div>
                 {reason.what && (
                   <p style={{ color: 'rgba(255,255,255,0.55)' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.4)' }}>O que é: </span>{reason.what}
+                    <span style={{ color: 'rgba(255,255,255,0.62)' }}>O que é: </span>{reason.what}
                   </p>
                 )}
                 {reason.why && (
                   <p style={{ color: 'rgba(255,255,255,0.55)' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.4)' }}>Por que conta: </span>{reason.why}
+                    <span style={{ color: 'rgba(255,255,255,0.62)' }}>Por que conta: </span>{reason.why}
                   </p>
                 )}
               </li>
@@ -662,8 +662,8 @@ function OperationWhySummary({ op }) {
   if (!OPEN_STATUSES.has(op.status) && snapshot.decision !== 'EXIT') return null;
   const { headline, why } = explainOperationDecision(op);
   return (
-    <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
-      💡 <span className="font-semibold" style={{ color: 'rgba(0,229,255,0.8)' }}>{headline}</span>
+    <p className="text-11px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
+      💡 <span className="font-semibold" style={{ color: 'rgba(141,180,226,0.8)' }}>{headline}</span>
       {why ? ` — ${why}` : ''}
     </p>
   );
@@ -686,11 +686,11 @@ function Details({ op }) {
       {op.tier && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="text-9px font-mono cursor-help" tabIndex={0} style={{ color: 'rgba(0,229,255,0.7)' }}>
+            <div className="text-11px font-mono cursor-help" tabIndex={0} style={{ color: 'rgba(141,180,226,0.7)' }}>
               🎚 Tier {op.tier}
             </div>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
             Tier de volatilidade (ATR%) classificado na entrada — ver Pine v13.2 Grupo 03
           </TooltipContent>
         </Tooltip>
@@ -700,13 +700,13 @@ function Details({ op }) {
           horário (o da vela do AVISO, não o da abertura) e um "Fechado" que
           falava da vela, numa operação "Ativa". Agora diz o que é. */}
       {hasSignalCandle && (
-        <div className="text-9px font-mono text-muted-foreground leading-relaxed">
+        <div className="text-11px font-mono text-muted-foreground leading-relaxed">
           🕯️ Vela do aviso{signalTf ? ` (${signalTf.toUpperCase()})` : ''}: {fmtBRT(op.candle_open_time)} → {fmtBRT(op.candle_close_time)} (Brasília)
           {op.candle_status ? ` · ${op.candle_status === 'CLOSED' ? 'vela já fechada' : 'vela ainda aberta'}` : ''}
         </div>
       )}
 
-      <div className="flex items-center justify-between text-9px font-mono text-muted-foreground gap-2 flex-wrap">
+      <div className="flex items-center justify-between text-11px font-mono text-muted-foreground gap-2 flex-wrap">
         <span>📊 {op.partial_percent}% TP1 · {op.runner_percent}% runner</span>
         <span className="flex items-center gap-2">
           {/* Item 277: o badge "🔴 LIVE" lia op.data_status, gravado sempre
@@ -715,16 +715,16 @@ function Details({ op }) {
           {marketSourceLabel && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.35)' }}>
+                <span className="cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.55)' }}>
                   {marketSourceLabel}
                 </span>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                 De qual mercado da Binance vieram os dados desta operação (item 4, docs/known-risks.md — divergência Spot×Futures aceita como limitação do projeto gratuito).
               </TooltipContent>
             </Tooltip>
           )}
-          <span style={{ color: 'rgba(0,229,255,0.7)' }}>{exitModeLabel}</span>
+          <span style={{ color: 'rgba(141,180,226,0.7)' }}>{exitModeLabel}</span>
         </span>
       </div>
 
@@ -734,16 +734,16 @@ function Details({ op }) {
       {(Number.isFinite(op.mfe_r) || Number.isFinite(op.mae_r)) && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex items-center gap-3 text-9px font-mono text-muted-foreground cursor-help" tabIndex={0}>
+            <div className="flex items-center gap-3 text-11px font-mono text-muted-foreground cursor-help" tabIndex={0}>
               {Number.isFinite(op.mfe_r) && (
-                <span>⬆️ Máx. a favor (MFE) <span style={{ color: '#00ff80' }}>{op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R</span></span>
+                <span>⬆️ Máx. a favor (MFE) <span style={{ color: '#5db586' }}>{op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R</span></span>
               )}
               {Number.isFinite(op.mae_r) && (
-                <span>⬇️ Máx. contra (MAE) <span style={{ color: '#ff1478' }}>{op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R</span></span>
+                <span>⬇️ Máx. contra (MAE) <span style={{ color: '#e06a5b' }}>{op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R</span></span>
               )}
             </div>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
             MFE: maior lucro flutuante já visto nesta operação. MAE: maior perda flutuante já vista. Ambos em múltiplos do risco inicial (R).
           </TooltipContent>
         </Tooltip>
@@ -769,15 +769,14 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
 
   const status = STATUS_CONFIG[op.status] || STATUS_CONFIG.CLOSED;
   const isBuy = op.side === 'BUY';
-  const sideColor = isBuy ? '#00ff80' : '#ff1478';
-  const pnlColor = openPnlPct === null ? 'rgba(255,255,255,0.4)' : openPnlPct >= 0 ? '#00ff80' : '#ff1478';
-  const quoteColor = price === null ? 'rgba(255,255,255,0.35)' : isStale ? '#ff9f43' : 'rgba(255,255,255,0.95)';
+  const sideColor = isBuy ? '#5db586' : '#e06a5b';
+  const pnlColor = openPnlPct === null ? 'rgba(255,255,255,0.62)' : openPnlPct >= 0 ? '#5db586' : '#e06a5b';
+  const quoteColor = price === null ? 'rgba(255,255,255,0.55)' : isStale ? '#dd9a4a' : 'rgba(255,255,255,0.95)';
 
   return (
-    <article className="rounded-2xl overflow-hidden flex flex-col"
+    <article className="rounded-lg overflow-hidden flex flex-col"
       style={{
         background: 'rgba(10,13,22,0.85)',
-        backdropFilter: 'blur(20px)',
         border: '1px solid rgba(255,255,255,0.07)',
         borderLeft: `3px solid ${status.color}`,
       }}>
@@ -787,7 +786,7 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <TokenIcon symbol={op.symbol} size={20} />
             <span className="font-bold text-base text-foreground">{op.symbol?.replace('USDT', '/USDT')}</span>
-            <span className="flex items-center gap-0.5 text-10px font-mono px-1.5 py-0.5 rounded font-bold"
+            <span className="flex items-center gap-0.5 text-11px font-mono px-1.5 py-0.5 rounded font-bold"
               style={{ background: `${sideColor}1f`, color: sideColor, border: `1px solid ${sideColor}4d` }}>
               {isBuy ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               {op.side}
@@ -795,19 +794,19 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
             {/* Item 303: "15M" sozinho era o gráfico da ENTRADA; o aviso veio do
                 de 4H. O selo diz os dois ("4H → 15M"), como no Histórico. */}
             {tfChip && (
-              <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              <span className="text-11px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>
                 {tfChip}
               </span>
             )}
           </div>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="text-10px font-mono px-2 py-0.5 rounded shrink-0 font-semibold cursor-help" tabIndex={0}
+              <span className="text-11px font-mono px-2 py-0.5 rounded shrink-0 font-semibold cursor-help" tabIndex={0}
                 style={{ background: status.bg, color: status.color, border: `1px solid ${status.border}` }}>
                 {status.short}
               </span>
             </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+            <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
               {status.desc}
             </TooltipContent>
           </Tooltip>
@@ -818,16 +817,16 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
             qualquer comparação posterior (item 161). */}
         {op.created_date && (
           <div className="flex items-center gap-1.5 text-11px font-mono flex-wrap" style={{ color: 'rgba(255,255,255,0.75)' }}>
-            <Clock className="w-3 h-3 shrink-0" aria-hidden="true" style={{ color: 'rgba(255,255,255,0.45)' }} />
+            <Clock className="w-3 h-3 shrink-0" aria-hidden="true" style={{ color: 'rgba(255,255,255,0.62)' }} />
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="cursor-help" tabIndex={0}>Aberta em {fmtBRTLong(op.created_date)}</span>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                 Quando o Sentinel abriu esta operação (horário de Brasília).
               </TooltipContent>
             </Tooltip>
-            {openFor && <span style={{ color: 'rgba(255,255,255,0.4)' }}>· há {openFor}</span>}
+            {openFor && <span style={{ color: 'rgba(255,255,255,0.62)' }}>· há {openFor}</span>}
           </div>
         )}
 
@@ -844,11 +843,11 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
             <div className="flex items-center gap-1.5 mt-1.5">
               <span className={`w-1.5 h-1.5 rounded-full${price !== null && !isStale ? ' animate-pulse motion-reduce:animate-none' : ''}`}
                 style={{
-                  background: price === null ? 'rgba(255,255,255,0.3)' : isStale ? '#ff9f43' : '#00e5ff',
-                  boxShadow: price !== null && !isStale ? '0 0 5px #00e5ff' : 'none',
+                  background: price === null ? 'rgba(255,255,255,0.55)' : isStale ? '#dd9a4a' : '#8db4e2',
+                  boxShadow: price !== null && !isStale ? '0 0 5px #8db4e2' : 'none',
                 }} />
-              <span className="text-9px font-mono uppercase tracking-widest"
-                style={{ color: isStale ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
+              <span className="text-11px font-mono uppercase tracking-widest"
+                style={{ color: isStale ? '#dd9a4a' : 'rgba(255,255,255,0.55)' }}>
                 {isStale ? `Desatualizado${ageLabel ? ` há ${ageLabel}` : ''}` : price !== null ? 'Ao vivo' : 'Sem cotação'}
               </span>
             </div>
@@ -860,11 +859,11 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
               </div>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="text-8px font-mono uppercase tracking-widest mt-1 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  <div className="text-11px font-mono uppercase tracking-widest mt-1 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.55)' }}>
                     em aberto · bruto
                   </div>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                   Resultado em aberto sobre a entrada, sem descontar taxas nem funding.
                 </TooltipContent>
               </Tooltip>
@@ -890,8 +889,8 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
         {/* 5 · O porquê completo (evidência numérica), a um clique */}
         <button onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="flex items-center gap-1 text-10px font-mono transition-colors hover:text-foreground/70"
-          style={{ color: 'rgba(255,255,255,0.4)' }}>
+          className="flex items-center gap-1 text-11px font-mono transition-colors hover:text-foreground/70"
+          style={{ color: 'rgba(255,255,255,0.62)' }}>
           {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           {open ? 'Menos detalhes' : 'Detalhes técnicos'}
         </button>

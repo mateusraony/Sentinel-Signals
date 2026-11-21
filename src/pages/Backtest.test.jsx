@@ -410,7 +410,7 @@ describe('Backtest — Win Rate/Drawdown/Profit Factor com cor compartilhada (Ro
     const wrLabel = screen.getAllByText('Taxa de acerto').find(el => el.tagName === 'SPAN');
     const wrCard = wrLabel.closest('.relative.overflow-hidden');
     const glow = wrCard.querySelector('.absolute.top-0.right-0');
-    expect(glow.style.background).toMatch(/rgba\(255,159,67/);
+    expect(glow.style.background).toMatch(/rgba\(221,154,74/);
   });
 
   it('REGRESSÃO: Profit Factor 1.2 mostra "⚠ Marginal" em laranja (não mais "⚠ Baixo" dividindo cor com Baixo)', async () => {
@@ -434,7 +434,7 @@ describe('Backtest — Win Rate/Drawdown/Profit Factor com cor compartilhada (Ro
     await screen.findByText('Expectância');
 
     const ddValue = screen.getByText('-20.00%');
-    expect(ddValue.style.color).toBe('rgb(255, 20, 120)');
+    expect(ddValue.style.color).toBe('rgb(224, 106, 91)');
   });
 });
 

@@ -175,7 +175,7 @@ export default function Assets() {
           <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
             <DialogTrigger asChild>
               <Button size="sm" className="font-mono text-xs h-8 px-4"
-                style={{ background: 'linear-gradient(135deg,rgba(0,255,128,0.15),rgba(0,200,255,0.1))', border: '1px solid rgba(0,255,128,0.35)', color: '#00ff80', boxShadow: '0 0 16px rgba(0,255,128,0.1)' }}>
+                style={{ background: 'linear-gradient(135deg,rgba(93,181,134,0.15),rgba(0,200,255,0.1))', border: '1px solid rgba(93,181,134,0.35)', color: '#5db586', boxShadow: 'none' }}>
                 <Plus className="w-3.5 h-3.5 mr-2" />Adicionar
               </Button>
             </DialogTrigger>
@@ -190,12 +190,12 @@ export default function Assets() {
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Total', value: assets.length, color: '#00e5ff', icon: Coins },
-          { label: 'Ativos', value: active.length, color: '#00ff80', icon: Activity },
+          { label: 'Total', value: assets.length, color: '#8db4e2', icon: Coins },
+          { label: 'Ativos', value: active.length, color: '#5db586', icon: Activity },
           { label: 'Inativos', value: inactive.length, color: '#64748b', icon: XCircle },
-          { label: 'Erros', value: assets.filter(a => a.scan_status === 'error').length, color: '#ff1478', icon: XCircle },
+          { label: 'Erros', value: assets.filter(a => a.scan_status === 'error').length, color: '#e06a5b', icon: XCircle },
         ].map(({ label, value, color, icon: Icon }) => (
-          <div key={label} className="rounded-xl px-4 py-3 flex items-center gap-3"
+          <div key={label} className="rounded-md px-4 py-3 flex items-center gap-3"
             style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <Icon className="w-4 h-4 shrink-0" style={{ color }} />
             <div>
@@ -221,8 +221,8 @@ export default function Assets() {
           <button key={f.id} onClick={() => setFilterStatus(f.id)}
             className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all flex items-center gap-1"
             style={filterStatus === f.id
-              ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
-              : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+              ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
+              : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
             {f.id === 'signals' && <TrendingUp className="w-3 h-3" />}
             {f.label}
           </button>
@@ -233,24 +233,24 @@ export default function Assets() {
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
       ) : isError && assets.length === 0 ? (
-        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar os ativos agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 && filterStatus === 'proximity' && statesUnavailable ? (
-        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar os indicadores agora — o filtro 'Perto da linha do filtro' pode estar escondendo ativos incorretamente." />
         </div>
       ) : filtered.length === 0 && filterStatus === 'signals' && signalsFilterUnavailable ? (
-        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar sinais/operações agora — o filtro 'Com sinal ou operação' pode estar escondendo ativos incorretamente." />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <Coins className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm mb-4">{assets.length === 0 ? 'Nenhum ativo cadastrado.' : 'Nenhum ativo encontrado.'}</p>
           {assets.length === 0 && (
             <Button size="sm" onClick={() => setShowAddDialog(true)}
-              style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>
+              style={{ background: 'rgba(93,181,134,0.1)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }}>
               <Plus className="w-3.5 h-3.5 mr-2" />Adicionar primeiro ativo
             </Button>
           )}
@@ -264,14 +264,14 @@ export default function Assets() {
             const proximity = assetsNearEntry.get(asset.id);
             const zoneStyle = proximity
               ? {
-                background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)',
+                background: 'rgba(10,13,22,0.82)',
                 border: '1px solid rgba(96,165,250,0.35)',
               }
-              : { background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: asset.is_active ? '1px solid rgba(0,255,128,0.1)' : '1px solid rgba(255,255,255,0.05)' };
+              : { background: 'rgba(10,13,22,0.82)', border: asset.is_active ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(255,255,255,0.05)' };
 
             return (
               <div key={asset.id}
-                className="rounded-xl px-4 py-3.5 transition-all duration-300 group hover:scale-[1.005]"
+                className="rounded-md px-4 py-3.5 transition-all duration-300 group"
                 style={zoneStyle}>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -282,7 +282,7 @@ export default function Assets() {
                         <span className="font-bold text-sm text-foreground">{asset.display_name}</span>
                         <span className="text-9px font-mono text-muted-foreground">{asset.symbol}</span>
                         <span className="text-8px font-mono px-1.5 py-0.5 rounded uppercase tracking-widest"
-                          style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.15)', color: 'rgba(0,229,255,0.7)' }}>
+                          style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.15)', color: 'rgba(141,180,226,0.7)' }}>
                           {asset.exchange || 'binance'}
                         </span>
                         <span className="flex items-center gap-0.5">
@@ -329,7 +329,7 @@ export default function Assets() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span className="flex items-center gap-0.5 text-8px font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
-                                style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.25)', color: '#ff9f43' }}>
+                                style={{ background: 'rgba(221,154,74,0.1)', border: '1px solid rgba(221,154,74,0.25)', color: '#dd9a4a' }}>
                                 <History className="w-2.5 h-2.5" />backfill pendente
                               </span>
                             </TooltipTrigger>
@@ -346,11 +346,11 @@ export default function Assets() {
                           const tfState = assetStates.find(s => s.timeframe === tf);
                           const enabled = asset.timeframes_enabled?.[tf] !== false;
                           const rfDir = tfState?.rf_direction;
-                          const dirColor = rfDir === 1 ? '#00ff80' : rfDir === -1 ? '#ff1478' : null;
+                          const dirColor = rfDir === 1 ? '#5db586' : rfDir === -1 ? '#e06a5b' : null;
                           return (
                             <span key={tf} className="text-8px font-mono px-1.5 py-0.5 rounded flex items-center gap-0.5"
                               style={enabled
-                                ? { background: 'rgba(0,255,128,0.06)', border: '1px solid rgba(0,255,128,0.18)', color: 'rgba(0,255,128,0.7)' }
+                                ? { background: 'rgba(93,181,134,0.06)', border: '1px solid rgba(93,181,134,0.18)', color: 'rgba(93,181,134,0.7)' }
                                 : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.18)' }}>
                               {tf}
                               {dirColor && <span style={{ color: dirColor }}>{rfDir === 1 ? '▲' : '▼'}</span>}
@@ -363,7 +363,7 @@ export default function Assets() {
                           </span>
                         )}
                         {asset.scan_error && (
-                          <span className="text-8px font-mono truncate max-w-xs" style={{ color: '#ff9f43' }}>⚠ {asset.scan_error}</span>
+                          <span className="text-8px font-mono truncate max-w-xs" style={{ color: '#dd9a4a' }}>⚠ {asset.scan_error}</span>
                         )}
                       </div>
 
@@ -372,9 +372,9 @@ export default function Assets() {
                         <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                           {assetStates.map(s => (
                             <div key={s.timeframe} className="flex items-center gap-1 text-7px font-mono">
-                              <span style={{ color: 'rgba(255,255,255,0.25)' }}>{s.timeframe?.toUpperCase()}</span>
-                              {s.rsi_value && <span style={{ color: s.rsi_zone === 'overbought' ? '#ff1478' : s.rsi_zone === 'oversold' ? '#00ff80' : '#64748b' }}>RSI {s.rsi_value.toFixed(0)}</span>}
-                              {s.macd_histogram !== undefined && <span style={{ color: s.macd_histogram > 0 ? '#00ff80' : '#ff1478' }}>MACD{s.macd_histogram > 0 ? '▲' : '▼'}</span>}
+                              <span style={{ color: 'rgba(255,255,255,0.55)' }}>{s.timeframe?.toUpperCase()}</span>
+                              {s.rsi_value && <span style={{ color: s.rsi_zone === 'overbought' ? '#e06a5b' : s.rsi_zone === 'oversold' ? '#5db586' : '#64748b' }}>RSI {s.rsi_value.toFixed(0)}</span>}
+                              {s.macd_histogram !== undefined && <span style={{ color: s.macd_histogram > 0 ? '#5db586' : '#e06a5b' }}>MACD{s.macd_histogram > 0 ? '▲' : '▼'}</span>}
                             </div>
                           ))}
                         </div>
@@ -386,20 +386,20 @@ export default function Assets() {
                     <button
                       className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-10px font-mono font-semibold transition-all hover:opacity-80"
                       style={expandedId === asset.id
-                        ? { background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }
+                        ? { background: 'rgba(93,181,134,0.1)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }
                         : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}
                       onClick={() => setExpandedId(expandedId === asset.id ? null : asset.id)}>
                       {expandedId === asset.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
                     <button
                       className="flex items-center gap-1 px-3 py-2 rounded-lg text-10px font-mono font-semibold transition-all hover:opacity-80"
-                      style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}
+                      style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}
                       onClick={() => setConfigAsset(asset)}>
                       <Settings2 className="w-3.5 h-3.5" /><span className="hidden sm:inline">Config</span>
                     </button>
                     <button
                       className="flex items-center gap-1 px-3 py-2 rounded-lg text-10px font-mono font-semibold transition-all hover:opacity-80"
-                      style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}
+                      style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}
                       disabled={deleteMutation.isPending}
                       onClick={() => setPendingDelete(asset)}>
                       <Trash2 className="w-3.5 h-3.5" />

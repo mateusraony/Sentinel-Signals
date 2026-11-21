@@ -18,9 +18,9 @@ const AGE_STALE_HOURS = 6;
 
 function ageColor(createdDate) {
   const hours = (Date.now() - new Date(createdDate).getTime()) / 3600000;
-  if (hours >= AGE_STALE_HOURS) return '#ff1478';
-  if (hours >= AGE_WARN_HOURS) return '#ff9f43';
-  return 'rgba(255,255,255,0.4)';
+  if (hours >= AGE_STALE_HOURS) return '#e06a5b';
+  if (hours >= AGE_WARN_HOURS) return '#dd9a4a';
+  return 'rgba(255,255,255,0.62)';
 }
 
 // Fixed panel shown on the Dashboard's "Visão Geral" tab, no grupo
@@ -55,12 +55,12 @@ export default function VerificationWidget() {
   // pra mostrar, comportamento intencional de sempre).
   if (tasks.length === 0 && isError) {
     return (
-      <div className="glass-card rounded-xl p-4">
-        <div className="flex items-center gap-2 text-11px font-mono" style={{ color: '#ff9f43' }}>
+      <div className="glass-card rounded-md p-4">
+        <div className="flex items-center gap-2 text-11px font-mono" style={{ color: '#dd9a4a' }}>
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>Não foi possível carregar a Verificação de Sinais agora.</span>
-          <button onClick={() => refetch()} className="ml-auto text-10px px-2 py-1 rounded-md hover:bg-white/[0.08] transition-colors"
-            style={{ border: '1px solid rgba(255,159,67,0.3)' }}>
+          <button onClick={() => refetch()} className="ml-auto text-11px px-2 py-1 rounded-md hover:bg-white/[0.08] transition-colors"
+            style={{ border: '1px solid rgba(221,154,74,0.3)' }}>
             Tentar de novo
           </button>
         </div>
@@ -74,31 +74,31 @@ export default function VerificationWidget() {
   const progressPct = Math.round((doneCount / tasks.length) * 100);
 
   return (
-    <div className="glass-card rounded-xl p-4">
+    <div className="glass-card rounded-md p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <ClipboardCheck className="w-4 h-4" style={{ color: '#ffd166' }} />
+          <ClipboardCheck className="w-4 h-4" style={{ color: '#e3b45a' }} />
           <h2 className="text-sm font-bold text-foreground tracking-tight">Verificação de Sinais</h2>
           {pending.length > 0 && (
-            <span className="text-9px font-mono px-1.5 py-0.5 rounded"
-              style={{ background: 'rgba(255,209,102,0.1)', border: '1px solid rgba(255,209,102,0.25)', color: '#ffd166' }}>
+            <span className="text-11px font-mono px-1.5 py-0.5 rounded"
+              style={{ background: 'rgba(227,180,90,0.1)', border: '1px solid rgba(227,180,90,0.25)', color: '#e3b45a' }}>
               {pending.length} pendente{pending.length === 1 ? '' : 's'}
             </span>
           )}
         </div>
-        <Link to="/verification" className="flex items-center gap-0.5 text-10px font-mono text-muted-foreground hover:text-foreground transition-colors">
+        <Link to="/verification" className="flex items-center gap-0.5 text-11px font-mono text-muted-foreground hover:text-foreground transition-colors">
           Ver todas <ChevronRight className="w-3 h-3" />
         </Link>
       </div>
 
       {/* Item 258: a Verificação é só um lembrete — sem esta legenda parecia uma
           fila de aprovação de operações. */}
-      <p className="text-9px font-mono text-muted-foreground mb-2">
+      <p className="text-11px font-mono text-muted-foreground mb-2">
         Só lembrete: marcar OK/Pular não muda nenhuma operação.
       </p>
 
       <div className="w-full h-1.5 rounded-full overflow-hidden mb-3" style={{ background: 'rgba(255,255,255,0.06)' }}>
-        <div className="h-full rounded-full transition-all" style={{ width: `${progressPct}%`, background: '#00ff80' }} />
+        <div className="h-full rounded-full transition-all" style={{ width: `${progressPct}%`, background: '#5db586' }} />
       </div>
 
       {pending.length === 0 ? (
@@ -113,8 +113,8 @@ export default function VerificationWidget() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <TokenIcon symbol={task.symbol} size={16} />
                   <span className="text-xs font-semibold text-foreground">{task.symbol?.replace('USDT', '/USDT')}</span>
-                  <span className="text-9px font-mono text-muted-foreground">{task.timeframe?.toUpperCase()}</span>
-                  <span className="text-9px font-mono" style={{ color: task.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>
+                  <span className="text-11px font-mono text-muted-foreground">{task.timeframe?.toUpperCase()}</span>
+                  <span className="text-11px font-mono" style={{ color: task.signal_type === 'BUY' ? '#5db586' : '#e06a5b' }}>
                     {task.signal_type === 'BUY' ? '↑ BUY' : '↓ SELL'}
                   </span>
                   {/* Auditoria do Telegram (2026-09-29), Fase 2 item 2.7 —
@@ -123,23 +123,23 @@ export default function VerificationWidget() {
                       docs/schema-reference/VerificationTask.jsonc), só não
                       eram exibidos aqui. */}
                   {Number.isFinite(task.score) && task.score > 0 && (
-                    <span className="text-9px font-mono" style={{ color: task.score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                    <span className="text-11px font-mono" style={{ color: task.score >= 85 ? '#e3b45a' : 'rgba(255,255,255,0.62)' }}>
                       {agreementLabel({ score: task.score })}
                     </span>
                   )}
                   {task.source && (
-                    <span className="text-9px font-mono px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)' }}>
+                    <span className="text-11px font-mono px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)' }}>
                       {shortSourceLabel(task.source)}
                     </span>
                   )}
-                  <span className="text-9px font-mono" style={{ color: ageColor(task.created_date) }}>
+                  <span className="text-11px font-mono" style={{ color: ageColor(task.created_date) }}>
                     {moment(task.created_date).fromNow()}
                   </span>
                 </div>
                 {/* "Por que preciso verificar isto?" — sem isso, quem não viu
                     o alerta original não tinha nenhuma pista aqui. */}
                 {task.reason && (
-                  <p className="text-9px font-mono text-muted-foreground mt-0.5 truncate">{task.reason}</p>
+                  <p className="text-11px font-mono text-muted-foreground mt-0.5 truncate">{task.reason}</p>
                 )}
               </div>
               <Tooltip>
@@ -148,10 +148,10 @@ export default function VerificationWidget() {
                     aria-label="Marcar como revisado (OK)"
                     disabled={reviewMutation.isPending}
                     className="shrink-0 p-1.5 rounded-md hover:bg-white/[0.08] transition-colors">
-                    <Check className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />
+                    <Check className="w-3.5 h-3.5" style={{ color: '#5db586' }} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                   Marcar como revisado (OK) — só organiza a sua lista, não aprova operação
                 </TooltipContent>
               </Tooltip>
@@ -164,14 +164,14 @@ export default function VerificationWidget() {
                     <XIcon className="w-3.5 h-3.5 text-muted-foreground" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                   Pular — só organiza a sua lista, não bloqueia operação
                 </TooltipContent>
               </Tooltip>
             </div>
           ))}
           {pending.slice(0, 5).some(task => Number.isFinite(task.score) && task.score > 0) && (
-            <p className="text-8px font-mono text-muted-foreground/70 px-1">
+            <p className="text-11px font-mono text-muted-foreground/70 px-1">
               🧩 = regras alinhadas com o aviso (concordância das regras atuais) — não é chance de acerto.
             </p>
           )}

@@ -34,10 +34,10 @@ function AnimatedNumber({ value }) {
 // prop existe pra evitar).
 export default function StatsCard({ icon: Icon, label, value, color, glowColor, error = false }) {
   return (
-    <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:scale-[1.02] transition-transform duration-300">
+    <div className="glass-card rounded-md p-4 relative overflow-hidden group transition-transform duration-300">
       {/* Subtle gradient bg */}
-      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-xl"
-        style={{ background: `radial-gradient(circle at top left, ${glowColor || 'rgba(0,255,128,0.04)'}, transparent 70%)` }}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-md"
+        style={{ background: `radial-gradient(circle at top left, ${glowColor || 'rgba(93,181,134,0.04)'}, transparent 70%)` }}
       />
       <div className="relative flex items-start justify-between">
         <div>
@@ -45,11 +45,11 @@ export default function StatsCard({ icon: Icon, label, value, color, glowColor, 
           {error ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <p className="text-2xl font-bold font-mono flex items-center gap-1.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.35)' }}>
-                  <AlertTriangle className="w-4 h-4" style={{ color: '#ff9f43' }} />—
+                <p className="text-2xl font-bold font-mono flex items-center gap-1.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.55)' }}>
+                  <AlertTriangle className="w-4 h-4" style={{ color: '#dd9a4a' }} />—
                 </p>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
                 Não foi possível confirmar este número agora — falha ao atualizar.
               </TooltipContent>
             </Tooltip>
@@ -59,10 +59,10 @@ export default function StatsCard({ icon: Icon, label, value, color, glowColor, 
             </p>
           )}
         </div>
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-          style={{ background: `${glowColor || 'rgba(0,255,128,0.1)'}`, border: `1px solid ${glowColor ? glowColor.replace('0.1', '0.3') : 'rgba(0,255,128,0.3)'}` }}
+        <div className="w-10 h-10 rounded-md flex items-center justify-center"
+          style={{ background: `${glowColor || 'rgba(93,181,134,0.1)'}`, border: `1px solid ${glowColor ? glowColor.replace('0.1', '0.3') : 'rgba(93,181,134,0.3)'}` }}
         >
-          <Icon className="w-5 h-5" style={{ color: color || '#00ff80', filter: `drop-shadow(0 0 4px ${color || '#00ff80'})` }} />
+          <Icon className="w-5 h-5" style={{ color: color || '#5db586', }} />
         </div>
       </div>
     </div>

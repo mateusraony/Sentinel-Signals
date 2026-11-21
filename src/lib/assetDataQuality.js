@@ -46,8 +46,8 @@ export function formatAge(ageMin) {
 const lastScanText = (q) => (q.ageMin > 0 ? `último scan há ${formatAge(q.ageMin)}` : 'último scan agora');
 
 const BADGE = Object.freeze({
-  ok: { color: '#00ff80', label: (q) => (q.ageMin > 0 ? `Atualizado há ${formatAge(q.ageMin)}` : 'Atualizado agora'), short: (q) => (q.ageMin > 0 ? `há ${formatAge(q.ageMin)}` : 'agora') },
-  stale: { color: '#ff9f43', label: (q) => (Number.isFinite(q.ageMin) ? `Atrasado (${formatAge(q.ageMin)} sem leitura)` : 'Atrasado'), short: () => 'Atrasado' },
+  ok: { color: '#5db586', label: (q) => (q.ageMin > 0 ? `Atualizado há ${formatAge(q.ageMin)}` : 'Atualizado agora'), short: (q) => (q.ageMin > 0 ? `há ${formatAge(q.ageMin)}` : 'agora') },
+  stale: { color: '#dd9a4a', label: (q) => (Number.isFinite(q.ageMin) ? `Atrasado (${formatAge(q.ageMin)} sem leitura)` : 'Atrasado'), short: () => 'Atrasado' },
   error: { color: '#ef4444', label: (q) => (Number.isFinite(q.ageMin) ? `Falha de leitura (${lastScanText(q)})` : 'Falha de leitura'), short: () => 'Falha' },
   inactive: { color: '#64748b', label: (q) => (Number.isFinite(q.ageMin) ? `Desligado (${lastScanText(q)})` : 'Desligado'), short: () => 'Desligado' },
   unknown: { color: '#64748b', label: () => 'Sem leitura', short: () => 'Sem leitura' },
@@ -80,7 +80,7 @@ export function summarizeDataHealth(assets, now) {
   return { status: problemCount === 0 ? 'ok' : 'warn', activeCount: active.length, problemCount, lastScanAgeMin };
 }
 
-const CHIP_COLOR = Object.freeze({ ok: '#00ff80', warn: '#ff9f43', neutral: '#64748b' });
+const CHIP_COLOR = Object.freeze({ ok: '#5db586', warn: '#dd9a4a', neutral: '#64748b' });
 
 /** Texto + cor do chip. Carregando/erro nunca dizem "tudo em dia". */
 export function healthChip(summary, { loading = false, error = false } = {}) {

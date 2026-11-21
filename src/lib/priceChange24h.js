@@ -13,7 +13,7 @@ import { num, usablePrice, formatSignedPct } from './priceProximity.js';
 const STALE_MS = 3 * 60_000;
 
 /** Cor por tom — uma tabela só para cartão, comparador e faixa do topo. */
-export const CHANGE_TONE_COLOR = Object.freeze({ up: '#00ff80', down: '#ff1478', flat: 'rgba(255,255,255,0.4)', none: 'rgba(255,255,255,0.4)' });
+export const CHANGE_TONE_COLOR = Object.freeze({ up: '#5db586', down: '#e06a5b', flat: 'rgba(255,255,255,0.62)', none: 'rgba(255,255,255,0.62)' });
 
 const UNAVAILABLE = Object.freeze({ available: false, icon: '', signed: '', tone: 'none', pct: null, price: null, closeTime: null, stale: true });
 

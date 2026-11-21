@@ -63,8 +63,8 @@ function EditModal({ op, onClose, onSave }) {
   return (
     <Dialog open={!!op} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
-        className="max-w-sm p-5 rounded-2xl"
-        style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 0 40px rgba(0,0,0,0.5)' }}>
+        className="max-w-sm p-5 rounded-lg"
+        style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: 'none' }}>
         <DialogHeader>
           <DialogTitle className="font-bold text-sm text-foreground text-left flex items-center gap-2"><TokenIcon symbol={op.symbol} size={18} />{op.symbol?.replace('USDT', '/USDT')}</DialogTitle>
           <div className="text-9px font-mono text-muted-foreground">{op.timeframe?.toUpperCase()} · {op.side}</div>
@@ -73,7 +73,7 @@ function EditModal({ op, onClose, onSave }) {
         <div className="space-y-3">
           {/* Status manual */}
           <div>
-            <label className="text-9px font-mono mb-1 block" style={{ color: '#00e5ff' }}>Status Manual</label>
+            <label className="text-9px font-mono mb-1 block" style={{ color: '#8db4e2' }}>Status Manual</label>
             <select value={status} onChange={e => setStatus(e.target.value)}
               className="w-full px-3 py-2 rounded-lg text-xs font-mono"
               style={fieldStyle}>
@@ -89,16 +89,16 @@ function EditModal({ op, onClose, onSave }) {
           {/* Preço de saída (para status terminais) */}
           {['TP2_HIT','STOP_HIT','INVALIDATED','CLOSED'].includes(status) && (
             <div>
-              <label className="text-9px font-mono mb-1 block" style={{ color: '#ffd166' }}>Preço de Saída (exit_price)</label>
+              <label className="text-9px font-mono mb-1 block" style={{ color: '#e3b45a' }}>Preço de Saída (exit_price)</label>
               <input type="number" step="any" value={exitPrice} onChange={e => setExitPrice(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg text-xs font-mono" style={fieldStyle} />
             </div>
           )}
 
           {[
-            { label: 'Stop Atual', value: stop, set: setStop, color: '#ff1478' },
-            { label: 'TP1', value: tp1, set: setTp1, color: '#ffd166' },
-            { label: 'TP2', value: tp2, set: setTp2, color: '#00ff80' },
+            { label: 'Stop Atual', value: stop, set: setStop, color: '#e06a5b' },
+            { label: 'TP1', value: tp1, set: setTp1, color: '#e3b45a' },
+            { label: 'TP2', value: tp2, set: setTp2, color: '#5db586' },
           ].map(({ label, value, set, color }) => (
             <div key={label}>
               <label className="text-9px font-mono mb-1 block" style={{ color }}>{label}</label>
@@ -109,7 +109,7 @@ function EditModal({ op, onClose, onSave }) {
         </div>
 
         {/* Item 278 (PR-C): editar não passa pelo motor. */}
-        <p className="text-9px font-mono leading-relaxed" style={{ color: '#ffd166' }}>
+        <p className="text-9px font-mono leading-relaxed" style={{ color: '#e3b45a' }}>
           Salvar altera o registro desta operação, e o motor passa a usar os valores novos. Só o
           encerramento por aqui deixa a marca &quot;encerrada à mão&quot; (sai da medição do motor); mudar
           status, stop ou alvos sem encerrar não deixa marca.
@@ -139,7 +139,7 @@ function EditModal({ op, onClose, onSave }) {
               onSave(data);
             }}
             className="flex-1 py-2 rounded-lg text-10px font-mono font-bold transition-all"
-            style={{ background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }}>
+            style={{ background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }}>
             Salvar Alterações
           </button>
         </div>
@@ -188,13 +188,13 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
 
   const { unrealizedPct } = describeProximity(
     { side: signal.signal_type, entry_price: signal.price_at_signal }, price);
-  const moveColor = unrealizedPct === null ? 'rgba(255,255,255,0.35)' : unrealizedPct >= 0 ? '#00ff80' : '#ff1478';
+  const moveColor = unrealizedPct === null ? 'rgba(255,255,255,0.55)' : unrealizedPct >= 0 ? '#5db586' : '#e06a5b';
 
   // Já passou: uma linha discreta, com saída. Antes ficava com o mesmo peso
   // visual de um aviso vivo e só sumia quando 50 sinais novos o empurravam.
   if (phase === SIGNAL_PHASE.EXPIRED) {
     return (
-      <div className="rounded-xl px-3 py-2.5 flex items-start gap-2"
+      <div className="rounded-md px-3 py-2.5 flex items-start gap-2"
         style={{ background: 'rgba(12,15,26,0.5)', border: '1px solid rgba(255,255,255,0.05)', borderLeft: `3px solid ${copy.color}` }}>
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
@@ -202,7 +202,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
             <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.6)' }}>
               {signal.symbol?.replace('USDT', '/USDT')}
             </span>
-            <span className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
+            <span className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>
               {isBuy ? 'alta' : 'baixa'}
             </span>
             <span className="text-9px font-mono px-1.5 py-0.5 rounded"
@@ -211,7 +211,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
             </span>
           </div>
 
-          <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.4)' }}>
+          <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.62)' }}>
             {copy.reassurance}
           </p>
 
@@ -222,11 +222,11 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
             <div className="text-9px font-mono font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>
               {reason.icon} O que travou: {reason.chip}
             </div>
-            <p className="text-9px font-mono leading-relaxed mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            <p className="text-9px font-mono leading-relaxed mt-0.5" style={{ color: 'rgba(255,255,255,0.55)' }}>
               {reason.detail}
             </p>
             {evidence && (
-              <p className="text-9px font-mono leading-relaxed mt-1 opacity-70" style={{ color: 'rgba(0,229,255,0.6)' }}>
+              <p className="text-9px font-mono leading-relaxed mt-1 opacity-70" style={{ color: 'rgba(141,180,226,0.6)' }}>
                 📐 {evidence}
               </p>
             )}
@@ -239,7 +239,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
             <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
               aria-label="Tirar este aviso da lista"
               className="shrink-0 p-1 rounded-lg transition-colors hover:bg-white/[0.06]">
-              <X className="w-3.5 h-3.5" style={{ color: 'rgba(255,255,255,0.35)' }} />
+              <X className="w-3.5 h-3.5" style={{ color: 'rgba(255,255,255,0.55)' }} />
             </button>
           </TooltipTrigger>
           <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
@@ -251,16 +251,16 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
   }
 
   return (
-    <div className="rounded-xl p-4 space-y-3"
+    <div className="rounded-md p-4 space-y-3"
       style={{
-        background: 'rgba(12,15,26,0.75)', backdropFilter: 'blur(20px)',
+        background: 'rgba(12,15,26,0.75)',
         border: '1px solid rgba(255,255,255,0.06)', borderLeft: `3px solid ${copy.color}`,
       }}>
       {/* 1 · Identidade — e o ESTADO como elemento dominante, não a direção */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="font-bold text-sm text-foreground truncate flex items-center gap-2"><TokenIcon symbol={signal.symbol} size={18} />{signal.symbol?.replace('USDT', '/USDT')}</div>
-          <div className="text-10px font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
+          <div className="text-10px font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.62)' }}>
             {isBuy ? 'Aviso de alta (compra)' : 'Aviso de baixa (venda)'} · {moment(signal.created_date).fromNow()}
           </div>
           {/* Horário absoluto ao lado do relativo: "há 2 horas" não serve
@@ -279,11 +279,11 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
       <div className="flex items-end justify-between gap-2 flex-wrap">
         <div className="min-w-0">
           <div className="text-lg font-mono font-bold leading-none truncate"
-            style={{ color: price === null ? 'rgba(255,255,255,0.35)' : isStale ? '#ff9f43' : 'rgba(255,255,255,0.95)' }}>
+            style={{ color: price === null ? 'rgba(255,255,255,0.55)' : isStale ? '#dd9a4a' : 'rgba(255,255,255,0.95)' }}>
             {price !== null ? `$${formatPrice(price)}` : '—'}
           </div>
           <div className="text-9px font-mono uppercase tracking-widest mt-1"
-            style={{ color: isStale ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
+            style={{ color: isStale ? '#dd9a4a' : 'rgba(255,255,255,0.55)' }}>
             {isStale ? 'preço desatualizado' : 'preço agora'}
           </div>
         </div>
@@ -314,7 +314,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
           {signal.last_rejection_at && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-9px font-mono shrink-0 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                <span className="text-9px font-mono shrink-0 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.55)' }}>
                   desde {fmtBRT(signal.last_rejection_at)}
                 </span>
               </TooltipTrigger>
@@ -328,7 +328,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
           {reason.detail}
         </p>
         {evidence && (
-          <p className="text-9px font-mono leading-relaxed mt-1 opacity-70" style={{ color: 'rgba(0,229,255,0.6)' }}>
+          <p className="text-9px font-mono leading-relaxed mt-1 opacity-70" style={{ color: 'rgba(141,180,226,0.6)' }}>
             📐 {evidence}
           </p>
         )}
@@ -336,7 +336,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
       )}
 
       {/* 4 · Quem age, e até quando */}
-      <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+      <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.62)' }}>
         {copy.reassurance}
         {phase === SIGNAL_PHASE.WAITING && expiresAt && timeLeft
           ? ` Prazo: até ${moment(expiresAt).utcOffset(-3).format('DD/MM [às] HH[h]mm')} (faltam ${timeLeft}).`
@@ -348,7 +348,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
         <button onClick={() => setShowDetails(!showDetails)}
           aria-expanded={showDetails}
           className="flex items-center gap-1 text-10px font-mono transition-colors hover:text-foreground/70"
-          style={{ color: 'rgba(255,255,255,0.35)' }}>
+          style={{ color: 'rgba(255,255,255,0.55)' }}>
           {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           Detalhes técnicos
         </button>
@@ -356,7 +356,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
           <TooltipTrigger asChild>
             <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
               className="text-10px font-mono px-2 py-1 rounded-lg transition-colors hover:bg-white/[0.06]"
-              style={{ color: 'rgba(255,255,255,0.3)' }}>
+              style={{ color: 'rgba(255,255,255,0.55)' }}>
               Dispensar
             </button>
           </TooltipTrigger>
@@ -368,7 +368,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
 
       {showDetails && (
         <div className="space-y-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
+          <div className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>
             Gráfico de {signal.timeframe?.toUpperCase()}
           </div>
           <EventTimeline events={signalTimeline(signal, { asset })} />
@@ -378,7 +378,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
               quando na verdade essa fonte não usa score. */}
           {signal.context?.score > 0 && <ScoreBar score={signal.context.score} />}
           {signal.reason && (
-            <p className="text-9px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            <p className="text-9px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
               {signal.reason}
             </p>
           )}
@@ -404,9 +404,9 @@ function HistoryRow({ op, eventCtx = null }) {
   const stopLabel = outcome === 'WIN' ? '💰 Stop com lucro' : outcome === 'BE' ? '🟡 BE' : '🛑 Stop';
 
   const STATUS_MAP = {
-    TP2_HIT:     { label: '🏆 TP2', color: '#00ff80' },
+    TP2_HIT:     { label: '🏆 TP2', color: '#5db586' },
     STOP_HIT:    { label: stopLabel, color: outcomeColor('STOP_HIT', outcome) },
-    INVALIDATED: { label: '⚠ Invalidada', color: '#ff9f43' },
+    INVALIDATED: { label: '⚠ Invalidada', color: '#dd9a4a' },
     CLOSED:      { label: '✗ Encerrada', color: '#64748b' },
   };
   const s = STATUS_MAP[op.status] || { label: op.status, color: '#64748b' };
@@ -419,7 +419,7 @@ function HistoryRow({ op, eventCtx = null }) {
   const duration = Number.isFinite(openedMs) && Number.isFinite(closedMs) && closedMs >= openedMs
     ? formatBackfillLag(closedMs - openedMs)
     : null;
-  const pnlColor = pnlPct === null ? 'rgba(255,255,255,0.5)' : pnlPct >= 0 ? '#00ff80' : '#ff1478';
+  const pnlColor = pnlPct === null ? 'rgba(255,255,255,0.5)' : pnlPct >= 0 ? '#5db586' : '#e06a5b';
 
   // Achado de clareza (pedido do usuário, 2026-09-18): esta era a seção mais
   // vaga de todas — nenhum "por quê" visível, só o status de 1-2 palavras +
@@ -431,14 +431,14 @@ function HistoryRow({ op, eventCtx = null }) {
   const whyText = decisionOut?.why ?? legacyClosedOperationText(op, pnlPct, outcome, motivo);
 
   return (
-    <div className="rounded-xl px-4 py-3 flex flex-col gap-1.5" data-history-row={op.id}
+    <div className="rounded-md px-4 py-3 flex flex-col gap-1.5" data-history-row={op.id}
       style={{ background: 'rgba(12,15,26,0.55)', border: '1px solid rgba(255,255,255,0.05)', borderLeft: `3px solid ${s.color}` }}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <TokenIcon symbol={op.symbol} size={16} />
           <span className="font-semibold text-sm text-foreground shrink-0">{op.symbol?.replace('USDT', '/USDT')}</span>
           <span className="text-9px font-mono font-bold px-1.5 py-0.5 rounded"
-            style={{ color: isBuy ? '#00ff80' : '#ff1478', background: isBuy ? 'rgba(0,255,128,0.1)' : 'rgba(255,20,120,0.1)' }}>
+            style={{ color: isBuy ? '#5db586' : '#e06a5b', background: isBuy ? 'rgba(93,181,134,0.1)' : 'rgba(224,106,91,0.1)' }}>
             {op.side}
           </span>
           {tfChip && <span className="text-9px font-mono text-muted-foreground">{tfChip}</span>}
@@ -450,7 +450,7 @@ function HistoryRow({ op, eventCtx = null }) {
               {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
             </div>
             {realizedR !== null && (
-              <div className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>{formatSignedR(realizedR)}</div>
+              <div className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.62)' }}>{formatSignedR(realizedR)}</div>
             )}
           </div>
         )}
@@ -743,11 +743,11 @@ export default function Trades() {
             <div>
             <button onClick={() => setShowChart(!showChart)} aria-expanded={showChart}
               className="flex items-center gap-2 mb-3 group">
-              <BarChart2 className="w-4 h-4" style={{ color: '#00e5ff' }} />
+              <BarChart2 className="w-4 h-4" style={{ color: '#8db4e2' }} />
               <h2 className="text-base font-bold text-foreground/80 group-hover:text-foreground transition-colors">
                 Performance Acumulada
               </h2>
-              <span className="text-10px font-mono" style={{ color: '#00e5ff' }}>
+              <span className="text-10px font-mono" style={{ color: '#8db4e2' }}>
                 {showChart ? '▲ esconder' : '▼ mostrar'}
               </span>
             </button>
@@ -779,7 +779,7 @@ export default function Trades() {
         {/* Active Operations — logo depois dos filtros (item 304): é o que está em jogo agora. */}
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Target className="w-4 h-4" style={{ color: '#00ff80' }} />
+            <Target className="w-4 h-4" style={{ color: '#5db586' }} />
             <h2 className="text-base font-bold text-foreground">Operações Ativas</h2>
             <span className="text-xs font-mono text-muted-foreground">({shownActive.length})</span>
           </div>
@@ -789,7 +789,7 @@ export default function Trades() {
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : isError && operations.length === 0 ? (
-            <div className="glass-card rounded-xl p-8">
+            <div className="glass-card rounded-md p-8">
               <QueryErrorState message="Não foi possível carregar as operações agora." onRetry={refetch} />
             </div>
           ) : shownActive.length === 0 ? (
@@ -798,12 +798,12 @@ export default function Trades() {
               // atualização mais recente falhou — "Nenhuma operação ativa"
               // seria uma afirmação que não foi confirmada de verdade (achado
               // da revisão pós-PR #396, docs/claude/ui-audit-criticos.md).
-              <div className="glass-card rounded-xl p-8">
+              <div className="glass-card rounded-md p-8">
                 <QueryErrorState message="Não foi possível confirmar se há operações ativas agora — a atualização falhou. Mostrando o último dado conhecido." onRetry={refetch} />
               </div>
             ) : active.length > 0 ? (
               // Item 304: antes aqui também saía "Nenhuma operação ativa." — com operação aberta e só o filtro escondendo.
-              <div className="glass-card rounded-xl p-8 text-center space-y-3">
+              <div className="glass-card rounded-md p-8 text-center space-y-3">
                 <p className="text-muted-foreground text-sm">
                   {active.length === 1
                     ? 'Há 1 operação ativa, mas os filtros ligados a escondem.'
@@ -811,12 +811,12 @@ export default function Trades() {
                 </p>
                 <button type="button" onClick={clearFilters}
                   className="text-10px font-mono px-3 py-1.5 rounded-md"
-                  style={{ background: 'rgba(255,209,102,0.1)', border: '1px solid rgba(255,209,102,0.35)', color: '#ffd166' }}>
+                  style={{ background: 'rgba(227,180,90,0.1)', border: '1px solid rgba(227,180,90,0.35)', color: '#e3b45a' }}>
                   Limpar filtros e mostrar
                 </button>
               </div>
             ) : (
-              <div className="glass-card rounded-xl p-12 text-center">
+              <div className="glass-card rounded-md p-12 text-center">
                 <Target className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
                 <p className="text-muted-foreground text-sm">Nenhuma operação ativa.</p>
               </div>
@@ -833,7 +833,7 @@ export default function Trades() {
                       <button
                         onClick={() => setEditingOp(op)}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-90"
-                        style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
+                        style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
                         <Edit3 className="w-3 h-3" />
                         Editar
                       </button>
@@ -841,7 +841,7 @@ export default function Trades() {
                         onClick={() => setConfirmingOp({ op, action: 'invalidate' })}
                         disabled={invalidateMutation.isPending}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-90"
-                        style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+                        style={{ background: 'rgba(221,154,74,0.08)', border: '1px solid rgba(221,154,74,0.2)', color: '#dd9a4a' }}>
                         <AlertTriangle className="w-3 h-3" />
                         Invalidar
                       </button>
@@ -849,7 +849,7 @@ export default function Trades() {
                         onClick={() => setConfirmingOp({ op, action: 'close' })}
                         disabled={closeMutation.isPending}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-10px font-mono ml-auto transition-all hover:opacity-90"
-                        style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.25)', color: '#ff1478' }}>
+                        style={{ background: 'rgba(224,106,91,0.1)', border: '1px solid rgba(224,106,91,0.25)', color: '#e06a5b' }}>
                         <XCircle className="w-3 h-3" />
                         Encerrar
                       </button>
@@ -869,7 +869,7 @@ export default function Trades() {
             que numa query secundária fora do escopo daquela rodada (achado
             da 3ª revisão cética, docs/claude/ui-audit-criticos.md). */}
         {signalsError && (
-          <div className="glass-card rounded-xl p-6">
+          <div className="glass-card rounded-md p-6">
             <QueryErrorState message="Não foi possível verificar avisos/sinais recentes agora." onRetry={refetchSignals} />
           </div>
         )}
@@ -880,13 +880,13 @@ export default function Trades() {
         {monitoringActionable.length > 0 && (
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Eye className="w-4 h-4" style={{ color: '#ffd166' }} />
+              <Eye className="w-4 h-4" style={{ color: '#e3b45a' }} />
               <h2 className="text-base font-bold text-foreground">Avisos em análise</h2>
-              <span className="text-xs font-mono" style={{ color: '#ffd166' }}>
+              <span className="text-xs font-mono" style={{ color: '#e3b45a' }}>
                 ({shownActionable.length})
               </span>
             </div>
-            <p className="text-10px font-mono mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            <p className="text-10px font-mono mb-3" style={{ color: 'rgba(255,255,255,0.55)' }}>
               O app está checando estes. Se algum virar operação, ele abre sozinho e ela aparece em Operações Ativas.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -914,7 +914,7 @@ export default function Trades() {
               style={{ color: '#60a5fa' }}>
               {showInfoSignals ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               ℹ {shownInfoOnly.length} observações de mercado
-              <span style={{ color: 'rgba(255,255,255,0.3)' }}>— não viram operação</span>
+              <span style={{ color: 'rgba(255,255,255,0.55)' }}>— não viram operação</span>
             </button>
             {showInfoSignals && (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-3">
@@ -942,7 +942,7 @@ export default function Trades() {
                 Histórico Completo
               </h2>
               <span className="text-xs font-mono text-muted-foreground">({shownHistory.length})</span>
-              <span className="text-10px font-mono" style={{ color: '#00e5ff' }}>
+              <span className="text-10px font-mono" style={{ color: '#8db4e2' }}>
                 {showHistory ? '▲ esconder' : '▼ mostrar'}
               </span>
             </button>
@@ -951,17 +951,17 @@ export default function Trades() {
               <div className="space-y-1.5">
                 <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-3 py-2 rounded-lg mb-3 text-10px font-mono"
                   style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <span style={{ color: '#00ff80' }}>✓ Ganhos: {closedSummary.wins}</span>
-                  <span style={{ color: '#ffd166' }}>↔ Empates: {closedSummary.be}</span>
-                  <span style={{ color: '#ff1478' }}>✗ Perdas: {closedSummary.losses}</span>
+                  <span style={{ color: '#5db586' }}>✓ Ganhos: {closedSummary.wins}</span>
+                  <span style={{ color: '#e3b45a' }}>↔ Empates: {closedSummary.be}</span>
+                  <span style={{ color: '#e06a5b' }}>✗ Perdas: {closedSummary.losses}</span>
                   <span className="text-muted-foreground">Total: {closedSummary.total}</span>
-                  <Link to="/history" className="ml-auto underline underline-offset-2" style={{ color: '#00e5ff' }}>
+                  <Link to="/history" className="ml-auto underline underline-offset-2" style={{ color: '#8db4e2' }}>
                     Ver a história de cada operação na aba Histórico →
                   </Link>
                 </div>
                 {shownHistory.map(op => <HistoryRow key={op.id} op={op} eventCtx={eventCtx} />)}
                 {operations.length >= OPERATIONS_PAGE_SIZE && (
-                  <p className="text-9px font-mono pt-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  <p className="text-9px font-mono pt-1" style={{ color: 'rgba(255,255,255,0.55)' }}>
                     Esta página carrega só as {OPERATIONS_PAGE_SIZE} operações mais recentes (ativas e fechadas); as mais antigas não entram nesta lista nem nos números acima.
                   </p>
                 )}

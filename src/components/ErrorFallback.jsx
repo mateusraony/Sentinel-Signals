@@ -22,20 +22,20 @@ export function ErrorFallback({
     <div className={fullPage ? 'fixed inset-0 z-50 flex items-center justify-center bg-background p-6 overflow-auto' : 'flex items-center justify-center p-6 sm:p-10'}>
       <div className="grid-overlay" />
       <div className="relative w-full max-w-md">
-        <div className="glass-card animated-border rounded-2xl p-6 sm:p-8 text-center space-y-5">
+        <div className="glass-card animated-border rounded-lg p-6 sm:p-8 text-center space-y-5">
           {/* Radar "signal lost" motif — pulsing rings + rotating sweep, sell-glow palette */}
           <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
             <div className="signal-lost-ring" />
             <div className="signal-lost-ring" />
             <div className="signal-lost-ring" />
             <div className="signal-lost-sweep absolute inset-0 flex items-start justify-center">
-              <div className="w-px h-10 bg-gradient-to-b from-[#ff1478] to-transparent opacity-70" />
+              <div className="w-px h-10 bg-gradient-to-b from-[#e06a5b] to-transparent opacity-70" />
             </div>
-            <Radar className="w-9 h-9 relative z-10" style={{ color: '#ff1478', filter: 'drop-shadow(0 0 8px rgba(255,20,120,0.7))' }} />
+            <Radar className="w-9 h-9 relative z-10" style={{ color: '#e06a5b', filter: 'drop-shadow(0 0 8px rgba(224,106,91,0.7))' }} />
           </div>
 
           <div className="space-y-1.5">
-            <h2 className="glitch-title text-base font-mono font-semibold tracking-wide uppercase" style={{ color: '#ff1478' }}>
+            <h2 className="glitch-title text-base font-mono font-semibold tracking-wide uppercase" style={{ color: '#e06a5b' }}>
               {title || 'Sinal perdido'}
             </h2>
             <p className="text-xs text-muted-foreground leading-relaxed">
@@ -51,7 +51,7 @@ export function ErrorFallback({
                 className="candle-flatline-bar w-1.5 rounded-sm"
                 style={{
                   height: `${h * 100}%`,
-                  background: i % 3 === 0 ? '#ff1478' : '#00ff80',
+                  background: i % 3 === 0 ? '#e06a5b' : '#5db586',
                   animationDelay: `${i * 0.15}s`,
                 }}
               />
@@ -61,7 +61,7 @@ export function ErrorFallback({
           {diagnosticText != null && (
             <div className="text-left rounded-lg border border-white/10 bg-black/30 p-3 space-y-1.5">
               <div className="flex items-center gap-1.5 text-10px font-mono uppercase tracking-wider text-muted-foreground">
-                <AlertTriangle className="w-3 h-3" style={{ color: '#ff1478' }} />
+                <AlertTriangle className="w-3 h-3" style={{ color: '#e06a5b' }} />
                 {diagnosticLabel || 'Diagnóstico'}
               </div>
               <p className="text-11px font-mono text-muted-foreground/90 break-words line-clamp-3">
@@ -83,7 +83,7 @@ export function ErrorFallback({
                 onClick={onCopy}
                 className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg border border-white/10 hover:bg-white/5 transition-colors"
               >
-                {copied ? <Check className="w-3.5 h-3.5" style={{ color: '#00ff80' }} /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? <Check className="w-3.5 h-3.5" style={{ color: '#5db586' }} /> : <Copy className="w-3.5 h-3.5" />}
                 {copied ? 'Copiado!' : 'Copiar diagnóstico'}
               </button>
             )}

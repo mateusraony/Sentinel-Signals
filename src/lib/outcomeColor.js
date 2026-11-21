@@ -10,10 +10,10 @@
 // MonthlyReport.jsx/TradeHistory.jsx/Backtest.jsx também precisavam da
 // mesma lógica e reimplementavam versões parciais/divergentes dela.
 export function outcomeColor(status, outcome) {
-  if (status === 'STOP_HIT' && outcome === 'WIN') return '#00ff80';
-  if (status === 'STOP_HIT' && outcome === 'BE') return '#ffd166';
-  if (status === 'STOP_HIT') return '#ff1478';
-  if (status === 'TP2_HIT') return '#00ff80';
-  if (status === 'INVALIDATED') return '#ff9f43';
+  if (status === 'STOP_HIT' && outcome === 'WIN') return '#5db586';
+  if (status === 'STOP_HIT' && outcome === 'BE') return '#e3b45a';
+  if (status === 'STOP_HIT') return '#e06a5b';
+  if (status === 'TP2_HIT') return '#5db586';
+  if (status === 'INVALIDATED') return '#dd9a4a';
   return '#64748b';
 }

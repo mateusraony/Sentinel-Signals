@@ -226,8 +226,8 @@ describe('Verification — campos têm foco visível (achado A-7)', () => {
 // (text-foreground/80), sem indicar sobrecompra/sobrevenda/tendência —
 // diferente do padrão já usado no detalhe do ativo (AssetDetailPanel.jsx).
 describe('Verification — RSI/MACD/EMA com cor de zona no ContextGrid (achado M-8)', () => {
-  const GREEN = 'rgb(0, 255, 128)';
-  const RED = 'rgb(255, 20, 120)';
+  const GREEN = 'rgb(93, 181, 134)';
+  const RED = 'rgb(224, 106, 91)';
 
   // Contexto sempre completo (RSI/MACD/EMA juntos, como no dado real) —
   // só o campo sob teste muda de valor entre os casos; assim o rótulo

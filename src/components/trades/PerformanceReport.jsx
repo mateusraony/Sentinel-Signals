@@ -32,7 +32,7 @@ export default function PerformanceReport({ trades }) {
 
   if (!metrics.hasData) {
     return (
-      <div className="rounded-xl p-8 text-center"
+      <div className="rounded-md p-8 text-center"
         style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <Activity className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
         <p className="text-sm text-muted-foreground">Sem trades fechados para relatório.</p>
@@ -50,7 +50,7 @@ export default function PerformanceReport({ trades }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <Award className="w-4 h-4" style={{ color: '#00e5ff' }} />
+        <Award className="w-4 h-4" style={{ color: '#8db4e2' }} />
         <h2 className="text-base font-bold text-foreground/80">Relatório de Performance</h2>
         <span className="text-10px font-mono text-muted-foreground">({metrics.totalTrades} trades fechados)</span>
       </div>
@@ -66,8 +66,8 @@ export default function PerformanceReport({ trades }) {
           label="PnL Acumulado"
           value={fmtPct(metrics.totalPnl)}
           sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`}
-          color={metrics.totalPnl >= 0 ? '#00ff80' : '#ff1478'}
-          glowColor={metrics.totalPnl >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'}
+          color={metrics.totalPnl >= 0 ? '#5db586' : '#e06a5b'}
+          glowColor={metrics.totalPnl >= 0 ? 'rgba(93,181,134,0.4)' : 'rgba(224,106,91,0.4)'}
         />
         <MetricSummaryCard valueClassName="text-2xl"
           icon={Target}
@@ -99,16 +99,16 @@ export default function PerformanceReport({ trades }) {
           label="Ganho Médio"
           value={fmtPct(metrics.avgWin)}
           sublabel="por trade vencedor"
-          color="#00ff80"
-          glowColor="rgba(0,255,128,0.4)"
+          color="#5db586"
+          glowColor="rgba(93,181,134,0.4)"
         />
         <MetricSummaryCard valueClassName="text-2xl"
           icon={TrendingDown}
           label="Perda Média"
           value={fmtPct(-metrics.avgLoss)}
           sublabel="por trade perdedor"
-          color="#ff1478"
-          glowColor="rgba(255,20,120,0.4)"
+          color="#e06a5b"
+          glowColor="rgba(224,106,91,0.4)"
         />
       </div>
     </div>
