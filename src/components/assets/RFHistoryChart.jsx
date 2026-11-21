@@ -122,19 +122,19 @@ export default function RFHistoryChart({ asset }) {
   }, [signals]);
 
   return (
-    <div className="rounded-lg p-3 space-y-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+    <div className="rounded-md p-3 space-y-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
       {/* Header + timeframe filter */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1.5">
           <BarChart2 className="w-3 h-3" style={{ color: '#8db4e2' }} />
-          <span className="text-9px font-mono font-bold text-muted-foreground uppercase tracking-wider">
+          <span className="text-11px font-mono font-bold text-muted-foreground">
             Histórico Range Filter
           </span>
         </div>
         <div className="flex items-center gap-1">
           {TIMEFRAMES.map(tf => (
             <button key={tf} onClick={() => setTimeframe(tf)}
-              className="px-2 py-0.5 rounded text-9px font-mono font-bold transition-all"
+              className="px-2 py-0.5 rounded text-11px font-mono font-bold transition-all"
               style={timeframe === tf
                 ? { background: 'rgba(141,180,226,0.15)', border: '1px solid rgba(141,180,226,0.4)', color: '#8db4e2' }
                 : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
@@ -145,7 +145,7 @@ export default function RFHistoryChart({ asset }) {
       </div>
 
       {isLoading && (
-        <div className="text-9px font-mono text-muted-foreground animate-pulse text-center py-6">
+        <div className="text-11px font-mono text-muted-foreground animate-pulse text-center py-6">
           Carregando candles de {timeframe}...
         </div>
       )}
@@ -153,7 +153,7 @@ export default function RFHistoryChart({ asset }) {
       {!isLoading && (error || !analysis) && (
         <div className="text-center py-4">
           <AlertTriangle className="w-4 h-4 mx-auto mb-1 text-muted-foreground opacity-30" />
-          <div className="text-9px font-mono text-muted-foreground">
+          <div className="text-11px font-mono text-muted-foreground">
             Não foi possível calcular o Range Filter para {timeframe} agora.
           </div>
         </div>
@@ -162,25 +162,25 @@ export default function RFHistoryChart({ asset }) {
       {!isLoading && analysis && (
         <>
           {/* Stability metrics */}
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-7px font-mono text-muted-foreground uppercase">Mudança RF</div>
-              <div className="text-10px font-mono font-bold" style={{ color: analysis.rfChangePct >= 0 ? '#5db586' : '#e06a5b' }}>
+              <div className="text-11px font-mono text-muted-foreground">Mudança RF</div>
+              <div className="text-11px font-mono font-bold" style={{ color: analysis.rfChangePct >= 0 ? '#5db586' : '#e06a5b' }}>
                 {analysis.rfChangePct >= 0 ? '+' : ''}{analysis.rfChangePct.toFixed(2)}%
               </div>
             </div>
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-7px font-mono text-muted-foreground uppercase">Volatilidade</div>
-              <div className="text-10px font-mono font-bold" style={{ color: '#8db4e2' }}>{analysis.volatilityPct.toFixed(2)}%</div>
+              <div className="text-11px font-mono text-muted-foreground">Volatilidade</div>
+              <div className="text-11px font-mono font-bold" style={{ color: '#8db4e2' }}>{analysis.volatilityPct.toFixed(2)}%</div>
             </div>
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-7px font-mono text-muted-foreground uppercase">Flips de direção</div>
-              <div className="text-10px font-mono font-bold text-foreground">{analysis.flips}</div>
+              <div className="text-11px font-mono text-muted-foreground">Flips de direção</div>
+              <div className="text-11px font-mono font-bold text-foreground">{analysis.flips}</div>
             </div>
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-7px font-mono text-muted-foreground uppercase">Bias / Estabilidade</div>
-              <div className="text-10px font-mono font-bold" style={{ color: analysis.biasColor }}>{analysis.bias}</div>
-              <div className="text-8px font-mono" style={{ color: analysis.stabColor }}>{analysis.stability}</div>
+              <div className="text-11px font-mono text-muted-foreground">Bias / Estabilidade</div>
+              <div className="text-11px font-mono font-bold" style={{ color: analysis.biasColor }}>{analysis.bias}</div>
+              <div className="text-11px font-mono" style={{ color: analysis.stabColor }}>{analysis.stability}</div>
             </div>
           </div>
 
@@ -192,15 +192,15 @@ export default function RFHistoryChart({ asset }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
                 <YAxis
                   domain={['auto', 'auto']}
-                  tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 9, fontFamily: 'monospace' }}
+                  tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 11, fontFamily: 'monospace' }}
                   tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   tickFormatter={(v) => formatPrice(v)}
-                  width={54}
+                  width={74}
                 />
                 <XAxis
                   dataKey="time"
-                  tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 9, fontFamily: 'monospace' }}
+                  tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 11, fontFamily: 'monospace' }}
                   tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                   minTickGap={40}
@@ -244,20 +244,26 @@ export default function RFHistoryChart({ asset }) {
 
       {/* Recent real signals table */}
       {signalRows.length > 0 && (
-        <div className="space-y-0.5 max-h-32 overflow-y-auto pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-          <div className="text-8px font-mono text-muted-foreground uppercase tracking-wider px-1 pb-0.5">Sinais recentes</div>
+        <div className="space-y-0.5 max-h-44 overflow-auto pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+          <div className="min-w-[30rem] space-y-0.5">
+          <div className="text-xs text-muted-foreground px-1 pb-1">Sinais recentes</div>
+          {/* Colunas de largura fixa (antes cada linha era um flex 'space-between' e as colunas saíam desalinhadas de uma linha para outra). */}
+          <div className="grid grid-cols-[6.5rem_4.5rem_3.5rem_1fr_1fr] gap-x-2 px-1 pb-0.5 text-11px text-muted-foreground/70" aria-hidden="true">
+            <span>Quando</span><span>Gráfico</span><span>Sinal</span><span className="text-right">RF</span><span className="text-right">Preço</span>
+          </div>
           {signalRows.map((d, i) => (
-            <div key={i} className="flex items-center justify-between text-8px font-mono px-1 py-0.5 rounded"
+            <div key={i} className="grid grid-cols-[6.5rem_4.5rem_3.5rem_1fr_1fr] gap-x-2 items-center text-11px font-mono px-1 py-0.5 rounded"
               style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent' }}>
               <span className="text-muted-foreground">{d.time}</span>
               <span style={{ color: dirColor(d.dir) }}>
                 {d.dir === 1 ? '▲' : d.dir === -1 ? '▼' : '—'} {d.tf?.toUpperCase()}
               </span>
               <span style={{ color: d.signal === 'BUY' ? '#5db586' : '#e06a5b' }}>{d.signal}</span>
-              <span style={{ color: '#8db4e2' }}>${formatPrice(d.rf)}</span>
-              <span className="text-muted-foreground">${formatPrice(d.price)}</span>
+              <span className="text-right" style={{ color: '#8db4e2' }}>${formatPrice(d.rf)}</span>
+              <span className="text-right text-muted-foreground">${formatPrice(d.price)}</span>
             </div>
           ))}
+          </div>
         </div>
       )}
     </div>

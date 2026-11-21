@@ -56,9 +56,9 @@ describe('AssetDetailPanel — RSI/MACD/EMA têm tooltip explicando o termo (ach
     renderPanel();
     expect(screen.getByText('RSI Period').getAttribute('tabindex')).toBe('0');
     expect(screen.getByText('RSI OB/OS').getAttribute('tabindex')).toBe('0');
-    // "MACD"/"EMA" aparecem 2x (ParamCard + mini-grid) — pega o ParamCard (label em uppercase tracking-wider).
-    const macdParam = screen.getAllByText('MACD').find(el => el.className.includes('uppercase'));
-    const emaParam = screen.getAllByText('EMA').find(el => el.className.includes('uppercase'));
+    // "MACD"/"EMA" aparecem 2x (ParamCard + mini-grid) — pega o ParamCard pelo valor que mora no mesmo cartão (12/26/9 e 20/50), não pelo estilo.
+    const macdParam = screen.getAllByText('MACD').find(el => el.parentElement.textContent.includes('12/26/9'));
+    const emaParam = screen.getAllByText('EMA').find(el => el.parentElement.textContent.includes('20/50'));
     expect(macdParam?.getAttribute('tabindex')).toBe('0');
     expect(emaParam?.getAttribute('tabindex')).toBe('0');
     // "RF Period"/"RF Mult" não fazem parte do achado M-17 (já contextualizados pelo header da seção) — continuam sem tooltip.

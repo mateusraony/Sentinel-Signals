@@ -98,11 +98,11 @@ export default function AddAssetForm({ onSuccess }) {
     <div className="space-y-5">
       {/* Quick Add */}
       <div>
-        <Label className="text-10px font-mono uppercase tracking-widest text-muted-foreground mb-2 block">Adicionar rápido</Label>
+        <Label className="text-11px font-mono text-muted-foreground mb-2 block">Adicionar rápido</Label>
         <div className="flex flex-wrap gap-1.5">
           {POPULAR_PAIRS.map(pair => (
             <button key={pair.symbol} onClick={() => handleQuickAdd(pair)}
-              className="text-10px font-mono px-2 py-1 rounded transition-all duration-200"
+              className="text-11px font-mono px-2 py-1 rounded transition-all duration-200"
               style={{
                 background: symbol === pair.symbol ? 'rgba(93,181,134,0.12)' : 'rgba(255,255,255,0.04)',
                 border: symbol === pair.symbol ? '1px solid rgba(93,181,134,0.35)' : '1px solid rgba(255,255,255,0.07)',
@@ -153,7 +153,7 @@ export default function AddAssetForm({ onSuccess }) {
               <CheckCircle2 className="w-3.5 h-3.5" />Símbolo válido na Binance
             </div>
             {/* Logo do token (11/11/2026): com logo na pasta, ele aparece; sem logo, o painel mostra a bolinha com a inicial. */}
-            <div className="flex items-center gap-2 text-10px font-mono text-muted-foreground">
+            <div className="flex items-center gap-2 text-11px font-mono text-muted-foreground">
               <TokenIcon symbol={symbol} size={16} />
               {hasTokenLogo(symbol) ? 'Logo do token encontrado' : 'Token ainda sem logo no painel: aparece uma bolinha com a inicial'}
             </div>
@@ -161,7 +161,7 @@ export default function AddAssetForm({ onSuccess }) {
         )}
 
         <button onClick={handleSave} disabled={saving || !validated}
-          className="w-full py-2.5 rounded-lg font-mono text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-40"
+          className="w-full py-2.5 rounded-md font-mono text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-40"
           style={{
             background: 'linear-gradient(135deg, rgba(93,181,134,0.15), rgba(0,200,255,0.1))',
             border: '1px solid rgba(93,181,134,0.35)',
