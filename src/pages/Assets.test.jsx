@@ -198,3 +198,57 @@ describe('Assets — toggle e "Remover" ficam desabilitados durante a mutação 
     expect(monitoredAssetDeleteMock).not.toHaveBeenCalled();
   });
 });
+
+// 21/11/2026 — Ativos refeito (estrutura, não só cor): contagens numa linha, filtros em abas ligadas e cada ativo como linha de TABELA
+// com colunas fixas (Ativo · Gráficos · Indicadores · Leitura e último scan · ações). Os textos e botões de sempre continuam lá.
+describe('Assets — estrutura nova (21/11/2026)', () => {
+  const ATIVOS = [
+    { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN() },
+    { id: 'a2', symbol: 'ETHUSDT', display_name: 'ETH/USDT', is_active: false, last_scan_at: RECENT_5MIN(), scan_status: 'error', scan_error: 'falha simulada' },
+  ];
+  async function abrir(lista = ATIVOS) {
+    monitoredAssetListMock.mockResolvedValue(lista);
+    const r = renderPage(<Assets />);
+    await screen.findByText('BTC/USDT');
+    return r;
+  }
+
+  it('as contagens são uma linha só (Total · Ativos · Inativos · Erros), sem os 4 cartões com ícone', async () => {
+    await abrir();
+    const total = screen.getByText('Total');
+    const linha = total.parentElement.parentElement;
+    for (const rotulo of ['Total', 'Ativos', 'Inativos', 'Erros']) expect(within(linha).getAllByText(rotulo).length).toBeGreaterThan(0);
+    expect(linha.querySelector('svg')).toBeNull();
+    expect(within(total.parentElement).getByText('2')).toBeTruthy();
+  });
+
+  it('os filtros são abas ligadas dentro de um painel com a busca', async () => {
+    await abrir();
+    const todos = screen.getByRole('button', { name: 'Todos' });
+    const inativos = screen.getByRole('button', { name: /Inativos/ });
+    expect(todos.parentElement).toBe(inativos.parentElement);
+    expect(todos.parentElement.className).toMatch(/rounded-md/);
+    fireEvent.click(inativos);
+    await waitFor(() => expect(screen.queryByText('BTC/USDT')).toBeNull());
+    expect(screen.getByText('ETH/USDT')).toBeTruthy();
+  });
+
+  it('há um cabeçalho de colunas (tela larga) e cada ativo usa a mesma grade de colunas', async () => {
+    const { container } = await abrir();
+    const cab = screen.getByText('Leitura e último scan').parentElement;
+    expect(cab.getAttribute('aria-hidden')).toBe('true');
+    expect(cab.className).toMatch(/lg:grid-cols-\[/);
+    const linhas = container.querySelectorAll('div[class*="lg:grid-cols-["]');
+    // cabeçalho + 1 grade por ativo
+    expect(linhas.length).toBe(1 + ATIVOS.length);
+    const modelo = cab.className.match(/lg:grid-cols-\[[^\]]+\]/)[0];
+    linhas.forEach((el) => expect(el.className).toContain(modelo));
+  });
+
+  it('o erro do último scan aparece inteiro (quebra a linha, em vez de cortar com reticências)', async () => {
+    await abrir();
+    const erro = screen.getByText(/falha simulada/);
+    expect(erro.className).not.toMatch(/truncate/);
+    expect(erro.className).toMatch(/break-words/);
+  });
+});
