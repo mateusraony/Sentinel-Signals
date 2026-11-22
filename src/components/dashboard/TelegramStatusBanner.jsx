@@ -21,7 +21,7 @@ export default function TelegramStatusBanner() {
             </span>
           </div>
           <button onClick={() => setShowSettings(true)}
-            className="text-11px font-mono px-2.5 py-1 rounded-lg transition-all hover:opacity-80"
+            className="text-11px font-mono px-2.5 py-1 rounded-md transition-all hover:opacity-80"
             style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
             Configurar
           </button>
@@ -61,7 +61,7 @@ export default function TelegramStatusBanner() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button onClick={() => setShowSettings(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-11px font-mono font-semibold transition-all hover:opacity-80"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-11px font-mono font-semibold transition-all hover:opacity-80"
             style={{ background: 'rgba(141,180,226,0.1)', border: '1px solid rgba(141,180,226,0.25)', color: '#8db4e2' }}>
             <BellRing className="w-3 h-3" />Configurar agora
           </button>

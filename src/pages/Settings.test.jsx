@@ -86,3 +86,40 @@ describe('Settings — erro ao salvar explica causa provável e é logado (Round
     expect(logErrorMock).toHaveBeenCalledWith('Settings', 'Falha ao salvar ajustes finos', { error: 'network down' });
   });
 });
+
+// 22/11/2026 — Ajustes refeito (estrutura, não só cor): ações e estado no topo, uma só nota, "padrão X" em cada controle,
+// flags de fidelidade em 2 colunas. A lógica de salvar (só as chaves tocadas) NÃO mudou — o teste antigo de erro segue valendo.
+describe('Settings — estrutura nova (22/11/2026)', () => {
+  it('o topo mostra o estado das alterações e as ações (Restaurar e Salvar) juntas', async () => {
+    renderPage(<Settings />);
+    const estado = await screen.findByText('sem alterações pendentes');
+    expect(estado.parentElement).toBe(screen.getByText('Restaurar').closest('button').parentElement);
+    expect(screen.getByText('Salvar & Sincronizar').closest('button').parentElement).toBe(estado.parentElement);
+  });
+
+  it('mexer num controle vira "1 alteração não salva", e o controle mostra o padrão marcado como diferente', async () => {
+    renderPage(<Settings />);
+    await screen.findByText('sem alterações pendentes');
+    expect(screen.getAllByText(/^padrão /).length).toBeGreaterThan(0);
+    const slider = screen.getAllByRole('slider')[5]; // Score Mínimo (6º: rng_per, rng_qty, ATR, TP1 em R, % TP1, Score)
+    slider.focus();
+    fireEvent.keyDown(slider, { key: 'ArrowRight' });
+    expect(await screen.findByText('1 alteração não salva')).toBeTruthy();
+    expect(screen.getByText(/^● padrão 75$/)).toBeTruthy();
+  });
+
+  it('a nota "aplicado no próximo scan" aparece uma vez só (antes eram 3: subtítulo, selo e faixa amarela)', async () => {
+    renderPage(<Settings />);
+    await screen.findByText('sem alterações pendentes');
+    expect(screen.getAllByText(/aplicad[oa]s? instantaneamente/i)).toHaveLength(1);
+  });
+
+  it('as 2 flags de fidelidade ao TradingView ficam sob um título próprio, em 2 colunas', async () => {
+    renderPage(<Settings />);
+    await screen.findByText('sem alterações pendentes');
+    const titulo = screen.getByRole('heading', { name: 'Fidelidade ao TradingView' });
+    const grade = titulo.parentElement.nextElementSibling;
+    expect(grade.className).toMatch(/md:grid-cols-2/);
+    expect(grade.querySelectorAll('[role="switch"]')).toHaveLength(2);
+  });
+});
