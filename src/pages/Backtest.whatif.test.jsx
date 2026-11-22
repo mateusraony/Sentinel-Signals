@@ -153,7 +153,7 @@ describe('What-If — histórico dos testes', () => {
     await waitFor(() => expect(JSON.parse(localStorage.getItem('sentinel_whatif_history_v1') ?? '{"runs":[]}').runs.length).toBeGreaterThanOrEqual(1), { timeout: 4000 });
     cleanup();
     await openWhatIf();
-    expect(screen.getByText(/Testes em outras janelas \(1\)/)).toBeTruthy();
+    expect(screen.getByText(/Testes em outras janelas de dados \(1\)/)).toBeTruthy();
   });
 
   it('"Apagar todo o histórico" pede confirmação', async () => {

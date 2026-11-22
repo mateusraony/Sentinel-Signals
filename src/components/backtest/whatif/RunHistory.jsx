@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import moment from 'moment';
 import { Star, Trash2, Undo2 } from 'lucide-react';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
@@ -24,7 +25,7 @@ function Row({ run, rank, best, current, onUse, onStar, onRemove, showDataset = 
             {best && <span className="text-11px px-1.5 rounded" style={{ background: 'rgba(93,181,134,0.12)', color: GREEN }}>melhor até agora</span>}
             {current && <span className="text-11px px-1.5 rounded" style={{ background: 'rgba(141,180,226,0.15)', color: BLUE }}>em tela</span>}
           </div>
-          <p className="text-11px font-mono text-foreground/75 break-words">{showDataset ? `${run.dataset.symbol} ${run.dataset.timeframe.toUpperCase()} ${run.dataset.candleCount}c · ` : ''}{formatParams(run.params)}</p>
+          <p className="text-11px font-mono text-foreground/75 break-words">{showDataset ? `${run.dataset.symbol} ${run.dataset.timeframe.toUpperCase()} ${run.dataset.candleCount}c${run.dataset.windowEnd ? ` · dados até ${moment(run.dataset.windowEnd).format('DD/MM HH:mm')}` : ''} · ` : ''}{formatParams(run.params)}</p>
           <p className="text-11px text-muted-foreground">{s.counted} op. · acerto {fmtPct(s.winRate, 0)} · PF {s.profitFactor === null || s.profitFactor === undefined ? '—' : s.profitFactor.toFixed(2)}{!s.conclusive && s.counted > 0 ? ' · amostra curta' : ''}</p>
         </div>
         <div className="flex flex-col gap-1 shrink-0">
@@ -76,7 +77,7 @@ export default function RunHistory({ ranked, best, currentKey, sortBy, onSort, o
 
       {ranked.others.length > 0 && (
         <details className="rounded-md" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <summary className="px-3 py-2 text-xs cursor-pointer select-none text-foreground/75 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">Testes em outras janelas ({ranked.others.length})</summary>
+          <summary className="px-3 py-2 text-xs cursor-pointer select-none text-foreground/75 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">Testes em outras janelas de dados ({ranked.others.length})</summary>
           <ul className="space-y-2 p-2 max-h-80 overflow-y-auto">
             {ranked.others.map(r => <Row key={r.key} run={r} rank={null} best={false} current={false} showDataset onUse={() => onUse(r)} onStar={() => onStar(r.key)} onRemove={() => onRemove(r.key)} />)}
           </ul>

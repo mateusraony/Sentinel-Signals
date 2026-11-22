@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  PARAM_KEYS, datasetKey, runKey, sameParams, changedKeys, summarizeRun, loadHistory, saveHistory, addRun, toggleStar, removeRun, rankRuns, bestRun, overfitNote,
+  PARAM_KEYS, datasetKey, requestKey, sweepValues, runKey, sameParams, changedKeys, summarizeRun, loadHistory, saveHistory, addRun, toggleStar, removeRun, rankRuns, bestRun, overfitNote,
   compareSummaries, assessCandles, timeframeMs, detectTier, buildDefaults, fidelityRows, sensitivityValues, sweepParam, judgeSensitivity,
   buildTradeChart, rHistogram, exitBreakdown, sideBreakdown, HISTORY_CAP,
 } from './whatIf';
@@ -18,7 +18,9 @@ describe('identidade e parâmetros', () => {
     expect(runKey(DS, P)).toBe(runKey(DS, { ...P, tp1R: 1.5000001 }));
     for (const k of PARAM_KEYS) expect(runKey(DS, { ...P, [k]: P[k] + 1 })).not.toBe(runKey(DS, P));
     expect(runKey({ ...DS, timeframe: '1h' }, P)).not.toBe(runKey(DS, P));
-    expect(datasetKey(DS)).toBe('a1|4h|500');
+    expect(requestKey(DS)).toBe('a1|4h|500');
+    expect(datasetKey(DS)).toBe('a1|4h|500|x');
+    expect(datasetKey({ ...DS, windowEnd: 123 })).toBe('a1|4h|500|123');
   });
   it('sameParams / changedKeys', () => {
     expect(sameParams(P, { ...P })).toBe(true);
@@ -66,6 +68,18 @@ describe('histórico de testes', () => {
     expect(h.some((r) => r.key === starKey)).toBe(true);
     expect(h).toHaveLength(5);
     expect(HISTORY_CAP).toBeGreaterThan(20);
+  });
+  it('REGRESSÃO (Codex, PR #617): a MESMA combinação em outra janela de dados (vela nova fechou) não sobrescreve nem se ranqueia junto', () => {
+    const w1 = { ...DS, windowEnd: 1000 }; const w2 = { ...DS, windowEnd: 2000 };
+    const a = { ...rec({}, '2026-11-22T10:00:00.000Z', 0.5), dataset: w1, key: runKey(w1, P) };
+    const b = { ...rec({}, '2026-11-22T14:00:00.000Z', -0.2), dataset: w2, key: runKey(w2, P) };
+    expect(a.key).not.toBe(b.key);
+    const h = addRun(addRun([], a), b);
+    expect(h).toHaveLength(2); // o resultado antigo NÃO foi sobrescrito
+    const r = rankRuns(h, w2);
+    expect(r.same.map((x) => x.summary.expectancyR)).toEqual([-0.2]); // "melhor até agora" só dentro da janela atual
+    expect(r.others.map((x) => x.summary.expectancyR)).toEqual([0.5]);
+    expect(bestRun(r.same).summary.expectancyR).toBe(-0.2);
   });
   it('removeRun', () => {
     const h = addRun([], rec());
@@ -171,6 +185,16 @@ describe('sensibilidade', () => {
     expect(sensitivityValues({ min: 5, max: 50, step: 1 })).toEqual([5, 11, 16, 22, 28, 33, 39, 44, 50]);
     expect(sensitivityValues({ min: 1, max: 2, step: 1 })).toEqual([1, 2]); // sem repetir
   });
+  it('REGRESSÃO (Codex, PR #617): a varredura SEMPRE inclui o valor atual (ex.: RF 20 não está nos 9 pontos padrão)', () => {
+    const def = { min: 5, max: 50, step: 1 };
+    expect(sensitivityValues(def)).not.toContain(20);
+    const v = sweepValues(def, 20);
+    expect(v).toContain(20);
+    expect(v).toEqual([...v].sort((a, b) => a - b));
+    expect(new Set(v).size).toBe(v.length);
+    expect(sweepValues({ min: 0.5, max: 5, step: 0.1 }, 2.5)).toContain(2.5); // decimais sem ruído de ponto flutuante
+    expect(sweepValues(def, 22)).toHaveLength(9); // já estava na grade: não duplica
+  });
   it('sweepParam roda o simulador variando só UMA chave', () => {
     const seen = [];
     const r = sweepParam({ runSummary: (p) => { seen.push(p); return { expectancyR: p.tp1R, counted: 12 }; }, params: P, key: 'tp1R', values: [1, 2, 3] });
@@ -184,6 +208,11 @@ describe('sensibilidade', () => {
     expect(judgeSensitivity([pt(1, 0.3), pt(2, -0.1), pt(3, 0.3)], 2).verdict).toBe('mixed');
     expect(judgeSensitivity([pt(1, 0.2, 5), pt(2, 0.9, 5), pt(3, 0.2, 5)], 2).verdict).toBe('unknown');
     expect(judgeSensitivity([pt(1, 0.2)], 1).verdict).toBe('unknown');
+    // o veredito é do valor EXATO da tela: valor ausente da varredura, ou sem operações, vira "unknown" (nunca avalia um vizinho no lugar)
+    expect(judgeSensitivity([pt(1, -0.2), pt(2, 0.6), pt(3, -0.3)], 2.4).verdict).toBe('unknown');
+    expect(judgeSensitivity([pt(1, 0.2), { value: 2, summary: { expectancyR: null, counted: 0 } }, pt(3, 0.2), pt(4, 0.2)], 2).verdict).toBe('unknown');
+    // ordem de entrada não importa
+    expect(judgeSensitivity([pt(3, -0.3), pt(1, -0.2), pt(2, 0.6)], 2).verdict).toBe('peak');
   });
 });
 

@@ -9,7 +9,10 @@ const r2 = (n) => Math.round(Number(n) * 100) / 100;
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // ---------- identidade de um teste ----------
-export const datasetKey = (d) => `${d.assetId}|${d.timeframe}|${d.candleCount}`;
+// Dois níveis de identidade (achado do Codex, PR #617): o PEDIDO (ativo + timeframe + nº de candles) e a JANELA REAL de dados (o pedido + o fechamento da última
+// vela). Quando uma vela nova fecha, o pedido é o mesmo mas a janela é outra: os resultados NÃO são comparáveis e não podem se sobrescrever nem se ranquear juntos.
+export const requestKey = (d) => `${d.assetId}|${d.timeframe}|${d.candleCount}`;
+export const datasetKey = (d) => `${requestKey(d)}|${d.windowEnd ?? 'x'}`;
 export const runKey = (d, params) => `${datasetKey(d)}|${PARAM_KEYS.map((k) => r2(params[k])).join('|')}`;
 export const sameParams = (a, b) => PARAM_KEYS.every((k) => r2(a?.[k]) === r2(b?.[k]));
 export const changedKeys = (params, defaults) => PARAM_KEYS.filter((k) => r2(params?.[k]) !== r2(defaults?.[k]));
@@ -72,7 +75,7 @@ export function addRun(history, record, cap = HISTORY_CAP) {
 export const toggleStar = (history, key) => history.map((r) => (r.key === key ? { ...r, starred: !r.starred } : r));
 export const removeRun = (history, key) => history.filter((r) => r.key !== key);
 
-/** Testes da MESMA janela (ativo + timeframe + nº de candles) vêm ordenados do melhor ao pior; os de outras janelas vêm à parte (não comparáveis). */
+/** Testes da MESMA janela de dados (ativo + timeframe + candles + última vela) vêm ordenados do melhor ao pior; os de outras janelas vêm à parte (não comparáveis). */
 export function rankRuns(history, dataset, by = 'expectancy') {
   const dk = datasetKey(dataset);
   const same = history.filter((r) => datasetKey(r.dataset) === dk);
@@ -223,18 +226,32 @@ export function sensitivityValues({ min, max, step }, points = 9) {
   return [...new Set(out)];
 }
 
+/** Os 9 pontos da varredura MAIS o valor atual (achado do Codex, PR #617): o veredito é sobre o valor que está na tela, nunca sobre um ponto vizinho. */
+export function sweepValues(def, current, points = 9) {
+  const decimals = (String(def.step).split('.')[1] ?? '').length;
+  const withCurrent = [...sensitivityValues(def, points), Number(Number(current).toFixed(decimals))].filter(finite);
+  return [...new Set(withCurrent)].sort((a, b) => a - b);
+}
+
 export function sweepParam({ runSummary, params, key, values }) {
   return values.map((value) => ({ value, summary: runSummary({ ...params, [key]: value }) }));
 }
 
-/** O valor atual está num platô (vizinhos parecidos) ou numa ponta (vizinhos bem piores)? Texto hesitante de propósito: é evidência, não prova. */
+/**
+ * O valor atual está num platô (vizinhos parecidos) ou numa ponta (vizinhos bem piores)? Texto hesitante de propósito: é evidência, não prova.
+ * Só avalia o ponto EXATO do valor atual (`points` precisa conter o valor); sem ele ou sem operações nele, devolve "unknown".
+ */
 export function judgeSensitivity(points, currentValue) {
-  const usable = points.filter((p) => finite(p.summary?.expectancyR) && (p.summary.counted ?? 0) > 0);
-  if (usable.length < 3) return { verdict: 'unknown', text: 'Poucos pontos com operações para avaliar a estabilidade.' };
-  let idx = 0;
-  usable.forEach((p, i) => { if (Math.abs(p.value - currentValue) < Math.abs(usable[idx].value - currentValue)) idx = i; });
-  const cur = usable[idx];
-  const neighbors = [usable[idx - 1], usable[idx + 1]].filter(Boolean);
+  const sorted = [...points].sort((a, b) => a.value - b.value);
+  const usable = (p) => finite(p.summary?.expectancyR) && (p.summary.counted ?? 0) > 0;
+  const cur = sorted.find((p) => Math.abs(p.value - currentValue) < 1e-9);
+  if (sorted.filter(usable).length < 3) return { verdict: 'unknown', text: 'Poucos pontos com operações para avaliar a estabilidade.' };
+  if (!cur || !usable(cur)) return { verdict: 'unknown', text: 'O valor atual não teve operações nesta simulação: não dá para avaliar a estabilidade dele.' };
+  const idx = sorted.indexOf(cur);
+  const left = sorted.slice(0, idx).reverse().find(usable);
+  const right = sorted.slice(idx + 1).find(usable);
+  const neighbors = [left, right].filter(Boolean);
+  if (!neighbors.length) return { verdict: 'unknown', text: 'Sem vizinhos com operações para comparar.' };
   const meanN = neighbors.reduce((s, p) => s + p.summary.expectancyR, 0) / neighbors.length;
   const noise = Math.max(cur.summary.ciHalfWidth ?? 0, ...neighbors.map((p) => p.summary.ciHalfWidth ?? 0));
   const drop = cur.summary.expectancyR - meanN;

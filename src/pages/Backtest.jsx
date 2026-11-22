@@ -17,7 +17,7 @@ import { explainReport, reasonLabel, diffAppliedConfig } from '@/lib/backtestIns
 import { analyzeOps } from '@/lib/backtestAnalysis';
 import { resolveIndicatorParams } from '@/lib/scanner';
 import {
-  summarizeRun, datasetKey, runKey, sameParams, changedKeys, loadHistory, saveHistory, addRun, toggleStar, removeRun, rankRuns, bestRun, overfitNote,
+  summarizeRun, requestKey, runKey, sameParams, changedKeys, loadHistory, saveHistory, addRun, toggleStar, removeRun, rankRuns, bestRun, overfitNote,
   compareSummaries, assessCandles, detectTier, buildDefaults, fidelityRows, buildTradeChart, rHistogram, exitBreakdown, sideBreakdown,
 } from '@/lib/whatIf';
 import { QBT_TIMEFRAMES, QBT_CANDLE_OPTIONS, QBT_SLIDERS, clampDefaults } from '@/components/backtest/whatif/params';
@@ -634,7 +634,9 @@ function QuickBacktestTab() {
   const assetSymbol = asset?.symbol;
   const tfMeta = QBT_TIMEFRAMES.find(t => t.id === timeframe);
   const approxDays = Math.round((tfMeta.minutes * candleCount) / (60 * 24));
-  const dataset = useMemo(() => (assetSymbol ? { assetId, symbol: assetSymbol, timeframe, candleCount } : null), [assetId, assetSymbol, timeframe, candleCount]);
+  // `windowEnd` = fechamento da última vela carregada: identifica a JANELA REAL de dados (achado do Codex, PR #617). Mudou a janela, mudou o grupo do histórico.
+  const windowEnd = data ? data.closed[data.closed.length - 1]?.closeTime ?? null : null;
+  const dataset = useMemo(() => (assetSymbol ? { assetId, symbol: assetSymbol, timeframe, candleCount, windowEnd } : null), [assetId, assetSymbol, timeframe, candleCount, windowEnd]);
 
   // Candles: buscados sozinhos ao escolher/trocar ativo, timeframe ou período (guarda contra resposta atrasada de uma busca antiga).
   const fetchData = useCallback(async () => {
@@ -700,7 +702,7 @@ function QuickBacktestTab() {
   // Histórico: cada combinação que fica na tela (depois de um respiro) é registrada sozinha, com o resultado.
   const currentKey = dataset ? runKey(dataset, applied) : null;
   useEffect(() => {
-    if (!dataset || !run?.ok || !data || data.key !== datasetKey(dataset)) return undefined;
+    if (!dataset || !run?.ok || !data || data.key !== requestKey(dataset)) return undefined;
     const t = setTimeout(() => {
       const rec = { key: runKey(dataset, applied), at: new Date().toISOString(), dataset: { ...dataset, lastCandleTime: data.closed[data.closed.length - 1]?.closeTime ?? null }, params: applied, summary: run.summary, starred: false };
       setHistory(h => addRun(h, rec));

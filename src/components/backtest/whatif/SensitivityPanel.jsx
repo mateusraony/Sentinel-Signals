@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine, Tooltip } from 'recharts';
 import { Loader2 } from 'lucide-react';
-import { sensitivityValues, sweepParam, judgeSensitivity, runKey } from '@/lib/whatIf';
+import { sweepValues, sweepParam, judgeSensitivity, runKey } from '@/lib/whatIf';
 import { QBT_SLIDERS } from './params';
 import { GREEN, RED, AMBER, BLUE, TOOLTIP_STYLE, AXIS_TICK, fmtR, Panel } from './ui';
 
@@ -19,7 +19,7 @@ export default function SensitivityPanel({ runSummary, params, defaults, dataset
     // setTimeout 0: deixa o "Analisando…" aparecer antes do cálculo síncrono.
     setTimeout(() => {
       const results = QBT_SLIDERS.map(def => {
-        const points = sweepParam({ runSummary, params, key: def.key, values: sensitivityValues(def) });
+        const points = sweepParam({ runSummary, params, key: def.key, values: sweepValues(def, params[def.key]) });
         return { def, points, verdict: judgeSensitivity(points, params[def.key]) };
       });
       setState({ status: 'done', sig, results });
@@ -37,7 +37,7 @@ export default function SensitivityPanel({ runSummary, params, defaults, dataset
           {state.status === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {state.status === 'running' ? 'Analisando…' : state.status === 'done' ? 'Analisar de novo' : 'Analisar sensibilidade'}
         </button>
-        <span className="text-xs text-muted-foreground">Varia um parâmetro por vez (9 valores cada) e mostra se o seu valor está numa região estável ou numa ponta isolada.</span>
+        <span className="text-xs text-muted-foreground">Varia um parâmetro por vez (9 valores cada, mais o valor atual) e mostra se o seu valor está numa região estável ou numa ponta isolada.</span>
       </div>
       {stale && <p className="text-xs" style={{ color: AMBER }}>Estes gráficos são de outros parâmetros/dados: analise de novo.</p>}
       {charts.length > 0 && (
