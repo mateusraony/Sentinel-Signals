@@ -113,6 +113,10 @@ export default function Alerts() {
   const buyCount = filtered.filter(s => s.signal_type === 'BUY').length;
   const sellCount = filtered.filter(s => s.signal_type === 'SELL').length;
 
+  // Enquanto carrega, ou se a carga falhou sem dado nenhum, as contagens NÃO sabem o número: mostram "—" em vez de afirmar "0".
+  const countsUnknown = isLoading || (isError && signals.length === 0);
+  const showCount = (n) => (countsUnknown ? '—' : n);
+
   const hasActiveFilters = filterSource !== 'all' || filterPriority !== 'all' || filterType !== 'all' || search;
 
   // Lista agrupada por dia (a ordem é a de sempre: mais recente primeiro; só ganhou um título a cada troca de dia).
@@ -139,7 +143,7 @@ export default function Alerts() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5 text-xs font-mono">
             <div className="live-dot" style={{ width: 5, height: 5 }} />
-            <span className="text-muted-foreground">{filtered.length} alertas</span>
+            <span className="text-muted-foreground">{isLoading ? 'carregando…' : countsUnknown ? 'alertas indisponíveis' : `${filtered.length} alertas`}</span>
           </div>
           {filtered.length > 0 && (
             <button
@@ -156,9 +160,9 @@ export default function Alerts() {
       {/* Contagens: uma linha só (eram 3 cartões com ícone). */}
       <div className="rounded-md px-4 py-2.5 flex flex-wrap items-center gap-x-8 gap-y-1.5" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
         {[
-          { label: 'Alta Prioridade', value: highCount, color: '#dd9a4a' },
-          { label: 'BUY', value: buyCount, color: '#5db586' },
-          { label: 'SELL', value: sellCount, color: '#e06a5b' },
+          { label: 'Alta Prioridade', value: showCount(highCount), color: '#dd9a4a' },
+          { label: 'BUY', value: showCount(buyCount), color: '#5db586' },
+          { label: 'SELL', value: showCount(sellCount), color: '#e06a5b' },
         ].map(({ label, value, color }) => (
           <div key={label} className="flex items-baseline gap-2">
             <span className="text-xs text-muted-foreground">{label}</span>
@@ -445,7 +449,7 @@ export default function Alerts() {
                       corrigido pro timestamp nesta mesma rodada, aqui é o
                       único controle visível pra revelar o payload. */}
                   <details>
-                    <summary className="text-11px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.62)' }}>ver dados técnicos →</summary>
+                    <summary className="text-11px cursor-pointer select-none rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" style={{ color: 'rgba(255,255,255,0.62)' }}>ver dados técnicos →</summary>
                     <pre className="mt-1 text-11px font-mono overflow-x-auto" style={{ color: 'rgba(93,181,134,0.7)' }}>
                       {JSON.stringify(selectedSignal.context, null, 2)}
                     </pre>
