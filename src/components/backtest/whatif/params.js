@@ -6,11 +6,11 @@ export const QBT_TIMEFRAMES = [
 ];
 export const QBT_CANDLE_OPTIONS = [200, 500, 1000];
 export const QBT_SLIDERS = [
-  { key: 'atrMult', label: 'Stop (× ATR)', short: 'Stop', unit: '×', min: 0.5, max: 5, step: 0.1, color: '#e06a5b', help: 'Distância do stop em múltiplos do ATR. Na produção o padrão depende do tier do ativo (2×, 2,5× ou 3×).' },
-  { key: 'tp1R', label: 'TP1 (R)', short: 'TP1', unit: 'R', min: 0.5, max: 4, step: 0.1, color: '#e3b45a', help: 'Primeiro alvo, em múltiplos do risco (R). O TP2 fica no dobro.' },
-  { key: 'rfPeriod', label: 'RF Period', short: 'RF', unit: '', min: 5, max: 50, step: 1, color: '#8db4e2', help: 'Período do Range Filter (quanto menor, mais sensível).' },
-  { key: 'rfMult', label: 'RF Mult', short: 'RF×', unit: '', min: 0.5, max: 8, step: 0.1, color: '#5db586', help: 'Multiplicador do Range Filter (quanto maior, mais largo o filtro).' },
-  { key: 'minScore', label: 'Min Score', short: 'Score', unit: '', min: 50, max: 100, step: 1, color: '#a78bfa', help: 'Score mínimo (0–100) para abrir a operação.' },
+  { key: 'atrMult', label: 'Stop (× ATR)', min: 0.5, max: 5, step: 0.1, color: '#e06a5b', help: 'Distância do stop em múltiplos do ATR. Na produção o padrão depende do tier do ativo (2×, 2,5× ou 3×).' },
+  { key: 'tp1R', label: 'TP1 (R)', min: 0.5, max: 4, step: 0.1, color: '#e3b45a', help: 'Primeiro alvo, em múltiplos do risco (R). O TP2 fica no dobro.' },
+  { key: 'rfPeriod', label: 'RF Period', min: 5, max: 50, step: 1, color: '#8db4e2', help: 'Período do Range Filter (quanto menor, mais sensível).' },
+  { key: 'rfMult', label: 'RF Mult', min: 0.5, max: 8, step: 0.1, color: '#5db586', help: 'Multiplicador do Range Filter (quanto maior, mais largo o filtro).' },
+  { key: 'minScore', label: 'Min Score', min: 50, max: 100, step: 1, color: '#a78bfa', help: 'Score mínimo (0–100) para abrir a operação.' },
 ];
 
 export const clampToSlider = (key, v) => {
