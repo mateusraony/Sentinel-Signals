@@ -12,6 +12,7 @@ import {
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { QueryErrorState } from '@/components/QueryErrorState';
 import moment from 'moment';
+import { dayLabel } from '@/lib/dayLabel';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 // Auditoria do Telegram (2026-09-29), Fase 2 item 2.11 — fonte única dos
 // pares id→rótulo de origem do sinal, antes duplicada aqui e em
@@ -50,13 +51,6 @@ const tabStyle = (active, first, color) => ({
     ? { background: color ? `${color}22` : 'rgba(141,180,226,0.15)', color: color || '#8db4e2' }
     : { background: 'rgba(255,255,255,0.02)', color: 'rgba(255,255,255,0.55)' }),
 });
-
-/** "Hoje", "Ontem" ou a data — título de cada dia da lista. */
-function dayLabel(m) {
-  if (m.isSame(moment(), 'day')) return 'Hoje';
-  if (m.isSame(moment().subtract(1, 'day'), 'day')) return 'Ontem';
-  return m.format('DD/MM/YYYY');
-}
 
 export default function Alerts() {
   const [filterSource, setFilterSource] = useState('all');
