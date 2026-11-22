@@ -9,7 +9,7 @@ import { renderPage, makeFakeBackendModule } from './__fixtures__/renderPage.jsx
 
 const opsListMock = vi.fn();
 const getPineConfigMock = vi.fn();
-let pineStatus = { degraded: false };
+let pineStatus = { source: 'postgres', degraded: false };
 
 vi.mock('@/api/entities', async () => {
   const mod = makeFakeBackendModule({ populated: false });
@@ -34,7 +34,7 @@ globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {
 beforeEach(() => {
   opsListMock.mockReset(); opsListMock.mockResolvedValue([]);
   getPineConfigMock.mockReset(); getPineConfigMock.mockResolvedValue({ ...DEFAULTS });
-  pineStatus = { degraded: false };
+  pineStatus = { source: 'postgres', degraded: false };
 });
 afterEach(() => cleanup());
 
@@ -174,8 +174,16 @@ describe('Backtest — "Aplicar ao Scanner" mostra o que muda', () => {
     expect(await within(dialog).findByText(/Nenhum parâmetro muda/)).toBeTruthy();
   });
 
+  it('REGRESSÃO (Codex, PR #616): leitura vinda da CÓPIA GUARDADA (cache, degraded:false) também NÃO afirma o que muda — pode estar velha', async () => {
+    pineStatus = { source: 'cache', degraded: false };
+    await loadJson(comPine({ ...DEFAULTS }));
+    const dialog = await abrir();
+    expect(await within(dialog).findByText(/Não foi possível ler a configuração atual para comparar/)).toBeTruthy();
+    expect(within(dialog).queryByText(/Nenhum parâmetro muda/)).toBeNull();
+  });
+
   it('leitura degradada (banco falhou): NÃO afirma o que muda — avisa para conferir', async () => {
-    pineStatus = { degraded: true };
+    pineStatus = { source: 'defaults', degraded: true };
     await loadJson(comPine({ ...DEFAULTS, minScore: 80 }));
     const dialog = await abrir();
     expect(await within(dialog).findByText(/Não foi possível ler a configuração atual para comparar/)).toBeTruthy();

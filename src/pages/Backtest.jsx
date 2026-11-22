@@ -956,8 +956,9 @@ function JsonReportTab() {
     let cancelled = false;
     getPineConfig().then(cfg => {
       if (cancelled) return;
-      // getPineConfig cai nos padrões em silêncio se o banco falhar: nesse caso NÃO dá para dizer o que mudaria.
-      setLiveConfig(getPineConfigStatus().degraded ? 'erro' : cfg);
+      // getPineConfig cai nos padrões (ou numa CÓPIA GUARDADA, com degraded:false) se o banco falhar: nesses casos NÃO dá para dizer o que mudaria —
+      // a cópia pode estar velha (outro navegador/administrador pode ter mudado a config). Só uma leitura fresca do banco vale (achado do Codex, PR #616).
+      setLiveConfig(getPineConfigStatus().source === 'postgres' ? cfg : 'erro');
     }).catch(() => { if (!cancelled) setLiveConfig('erro'); });
     return () => { cancelled = true; };
   }, [confirmingApply]);
