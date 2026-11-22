@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { backend } from '@/api/entities';
-import { Save, Copy, RotateCcw, Code2, AlertTriangle, CheckCircle2, Info, Layers, Zap } from 'lucide-react';
+import { Save, Copy, RotateCcw, Code2, CheckCircle2, Info, Zap } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
   AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import { savePineConfig, getLocalPineConfig, getPineConfig, syncPineToAssets } from '@/lib/pineParser';
+import { analyzePineInputs, DESTINATION_LABEL } from '@/lib/pineInputs';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import { logInfo } from '@/lib/logger';
 
 // Full NE RF v13.2 script — the real strategy configured on TradingView,
@@ -1022,6 +1024,24 @@ if barstate.islast and tableMode != "Oculta"
         table.cell(dbg, 1, 27, sessionOk ? "Aberta ✓" : "Fechada ✗", text_color=sessionOk ? bullColor : blockedColor, text_size=size.tiny)
 `;
 
+// Marcador de seção (barra azul) — mesmo padrão das outras páginas redesenhadas.
+function SectionTitle({ children, hint = null }) {
+  return (
+    <div className="flex items-center gap-2 px-1 mb-2 flex-wrap">
+      <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
+      <h2 className="text-sm font-semibold text-foreground/80">{children}</h2>
+      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+    </div>
+  );
+}
+
+const PANEL = { background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' };
+const fmtValue = (v) => (typeof v === 'boolean' ? (v ? 'ligado' : 'desligado') : String(v));
+
+// Quem decide o quê: o que vem do SEU Pine × o que é regra fixa do sistema (constantes de src/lib/indicators/tier.js etc., sem input.*() no Pine).
+const SYNC_ORIGIN = { rf: 'pine', regime: 'fixa', tier: 'pine', mtf: 'fixa', entry: 'fixa', score: 'pine', tp1: 'pine', stop: 'fixa', timestop: 'pine' };
+const ORIGIN_LABEL = { pine: 'vem do seu Pine', fixa: 'regra fixa do sistema' };
+
 export default function PineScript() {
   const queryClient = useQueryClient();
   const [code, setCode] = useState(() => localStorage.getItem('pine_script_code_v12') || DEFAULT_PINE);
@@ -1029,6 +1049,8 @@ export default function PineScript() {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState('editor');
   const [syncStatus, setSyncStatus] = useState(null); // null | 'syncing' | 'synced' | 'error'
+  const [onlyChanged, setOnlyChanged] = useState(false); // tabela da Sincronização: só o que difere do padrão
+  const [lastSync, setLastSync] = useState(null); // { at, updated } — só nesta sessão (o estado do banco não é lido aqui)
   const [parsedConfig, setParsedConfig] = useState(() => getLocalPineConfig());
   const [confirmingReset, setConfirmingReset] = useState(false);
 
@@ -1041,6 +1063,18 @@ export default function PineScript() {
     });
     return () => { cancelled = true; };
   }, []);
+
+  // O que o Sentinel enxerga do código que está no editor AGORA (espelha o parser; ver src/lib/pineInputs.js).
+  const report = useMemo(() => analyzePineInputs(code), [code]);
+  const ignoredByGroup = useMemo(() => {
+    const m = new Map();
+    for (const it of report.ignored) {
+      const g = it.group ?? 'Sem grupo';
+      if (!m.has(g)) m.set(g, []);
+      m.get(g).push(it);
+    }
+    return [...m.entries()];
+  }, [report]);
 
   // Achado A-4 do Raio-X de UI/UX: a aba "Sincronização" tinha um array de
   // strings LITERAIS declarado fora do componente, com números chumbados na
@@ -1073,7 +1107,7 @@ export default function PineScript() {
       desc: `T1: ${parsedConfig.timeStopT1} candles | T2: ${parsedConfig.timeStopT2} candles | T3: ${parsedConfig.timeStopT3} candles sem TP1 → fecha posição` },
   ], [parsedConfig]);
 
-  const { data: assets = [] } = useQuery({
+  const { data: assets = [], isLoading: assetsLoading, isError: assetsError, refetch: refetchAssets } = useQuery({
     queryKey: ['all-assets'],
     queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
   });
@@ -1091,6 +1125,7 @@ export default function PineScript() {
       const updated = await syncPineToAssets();
       queryClient.invalidateQueries({ queryKey: ['all-assets'] });
       setSyncStatus('synced');
+      setLastSync({ at: new Date(), updated });
       logInfo('pine', `Pine Script sincronizado — ${updated} ativo(s) atualizado(s)`, {
         rng_per: config.rng_per, rng_qty: config.rng_qty, minScore: config.minScore,
       });
@@ -1126,55 +1161,53 @@ export default function PineScript() {
     return () => clearTimeout(t);
   }, [code]);
 
+  const syncColor = syncStatus === 'syncing' ? '#8db4e2' : syncStatus === 'synced' ? '#5db586' : syncStatus === 'error' ? '#e06a5b' : 'rgba(255,255,255,0.6)';
+
+  // Ativos: o Salvar só iguala o RF dos ATIVOS (syncPineToAssets filtra is_active) — inativos ficam como estão.
+  const rfDiffers = (a) => (a.rf_period ?? 20) !== parsedConfig.rng_per || (a.rf_multiplier ?? 3.5) !== parsedConfig.rng_qty;
+  const assetsKnown = !assetsLoading && !assetsError;
+  const pendingRf = assets.filter(a => a.is_active && rfDiffers(a)).length;
+  const lineCount = code.split('\n').length;
+  const shownRead = onlyChanged ? report.read.filter(r => !r.isDefault) : report.read;
+
+  const tabs = [
+    { id: 'editor', label: '📝 Editor v13.2' },
+    { id: 'sync', label: '🔄 Sincronização' },
+    { id: 'params', label: '⚙️ Parâmetros Ativos' },
+  ];
+
   return (
     <div className="space-y-5 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Estratégia</p>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">Pine Script</h1>
-          <p className="text-10px font-mono text-muted-foreground mt-1">NEW ERA — Range Filter Strategy v13.2</p>
+          <p className="text-xs text-muted-foreground mb-1">Estratégia</p>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Pine Script</h1>
+          <p className="text-xs font-mono text-muted-foreground mt-1">NEW ERA — Range Filter Strategy v13.2 · MTF 4h + Entrada 15m</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-9px font-mono px-2 py-1 rounded"
-            style={{ background: 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.2)', color: '#5db586' }}>
-            <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#5db586', boxShadow: 'none' }} />
-            v13.2 · MTF 4h + Entrada 15m
-          </div>
-          {/* Auto-sync indicator */}
-          <div className="flex items-center gap-1.5 text-9px font-mono px-2 py-1 rounded"
-            style={{
-              background: syncStatus === 'syncing' ? 'rgba(141,180,226,0.1)' : syncStatus === 'synced' ? 'rgba(93,181,134,0.1)' : syncStatus === 'error' ? 'rgba(224,106,91,0.1)' : 'rgba(141,180,226,0.06)',
-              border: syncStatus === 'syncing' ? '1px solid rgba(141,180,226,0.3)' : syncStatus === 'synced' ? '1px solid rgba(93,181,134,0.3)' : syncStatus === 'error' ? '1px solid rgba(224,106,91,0.3)' : '1px solid rgba(141,180,226,0.15)',
-            }}>
-            <Zap className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} style={{
-              color: syncStatus === 'syncing' ? '#8db4e2' : syncStatus === 'synced' ? '#5db586' : syncStatus === 'error' ? '#e06a5b' : 'rgba(141,180,226,0.5)',
-            }} />
-            <span style={{
-              color: syncStatus === 'syncing' ? '#8db4e2' : syncStatus === 'synced' ? '#5db586' : syncStatus === 'error' ? '#e06a5b' : 'rgba(141,180,226,0.5)',
-            }}>
-              {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? '✓ Auto-sync OK' : syncStatus === 'error' ? 'Erro na sincronização' : 'Auto-sync ativo'}
-            </span>
-          </div>
+        <div className="flex items-center gap-1.5 text-xs font-mono" style={{ color: syncColor }} role="status" aria-label="Estado da sincronização">
+          <Zap className={`w-3.5 h-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} aria-hidden="true" />
+          <span>
+            {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? '✓ Auto-sync OK' : syncStatus === 'error' ? 'Erro na sincronização' : 'Auto-sync ativo'}
+          </span>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1" role="tablist" aria-label="Seções do Pine Script">
-        {[
-          { id: 'editor', label: '📝 Editor v13.2', icon: Code2 },
-          { id: 'sync', label: '🔄 Sincronização', icon: Layers },
-          { id: 'params', label: '⚙️ Parâmetros Ativos', icon: Info },
-        ].map(tab => (
+      {/* Abas ligadas */}
+      <div className="flex items-center rounded-md overflow-hidden w-full sm:w-fit" role="tablist" aria-label="Seções do Pine Script" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+        {tabs.map((tab, i) => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             id={`pine-tab-${tab.id}`}
             role="tab"
             aria-selected={activeTab === tab.id}
             aria-controls={`pine-tabpanel-${tab.id}`}
-            className="text-10px font-mono px-3 py-2 rounded-lg transition-all"
-            style={activeTab === tab.id
-              ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
-              : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.62)' }}>
+            className="flex-1 sm:flex-none text-11px sm:text-xs font-mono px-2 sm:px-4 py-2 transition-all whitespace-normal sm:whitespace-nowrap focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            style={{
+              borderLeft: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.08)',
+              ...(activeTab === tab.id
+                ? { background: 'rgba(141,180,226,0.12)', color: '#8db4e2' }
+                : { background: 'rgba(255,255,255,0.02)', color: 'rgba(255,255,255,0.62)' }),
+            }}>
             {tab.label}
           </button>
         ))}
@@ -1184,156 +1217,281 @@ export default function PineScript() {
         <div className="space-y-3" id="pine-tabpanel-editor" role="tabpanel" aria-labelledby="pine-tab-editor">
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={handleSave}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono font-bold transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono font-semibold transition-all"
               style={{ background: saved ? 'rgba(93,181,134,0.15)' : 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }}>
-              {saved ? <CheckCircle2 className="w-3 h-3" /> : <Save className="w-3 h-3" />}
+              {saved ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
               {saved ? 'Salvo!' : 'Salvar'}
             </button>
             <button onClick={handleCopy}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono transition-all"
               style={{ background: 'rgba(141,180,226,0.07)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
-              <Copy className="w-3 h-3" />
+              <Copy className="w-3.5 h-3.5" />
               {copied ? 'Copiado!' : 'Copiar'}
             </button>
             <button onClick={handleReset}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-mono transition-all"
               style={{ background: 'rgba(221,154,74,0.07)', border: '1px solid rgba(221,154,74,0.2)', color: '#dd9a4a' }}>
-              <RotateCcw className="w-3 h-3" />Restaurar v13.2
+              <RotateCcw className="w-3.5 h-3.5" />Restaurar v13.2
             </button>
-            <span className="text-9px font-mono text-muted-foreground ml-auto">Auto-salvo · {code.split('\n').length} linhas</span>
-          </div>
-
-          <div className="relative rounded-md overflow-hidden" style={{ border: '1px solid rgba(93,181,134,0.15)' }}>
-            <div className="flex items-center gap-2 px-4 py-2" style={{ background: 'rgba(18,17,15,0.9)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              <Code2 className="w-3 h-3" style={{ color: '#8db4e2' }} />
-              <span className="text-9px font-mono" style={{ color: '#8db4e2' }}>NE_RF_v13.2.pine</span>
-              <span className="text-8px font-mono px-1.5 py-0.5 rounded ml-2"
-                style={{ background: 'rgba(141,180,226,0.1)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
-                @version=6
-              </span>
-              <div className="flex gap-1 ml-auto">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#ff5f57' }} />
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#febc2e' }} />
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#28c840' }} />
-              </div>
-            </div>
-            <textarea
-              value={code}
-              onChange={e => setCode(e.target.value)}
-              spellCheck={false}
-              className="w-full font-mono text-11px outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none leading-relaxed p-4"
-              style={{ background: 'rgba(18,17,15,0.95)', color: 'rgba(93,181,134,0.85)', minHeight: '60vh', tabSize: 4 }}
-            />
-          </div>
-
-          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-9px font-mono"
-            style={{ background: 'rgba(141,180,226,0.05)', border: '1px solid rgba(141,180,226,0.12)', color: 'rgba(141,180,226,0.6)' }}>
-            <Info className="w-3 h-3 shrink-0 mt-0.5" />
-            <span>
-              <strong style={{ color: '#8db4e2' }}>Sincronização automática ativa.</strong> Ao salvar, o sistema
-              extrai os parâmetros do Pine Script (rng_per, rng_qty, minScore, ATR mult, TP1R, etc.) e os
-              aplica automaticamente ao scanner e aos ativos — <strong style={{ color: '#5db586' }}>sem precisar
-              alterar nada no bot</strong>. Os mesmos parâmetros também aparecem em{' '}
-              <Link to="/settings" className="font-bold underline underline-offset-2">Ajuste Fino</Link>
-              {' '}— quem salvar por último vence. Os parâmetros ativos são:
+            <span className="text-xs text-muted-foreground ml-auto">
+              Rascunho guardado neste navegador a cada edição. <strong className="font-medium text-foreground/80">Salvar</strong> aplica ao scan e aos ativos.
             </span>
           </div>
-          {/* Parsed config preview */}
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {[
-              { label: 'RF Period', value: parsedConfig.rng_per, pine: 'rng_per' },
-              { label: 'RF Mult', value: parsedConfig.rng_qty, pine: 'rng_qty' },
-              { label: 'Min Score', value: parsedConfig.minScore, pine: 'minScore' },
-              { label: 'ATR Mult', value: parsedConfig.trailAtrMult, pine: 'trailAtrMult' },
-              { label: 'TP1 R', value: parsedConfig.tp1R, pine: 'tp1R' },
-              { label: 'TP1 %', value: parsedConfig.tp1QtyPercent, pine: 'tp1QtyPercent' },
-            ].map(p => (
-              <div key={p.label} className="rounded-lg px-2 py-2 text-center"
-                style={{ background: 'rgba(93,181,134,0.04)', border: '1px solid rgba(93,181,134,0.1)' }}>
-                <div className="text-8px font-mono text-muted-foreground">{p.label}</div>
-                <div className="text-sm font-mono font-bold" style={{ color: '#5db586' }}>{p.value}</div>
-                <div className="text-7px font-mono" style={{ color: 'rgba(93,181,134,0.35)' }}>{p.pine}</div>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem] items-start">
+            <div className="relative rounded-md overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div className="flex items-center gap-2 px-4 py-2" style={{ background: 'rgba(18,17,15,0.9)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <Code2 className="w-3.5 h-3.5" style={{ color: '#8db4e2' }} />
+                <span className="text-xs font-mono" style={{ color: '#8db4e2' }}>NE_RF_v13.2.pine</span>
+                <span className="text-11px font-mono px-1.5 py-0.5 rounded"
+                  style={{ background: 'rgba(141,180,226,0.1)', border: '1px solid rgba(141,180,226,0.2)', color: '#8db4e2' }}>
+                  @version=6
+                </span>
+                <span className="text-11px font-mono text-muted-foreground ml-auto">{lineCount} linhas</span>
               </div>
-            ))}
+              <textarea
+                value={code}
+                onChange={e => setCode(e.target.value)}
+                spellCheck={false}
+                aria-label="Código Pine Script"
+                className="w-full font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none leading-relaxed p-4"
+                style={{ background: 'rgba(18,17,15,0.95)', color: 'rgba(93,181,134,0.85)', minHeight: '60vh', tabSize: 4 }}
+              />
+            </div>
+
+            {/* O que o Sentinel enxerga do código que está no editor agora */}
+            <aside className="space-y-3" aria-label="O que o Sentinel lê do código">
+              <div>
+                <SectionTitle>Lido do seu código</SectionTitle>
+                <div className="rounded-md px-3 py-2.5 text-xs space-y-1" style={PANEL}>
+                  <p><span className="font-mono tabular-nums text-foreground">{report.read.length}</span> <span className="text-foreground/75">parâmetros que o Sentinel usa</span></p>
+                  <p><span className="font-mono tabular-nums" style={{ color: report.changed ? '#dd9a4a' : undefined }}>{report.changed}</span> <span className="text-foreground/75">diferente{report.changed === 1 ? '' : 's'} do padrão</span></p>
+                  <p><span className="font-mono tabular-nums text-muted-foreground">{report.ignored.length}</span> <span className="text-muted-foreground">valem só no TradingView</span></p>
+                  {report.read.length === 0 && (
+                    <p className="text-11px pt-1" style={{ color: '#dd9a4a' }}>Nenhum parâmetro encontrado no código — o Sentinel usa os valores padrão.</p>
+                  )}
+                  <button onClick={() => setActiveTab('sync')} className="text-11px underline underline-offset-2 text-primary pt-1">Ver a lista completa →</button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'RF Period', value: parsedConfig.rng_per, pine: 'rng_per' },
+                  { label: 'RF Mult', value: parsedConfig.rng_qty, pine: 'rng_qty' },
+                  { label: 'Min Score', value: parsedConfig.minScore, pine: 'minScore' },
+                  { label: 'ATR Mult', value: parsedConfig.trailAtrMult, pine: 'trailAtrMult' },
+                  { label: 'TP1 R', value: parsedConfig.tp1R, pine: 'tp1R' },
+                  { label: 'TP1 %', value: parsedConfig.tp1QtyPercent, pine: 'tp1QtyPercent' },
+                ].map(p => (
+                  <div key={p.label} className="rounded-md px-2.5 py-2" style={{ background: 'rgba(93,181,134,0.04)', border: '1px solid rgba(93,181,134,0.1)' }}>
+                    <div className="text-11px text-muted-foreground">{p.label}</div>
+                    <div className="text-sm font-mono font-semibold tabular-nums" style={{ color: '#5db586' }}>{p.value}</div>
+                    <div className="text-11px font-mono" style={{ color: 'rgba(93,181,134,0.6)' }}>{p.pine}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-md px-3 py-2.5 text-xs text-foreground/75 flex items-start gap-2" style={{ background: 'rgba(141,180,226,0.05)', border: '1px solid rgba(141,180,226,0.12)' }}>
+                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#8db4e2' }} aria-hidden="true" />
+                <span>
+                  <strong style={{ color: '#8db4e2' }}>Sincronização automática ativa.</strong> Ao salvar, o sistema
+                  extrai os parâmetros do Pine Script (rng_per, rng_qty, minScore, ATR mult, TP1R, etc.) e os
+                  aplica ao scanner e aos ativos — <strong style={{ color: '#5db586' }}>sem precisar
+                  alterar nada no bot</strong>. Os mesmos parâmetros também aparecem em{' '}
+                  <Link to="/settings" className="font-semibold underline underline-offset-2">Ajuste Fino</Link>
+                  {' '}— quem salvar por último vence.
+                </span>
+              </div>
+
+              <p className="text-11px text-muted-foreground px-1" aria-live="polite">
+                {lastSync
+                  ? `Última sincronização nesta sessão: ${lastSync.at.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · ${lastSync.updated} ativo${lastSync.updated === 1 ? '' : 's'} com o RF igualado.`
+                  : 'Ainda não salvou nesta sessão.'}
+              </p>
+            </aside>
           </div>
         </div>
       )}
 
       {activeTab === 'sync' && (
-        <div className="space-y-3" id="pine-tabpanel-sync" role="tabpanel" aria-labelledby="pine-tab-sync">
-          <div className="rounded-md p-4 space-y-3" style={{ background: 'rgba(24,23,21,0.85)', border: '1px solid rgba(93,181,134,0.12)' }}>
-            <div className="text-10px font-mono text-muted-foreground uppercase tracking-widest mb-2">🔗 NE RF v13.2 → Sistema</div>
-            {syncNotes.map(note => (
-              <div key={note.id} className="flex items-start gap-3 py-2.5 px-3 rounded-lg"
-                style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <span className="text-base shrink-0">{note.icon}</span>
-                <div className="min-w-0">
-                  <div className="text-10px font-mono font-bold text-foreground">{note.label}</div>
-                  <div className="text-9px font-mono text-muted-foreground mt-0.5">{note.desc}</div>
-                </div>
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0 ml-auto mt-0.5" style={{ color: '#5db586' }} />
-              </div>
-            ))}
-          </div>
+        <div className="space-y-5" id="pine-tabpanel-sync" role="tabpanel" aria-labelledby="pine-tab-sync">
+          {/* O caminho do código até o scan, em 3 passos */}
+          <section>
+            <SectionTitle hint="o que acontece quando você clica em Salvar">Como o Pine vira configuração</SectionTitle>
+            <ol className="grid gap-2 sm:grid-cols-3 text-xs">
+              {[
+                ['1', 'Você edita o código', 'O Sentinel lê os parâmetros declarados com input.* (número, liga/desliga e texto).'],
+                ['2', 'Salvar grava os valores', 'No banco (para o scan agendado e o painel) e no RF de cada ativo ativo.'],
+                ['3', 'O scan usa os mesmos números', 'O painel e o scan de 15 min leem a mesma configuração.'],
+              ].map(([n, t, d]) => (
+                <li key={n} className="rounded-md px-3 py-2.5 flex gap-3" style={PANEL}>
+                  <span className="font-mono text-sm font-semibold shrink-0" style={{ color: '#8db4e2' }}>{n}</span>
+                  <span><span className="block font-medium text-foreground/90">{t}</span><span className="text-muted-foreground">{d}</span></span>
+                </li>
+              ))}
+            </ol>
+          </section>
 
-          <div className="rounded-md p-4 space-y-2" style={{ background: 'rgba(221,154,74,0.05)', border: '1px solid rgba(221,154,74,0.15)' }}>
-            <div className="flex items-center gap-2 text-10px font-mono" style={{ color: '#dd9a4a' }}>
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span className="font-bold">Fluxo de entrada 4h → 15m</span>
+          {/* O que o Sentinel lê do código AGORA */}
+          <section aria-label="Parâmetros lidos do código">
+            <SectionTitle hint={`${report.read.length} lidos · ${report.changed} diferente${report.changed === 1 ? '' : 's'} do padrão`}>O que o Sentinel lê do seu código</SectionTitle>
+            {report.read.length > 0 && (
+              <button onClick={() => setOnlyChanged(v => !v)} aria-pressed={onlyChanged}
+                className="text-11px px-2.5 py-1.5 rounded-md mb-2 transition-all"
+                style={onlyChanged
+                  ? { background: 'rgba(141,180,226,0.15)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
+                  : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}>
+                Só os diferentes do padrão ({report.changed})
+              </button>
+            )}
+            {report.read.length === 0 ? (
+              <p className="rounded-md px-4 py-3 text-xs text-muted-foreground" style={PANEL}>Nenhum parâmetro encontrado no código — o Sentinel usa os valores padrão.</p>
+            ) : (
+              <div className="rounded-md overflow-x-auto" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+                <table className="w-full text-xs min-w-[34rem]">
+                  <thead>
+                    <tr className="text-left text-muted-foreground" style={{ background: 'rgba(18,17,15,0.9)' }}>
+                      <th className="font-medium px-3 py-2">Parâmetro</th>
+                      <th className="font-medium px-3 py-2">Valor no código</th>
+                      <th className="font-medium px-3 py-2">Padrão</th>
+                      <th className="font-medium px-3 py-2">Onde vale</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shownRead.length === 0 && (
+                      <tr><td colSpan={4} className="px-3 py-3 text-muted-foreground" style={{ background: 'rgba(24,23,21,0.85)' }}>Nenhum parâmetro diferente do padrão.</td></tr>
+                    )}
+                    {shownRead.map((r, i) => (
+                      <tr key={r.name} style={{ background: i % 2 === 0 ? 'rgba(24,23,21,0.85)' : 'rgba(18,17,16,0.7)', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td className="px-3 py-1.5">
+                          <span className="text-foreground/90">{r.title}</span>
+                          <span className="ml-2 text-11px font-mono text-muted-foreground">{r.name}</span>
+                        </td>
+                        <td className="px-3 py-1.5 font-mono tabular-nums" style={{ color: r.isDefault ? 'rgba(255,255,255,0.8)' : '#dd9a4a' }}>
+                          {fmtValue(r.value)}{!r.isDefault && <span title="diferente do padrão" aria-label="diferente do padrão"> ●</span>}
+                        </td>
+                        <td className="px-3 py-1.5 font-mono tabular-nums text-muted-foreground">{fmtValue(r.defaultValue)}</td>
+                        <td className="px-3 py-1.5 text-foreground/75">{DESTINATION_LABEL[r.destination]}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {report.ignored.length > 0 && (
+              <details className="rounded-md mt-2" style={PANEL}>
+                <summary className="px-4 py-2.5 text-xs cursor-pointer select-none text-foreground/75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-md">
+                  {report.ignored.length} configurações do Pine que o Sentinel não lê (valem só no TradingView)
+                </summary>
+                <div className="px-4 pb-3 space-y-2 text-xs">
+                  <p className="text-11px text-muted-foreground">Cores, visual, janela de backtest, segredo do webhook e modos como o de saída do runner só mudam o que o TradingView mostra ou faz. Mudar isto aqui não altera o scan do Sentinel.</p>
+                  {ignoredByGroup.map(([group, list]) => (
+                    <p key={group} className="leading-relaxed">
+                      <span className="text-foreground/85 font-medium">{group}: </span>
+                      <span className="text-muted-foreground">{list.map(i => i.title).join(' · ')}</span>
+                    </p>
+                  ))}
+                </div>
+              </details>
+            )}
+          </section>
+
+          {/* Como o scan usa a estratégia — sem ✓ falso: cada linha diz de onde vem */}
+          <section>
+            <SectionTitle hint="o que vem do seu Pine e o que é regra fixa do sistema">Como o scan usa a estratégia</SectionTitle>
+            <div className="rounded-md overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              {syncNotes.map((note, i) => (
+                <div key={note.id} className="flex items-start gap-3 py-2.5 px-4"
+                  style={{ background: i % 2 === 0 ? 'rgba(24,23,21,0.85)' : 'rgba(18,17,16,0.7)', borderTop: i > 0 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}>
+                  <span className="text-base shrink-0" aria-hidden="true">{note.icon}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-mono font-semibold text-foreground">{note.label}</div>
+                    <div className="text-xs font-mono text-muted-foreground mt-0.5">{note.desc}</div>
+                  </div>
+                  <span className="text-11px shrink-0 px-1.5 py-0.5 rounded mt-0.5"
+                    style={SYNC_ORIGIN[note.id] === 'pine'
+                      ? { background: 'rgba(93,181,134,0.08)', color: '#5db586', border: '1px solid rgba(93,181,134,0.2)' }
+                      : { background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.62)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    {ORIGIN_LABEL[SYNC_ORIGIN[note.id]]}
+                  </span>
+                </div>
+              ))}
             </div>
-            <div className="text-9px font-mono space-y-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              <p>1. Scanner detecta sinal RF no <span className="text-yellow-400">4h</span> com score ≥ {parsedConfig.minScore} e direção MTF alinhada</p>
-              <p>2. Sistema entra em modo de observação no <span className="text-yellow-400">15m</span> para aquele ativo</p>
-              <p>3. Aguarda confirmação RF no 15m <strong className="text-white">na mesma direção</strong> do 4h</p>
-              <p>4. Quando o 15m confirma, cria o TradeOperation com entry/stop/TP do 4h (ATR do 4h)</p>
-              <p>5. Stop loss e targets são calculados usando o ATR do <span className="text-yellow-400">4h</span> para preservar o R:R</p>
-            </div>
-          </div>
+          </section>
+
+          <section>
+            <SectionTitle>Fluxo de entrada 4h → 15m</SectionTitle>
+            <ol className="rounded-md px-4 py-3 space-y-1.5 text-xs text-foreground/75 list-none" style={{ background: 'rgba(221,154,74,0.05)', border: '1px solid rgba(221,154,74,0.15)' }}>
+              <li><span className="font-mono mr-2" style={{ color: '#dd9a4a' }}>1.</span>Scanner detecta sinal RF no <span style={{ color: '#dd9a4a' }}>4h</span> com score ≥ {parsedConfig.minScore} e direção MTF alinhada</li>
+              <li><span className="font-mono mr-2" style={{ color: '#dd9a4a' }}>2.</span>Sistema entra em modo de observação no <span style={{ color: '#dd9a4a' }}>15m</span> para aquele ativo</li>
+              <li><span className="font-mono mr-2" style={{ color: '#dd9a4a' }}>3.</span>Aguarda confirmação RF no 15m <strong className="text-foreground">na mesma direção</strong> do 4h</li>
+              <li><span className="font-mono mr-2" style={{ color: '#dd9a4a' }}>4.</span>Quando o 15m confirma, cria o TradeOperation com entry/stop/TP do 4h (ATR do 4h)</li>
+              <li><span className="font-mono mr-2" style={{ color: '#dd9a4a' }}>5.</span>Stop loss e targets são calculados usando o ATR do <span style={{ color: '#dd9a4a' }}>4h</span> para preservar o R:R</li>
+            </ol>
+          </section>
         </div>
       )}
 
       {activeTab === 'params' && (
         <div className="space-y-3" id="pine-tabpanel-params" role="tabpanel" aria-labelledby="pine-tab-params">
-          <div className="text-10px font-mono text-muted-foreground mb-2">
-            Parâmetros NE RF v13.2 por ativo — sincronizados com o scanner:
+          <SectionTitle hint="parâmetros NE RF v13.2 por ativo — sincronizados com o scanner">Parâmetros por ativo</SectionTitle>
+
+          {/* Resumo: o Salvar só iguala o RF dos ATIVOS; inativos ficam como estão */}
+          <div className="rounded-md px-4 py-2.5 text-xs flex flex-wrap items-center gap-x-6 gap-y-1" style={PANEL}>
+            <span><span className="text-muted-foreground">Ativos </span><span className="font-mono tabular-nums text-foreground">{assetsKnown ? assets.length : '—'}</span></span>
+            <span><span className="text-muted-foreground">RF diferente do Pine </span><span className="font-mono tabular-nums" style={{ color: assetsKnown && pendingRf ? '#dd9a4a' : undefined }}>{assetsKnown ? pendingRf : '—'}</span></span>
+            <span className="text-muted-foreground">Pine: RF {parsedConfig.rng_per} / {parsedConfig.rng_qty}. O Salvar iguala o RF só dos ativos em operação (selo “Ativo”); os “Inativos” ficam como estão.</span>
           </div>
-          {assets.length === 0 ? (
-            <div className="rounded-md p-8 text-center" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
-              <p className="text-sm text-muted-foreground">Nenhum ativo cadastrado.</p>
+
+          {assetsLoading ? (
+            <div className="flex justify-center py-16" role="status" aria-label="Carregando ativos">
+              <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
             </div>
+          ) : assetsError ? (
+            <div className="rounded-md p-8" style={PANEL}>
+              <QueryErrorState message="Não foi possível carregar os ativos agora." onRetry={refetchAssets} />
+            </div>
+          ) : assets.length === 0 ? (
+            <div className="rounded-md px-5 py-6 text-sm text-muted-foreground" style={PANEL}>Nenhum ativo cadastrado.</div>
           ) : (
-            <div className="space-y-2">
-              {assets.map(asset => (
-                <div key={asset.id} className="rounded-md p-4"
-                  style={{ background: 'rgba(24,23,21,0.85)', border: asset.is_active ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(255,255,255,0.05)' }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="font-bold text-sm text-foreground">{asset.display_name}</span>
-                    <span className="text-8px font-mono px-1.5 py-0.5 rounded"
-                      style={asset.is_active
-                        ? { background: 'rgba(93,181,134,0.1)', color: '#5db586', border: '1px solid rgba(93,181,134,0.2)' }
-                        : { background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.55)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                      {asset.is_active ? 'ATIVO' : 'INATIVO'}
-                    </span>
+            <div className="rounded-md overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
+              {assets.map((asset, i) => {
+                const differs = rfDiffers(asset);
+                return (
+                  <div key={asset.id} className="px-4 py-3"
+                    style={{ background: i % 2 === 0 ? 'rgba(24,23,21,0.85)' : 'rgba(18,17,16,0.7)', borderTop: i > 0 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}>
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      <span className="font-semibold text-sm text-foreground">{asset.display_name}</span>
+                      <span className="text-11px px-1.5 py-0.5 rounded"
+                        style={asset.is_active
+                          ? { background: 'rgba(93,181,134,0.1)', color: '#5db586', border: '1px solid rgba(93,181,134,0.2)' }
+                          : { background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                        {asset.is_active ? 'Ativo' : 'Inativo'}
+                      </span>
+                      {differs
+                        ? <span className="text-11px" style={{ color: '#dd9a4a' }}>{asset.is_active ? '● RF diferente do Pine — o próximo Salvar iguala' : '● RF diferente do Pine — inativo, o Salvar não mexe'}</span>
+                        : <span className="text-11px text-muted-foreground">RF igual ao Pine</span>}
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                      {[
+                        { label: 'RF Period', value: asset.rf_period ?? 20, pine: 'rng_per', rf: true },
+                        { label: 'RF Mult', value: asset.rf_multiplier ?? 3.5, pine: 'rng_qty', rf: true },
+                        { label: 'RSI Period', value: asset.rsi_period ?? 14, pine: 'rsiLen' },
+                        { label: 'MACD Fast', value: asset.macd_fast ?? 12 },
+                        { label: 'EMA Short', value: asset.ema_short ?? 20, pine: 'emaFastLen' },
+                        { label: 'EMA Long', value: asset.ema_long ?? 50, pine: 'emaSlowLen' },
+                      ].map(p => (
+                        <div key={p.label} className="rounded-md px-2.5 py-2"
+                          style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${p.rf && differs ? 'rgba(221,154,74,0.3)' : 'rgba(255,255,255,0.05)'}` }}>
+                          <div className="text-11px text-muted-foreground">{p.label}</div>
+                          <div className="text-sm font-mono font-semibold tabular-nums text-foreground mt-0.5">{p.value}</div>
+                          <div className="text-11px font-mono" style={{ color: 'rgba(93,181,134,0.6)' }}>{p.pine ?? ' '}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                    {[
-                      { label: 'RF Period', value: asset.rf_period ?? 20, pine: 'rng_per' },
-                      { label: 'RF Mult', value: asset.rf_multiplier ?? 3.5, pine: 'rng_qty' },
-                      { label: 'RSI Period', value: asset.rsi_period ?? 14, pine: 'rsiLen' },
-                      { label: 'MACD Fast', value: asset.macd_fast ?? 12 },
-                      { label: 'EMA Short', value: asset.ema_short ?? 20, pine: 'emaFastLen' },
-                      { label: 'EMA Long', value: asset.ema_long ?? 50, pine: 'emaSlowLen' },
-                    ].map(p => (
-                      <div key={p.label} className="rounded-lg px-2.5 py-2"
-                        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div className="text-8px font-mono text-muted-foreground">{p.label}</div>
-                        <div className="text-sm font-mono font-bold text-foreground mt-0.5">{p.value}</div>
-                        <div className="text-7px font-mono" style={{ color: 'rgba(93,181,134,0.4)' }}>{p.pine}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

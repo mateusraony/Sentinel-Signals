@@ -425,7 +425,7 @@ export const SYNCED_STRATEGY_KEYS = [
 // the WRITE payload only (see syncPineToAssets below) — still read normally
 // via SYNCED_STRATEGY_KEYS in getPineConfig, so both sides keep agreeing on
 // whatever IS stored in Firestore.
-const NON_PINE_SYNCED_KEYS = new Set([
+export const NON_PINE_SYNCED_KEYS = new Set([
   'arbEnabled', 'arbPromoteMinScore', 'arbReinforceMinScore',
   'arbInvalidateOnOppositeMajor', 'arbInvalidateOnOppositeSameTf', 'arbOppositeScorePenalty', 'minRR',
   'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
