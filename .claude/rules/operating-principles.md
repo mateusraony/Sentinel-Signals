@@ -65,6 +65,12 @@ global do usuário (ver `docs/claude/global-CLAUDE.md.example`).
   compacto, estados vazios e a largura de celular. Se os dados de exemplo não
   mostram um estado (ex.: observações de mercado), crie o dado de exemplo para vê-lo.
   Mostre ao usuário esses estados nas imagens, não só a tela fechada.
+  Inclua os **estados raros**: carga que falha, carregando, link direto
+  (`?id=`), variações de dado (inativo, com erro, sem contexto) e o celular. Já
+  pegaram erro real duas vezes (Verificação e Alertas: o cabeçalho dizia "nenhuma
+  pendente"/"0 alertas" sem ter o dado). **Contagem nunca afirma "0" enquanto
+  carrega ou quando a carga falhou: mostre "—".** O usuário cobrou isso de novo
+  em 22/11/2026 ("nunca esqueça de ver abas ocultas das páginas").
 - **Fato × hipótese × recomendação.** Sempre separe o que você observou no
   código do que é plausível e do que é opinião. Sem "parece bom" — traga
   evidência (`arquivo:linha`).
