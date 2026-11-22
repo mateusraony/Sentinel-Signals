@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { agreementLabel } from '@/lib/ruleAgreement';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { Bell, Filter, Archive, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
+import { Bell, Archive, TrendingUp, TrendingDown, Search, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
@@ -30,6 +30,33 @@ const PRIORITY_CONFIG = {
   medium: { color: 'rgba(255,255,255,0.5)', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', label: priorityLabel('medium') },
   low:    { color: 'rgba(255,255,255,0.55)', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.07)', label: priorityLabel('low') },
 };
+
+/** Um grupo de filtros em abas ligadas, com rótulo ("Tipo", "Prioridade", "Fonte"). */
+function FilterGroup({ label, children }) {
+  return (
+    <div className="flex items-center gap-2 shrink-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex items-center rounded-md overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const TAB_BASE = 'text-11px font-mono px-3 py-1.5 transition-all whitespace-nowrap';
+const tabStyle = (active, first, color) => ({
+  borderLeft: first ? 'none' : '1px solid rgba(255,255,255,0.08)',
+  ...(active
+    ? { background: color ? `${color}22` : 'rgba(141,180,226,0.15)', color: color || '#8db4e2' }
+    : { background: 'rgba(255,255,255,0.02)', color: 'rgba(255,255,255,0.55)' }),
+});
+
+/** "Hoje", "Ontem" ou a data — título de cada dia da lista. */
+function dayLabel(m) {
+  if (m.isSame(moment(), 'day')) return 'Hoje';
+  if (m.isSame(moment().subtract(1, 'day'), 'day')) return 'Ontem';
+  return m.format('DD/MM/YYYY');
+}
 
 export default function Alerts() {
   const [filterSource, setFilterSource] = useState('all');
@@ -88,16 +115,29 @@ export default function Alerts() {
 
   const hasActiveFilters = filterSource !== 'all' || filterPriority !== 'all' || filterType !== 'all' || search;
 
+  // Lista agrupada por dia (a ordem é a de sempre: mais recente primeiro; só ganhou um título a cada troca de dia).
+  // Agrupa por chave de dia (Map, na ordem em que cada dia aparece) — não depende de a lista chegar perfeitamente ordenada.
+  const groupMap = new Map();
+  for (const sig of filtered) {
+    const day = moment(sig.created_date);
+    const key = day.format('YYYY-MM-DD');
+    if (!groupMap.has(key)) groupMap.set(key, { key, day, items: [] });
+    groupMap.get(key).items.push(sig);
+  }
+  const groups = [...groupMap.values()];
+
+  const clearFilters = () => { setSearch(''); setFilterSource('all'); setFilterPriority('all'); setFilterType('all'); };
+
   return (
     <div className="space-y-5 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Monitoramento</p>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">Alertas</h1>
+          <p className="text-xs text-muted-foreground mb-1">Monitoramento</p>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Alertas</h1>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 text-10px font-mono">
+          <div className="flex items-center gap-1.5 text-xs font-mono">
             <div className="live-dot" style={{ width: 5, height: 5 }} />
             <span className="text-muted-foreground">{filtered.length} alertas</span>
           </div>
@@ -105,7 +145,7 @@ export default function Alerts() {
             <button
               onClick={() => setConfirmingDismissAll(filtered.map(s => s.id))}
               disabled={dismissMutation.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-80"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-11px font-mono transition-all hover:opacity-80"
               style={{ background: 'rgba(221,154,74,0.08)', border: '1px solid rgba(221,154,74,0.2)', color: '#dd9a4a' }}>
               <X className="w-3 h-3" />Arquivar todos
             </button>
@@ -113,96 +153,78 @@ export default function Alerts() {
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Contagens: uma linha só (eram 3 cartões com ícone). */}
+      <div className="rounded-md px-4 py-2.5 flex flex-wrap items-center gap-x-8 gap-y-1.5" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
         {[
-          { label: 'Alta Prioridade', value: highCount, color: '#dd9a4a', icon: AlertTriangle },
-          { label: 'BUY', value: buyCount, color: '#5db586', icon: TrendingUp },
-          { label: 'SELL', value: sellCount, color: '#e06a5b', icon: TrendingDown },
-        ].map(({ label, value, color, icon: Icon }) => (
-          <div key={label} className="rounded-md px-4 py-3 flex items-center gap-3"
-            style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
-            <Icon className="w-4 h-4 shrink-0" style={{ color }} />
-            <div>
-              <div className="text-9px font-mono text-muted-foreground">{label}</div>
-              <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
-            </div>
+          { label: 'Alta Prioridade', value: highCount, color: '#dd9a4a' },
+          { label: 'BUY', value: buyCount, color: '#5db586' },
+          { label: 'SELL', value: sellCount, color: '#e06a5b' },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="flex items-baseline gap-2">
+            <span className="text-xs text-muted-foreground">{label}</span>
+            <span className="text-lg font-mono font-medium tabular-nums" style={{ color }}>{value}</span>
           </div>
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="rounded-md p-3 space-y-2" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Filter className="w-3 h-3 text-muted-foreground shrink-0" />
-
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+      {/* Filtros: busca + 3 grupos rotulados em abas ligadas (rolam de lado no celular) */}
+      <div className="rounded-md p-3 space-y-3" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 sm:max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
             <input type="text" placeholder="Buscar símbolo..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-6 pr-3 py-1.5 rounded-lg w-40 text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="w-full pl-7 pr-3 py-1.5 rounded-md text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }} />
           </div>
-
-          <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />
-
-          {/* Tipo */}
-          {[{ id: 'all', label: 'Todos' }, { id: 'BUY', label: '▲ BUY', color: '#5db586' }, { id: 'SELL', label: '▼ SELL', color: '#e06a5b' }].map(f => (
-            <button key={f.id} onClick={() => setFilterType(f.id)}
-              className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all"
-              style={filterType === f.id && f.color
-                ? { background: `${f.color}15`, border: `1px solid ${f.color}40`, color: f.color }
-                : filterType === f.id
-                ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
-              {f.label}
-            </button>
-          ))}
-
-          <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />
-
-          {/* Prioridade */}
-          {[{ id: 'all', label: 'Todas' }, { id: 'high', label: priorityLabel('high') }, { id: 'medium', label: priorityLabel('medium') }, { id: 'low', label: priorityLabel('low') }].map(f => (
-            <button key={f.id} onClick={() => setFilterPriority(f.id)}
-              className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all"
-              style={filterPriority === f.id
-                ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
-              {f.label}
-            </button>
-          ))}
-
-          <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />
-
-          {/* Fonte */}
-          {['all', 'range_filter', 'smc_structure', 'rsi', 'macd', 'ema_cross'].map(src => {
-            const button = (
-              <button key={src} onClick={() => setFilterSource(src)}
-                className={`text-9px font-mono px-2 py-1.5 rounded-lg transition-all${src !== 'all' ? ' cursor-help' : ''}`}
-                tabIndex={src !== 'all' ? 0 : undefined}
-                style={filterSource === src
-                  ? { background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: '#8db4e2' }
-                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.55)' }}>
-                {src === 'all' ? 'Todas Fontes' : longSourceLabel(src)}
-              </button>
-            );
-            if (src === 'all') return button;
-            return (
-              <Tooltip key={src}>
-                <TooltipTrigger asChild>{button}</TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                  {SIGNAL_SOURCES[src]?.tooltip}
-                </TooltipContent>
-              </Tooltip>
-            );
-          })}
-
           {hasActiveFilters && (
-            <button onClick={() => { setSearch(''); setFilterSource('all'); setFilterPriority('all'); setFilterType('all'); }}
-              className="ml-auto text-9px font-mono px-2 py-1.5 rounded-lg flex items-center gap-1 transition-all"
+            <button onClick={clearFilters}
+              className="ml-auto text-11px font-mono px-2.5 py-1.5 rounded-md flex items-center gap-1 transition-all"
               style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
               <X className="w-3 h-3" />Limpar
             </button>
           )}
+        </div>
+
+        <div className="flex items-center gap-x-5 gap-y-2 overflow-x-auto sm:flex-wrap pb-0.5">
+          <FilterGroup label="Tipo">
+            {[{ id: 'all', label: 'Todos' }, { id: 'BUY', label: '▲ BUY', color: '#5db586' }, { id: 'SELL', label: '▼ SELL', color: '#e06a5b' }].map((f, i) => (
+              <button key={f.id} onClick={() => setFilterType(f.id)} className={TAB_BASE}
+                style={tabStyle(filterType === f.id, i === 0, f.color)}>
+                {f.label}
+              </button>
+            ))}
+          </FilterGroup>
+
+          <FilterGroup label="Prioridade">
+            {[{ id: 'all', label: 'Todas' }, { id: 'high', label: priorityLabel('high') }, { id: 'medium', label: priorityLabel('medium') }, { id: 'low', label: priorityLabel('low') }].map((f, i) => (
+              <button key={f.id} onClick={() => setFilterPriority(f.id)} className={TAB_BASE}
+                style={tabStyle(filterPriority === f.id, i === 0)}>
+                {f.label}
+              </button>
+            ))}
+          </FilterGroup>
+
+          <FilterGroup label="Fonte">
+            {['all', 'range_filter', 'smc_structure', 'rsi', 'macd', 'ema_cross'].map((src, i) => {
+              const button = (
+                <button key={src} onClick={() => setFilterSource(src)}
+                  className={`${TAB_BASE}${src !== 'all' ? ' cursor-help' : ''}`}
+                  tabIndex={src !== 'all' ? 0 : undefined}
+                  style={tabStyle(filterSource === src, i === 0)}>
+                  {src === 'all' ? 'Todas Fontes' : longSourceLabel(src)}
+                </button>
+              );
+              if (src === 'all') return button;
+              return (
+                <Tooltip key={src}>
+                  <TooltipTrigger asChild>{button}</TooltipTrigger>
+                  <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
+                    {SIGNAL_SOURCES[src]?.tooltip}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </FilterGroup>
         </div>
       </div>
 
@@ -216,130 +238,138 @@ export default function Alerts() {
           <QueryErrorState message="Não foi possível carregar os alertas agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-md p-12 text-center" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <Bell className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
+        <div className="rounded-md px-5 py-6 flex flex-wrap items-center gap-x-4 gap-y-3" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <Bell className="w-5 h-5 shrink-0 text-muted-foreground opacity-40" />
           <p className="text-muted-foreground text-sm">Nenhum alerta com esses filtros.</p>
           {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): botão
               "Limpar" já existia no topo, mas não bem perto deste texto —
               versão inline reusa o mesmo handler. */}
           {hasActiveFilters && (
-            <button onClick={() => { setSearch(''); setFilterSource('all'); setFilterPriority('all'); setFilterType('all'); }}
-              className="mt-3 text-9px font-mono px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 transition-all"
+            <button onClick={clearFilters}
+              className="ml-auto text-11px font-mono px-2.5 py-1.5 rounded-md inline-flex items-center gap-1 transition-all"
               style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.2)', color: '#e06a5b' }}>
               <X className="w-3 h-3" />Limpar filtros
             </button>
           )}
         </div>
       ) : (
-        <div className="space-y-1.5">
-          {filtered.map(signal => {
-            const isBuy = signal.signal_type === 'BUY';
-            const prio = PRIORITY_CONFIG[signal.priority] || PRIORITY_CONFIG.low;
-            // Sem role="button" de propósito (achado do Codex review no PR
-            // #419): esta linha contém um <button> real (dispensar) — um
-            // role de widget (button/link/...) torna os filhos
-            // "presentational" pra árvore de acessibilidade, escondendo o
-            // botão de dispensar como controle próprio. tabIndex+onKeyDown
-            // já bastam pra foco/ativação por teclado sem precisar do role.
-            return (
-              <div key={signal.id}
-                tabIndex={0}
-                aria-label={`${signal.symbol?.replace('USDT', '/USDT')} — ver detalhes do alerta`}
-                className="rounded-md px-4 py-3 flex items-center gap-3 transition-all duration-200 cursor-pointer group focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                style={{
-                  background: 'rgba(24,23,21,0.82)',
-                  
-                  border: signal.priority === 'high'
-                    ? (isBuy ? '1px solid rgba(93,181,134,0.3)' : '1px solid rgba(224,106,91,0.3)')
-                    : (isBuy ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(224,106,91,0.1)'),
-                  boxShadow: signal.priority === 'high'
-                    ? (isBuy ? '0 0 16px rgba(93,181,134,0.08)' : '0 0 16px rgba(224,106,91,0.08)')
-                    : 'none',
-                }}
-                onClick={() => setSelectedSignal(signal)}
-                onKeyDown={(e) => {
-                  // Achado A-7 do Raio-X de UI/UX: ignora key events que
-                  // borbulharem do botão de dispensar (já trata o próprio
-                  // Enter/Space nativamente e faz stopPropagation no clique;
-                  // sem isso, Enter no botão duplicaria a ação de abrir o
-                  // detalhe, igual ao mesmo cuidado já tomado em AssetCard.jsx).
-                  if (e.target !== e.currentTarget) return;
-                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedSignal(signal); }
-                }}>
+        <div className="space-y-5">
+          {groups.map(group => (
+            <section key={group.key} className="space-y-1.5">
+              <div className="flex items-center gap-2 px-1">
+                <span aria-hidden="true" style={{ width: 3, height: 16, borderRadius: 2, background: '#8db4e2', display: 'inline-block' }} />
+                <h2 className="text-sm font-semibold text-foreground/80">{dayLabel(group.day)}</h2>
+                <span className="text-xs font-mono text-muted-foreground">{group.day.format('DD/MM')} · {group.items.length} {group.items.length === 1 ? 'alerta' : 'alertas'}</span>
+              </div>
+              {group.items.map(signal => {
+                const isBuy = signal.signal_type === 'BUY';
+                const prio = PRIORITY_CONFIG[signal.priority] || PRIORITY_CONFIG.low;
+                // Sem role="button" de propósito (achado do Codex review no PR
+                // #419): esta linha contém um <button> real (dispensar) — um
+                // role de widget (button/link/...) torna os filhos
+                // "presentational" pra árvore de acessibilidade, escondendo o
+                // botão de dispensar como controle próprio. tabIndex+onKeyDown
+                // já bastam pra foco/ativação por teclado sem precisar do role.
+                return (
+                  <div key={signal.id}
+                    tabIndex={0}
+                    aria-label={`${signal.symbol?.replace('USDT', '/USDT')} — ver detalhes do alerta`}
+                    className="rounded-md px-4 py-3 flex items-center gap-3 transition-all duration-200 cursor-pointer group focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    style={{
+                      background: 'rgba(24,23,21,0.82)',
+                      // Alta prioridade: contorno mais forte (sem brilho).
+                      border: signal.priority === 'high'
+                        ? (isBuy ? '1px solid rgba(93,181,134,0.35)' : '1px solid rgba(224,106,91,0.35)')
+                        : (isBuy ? '1px solid rgba(93,181,134,0.1)' : '1px solid rgba(224,106,91,0.1)'),
+                    }}
+                    onClick={() => setSelectedSignal(signal)}
+                    onKeyDown={(e) => {
+                      // Achado A-7 do Raio-X de UI/UX: ignora key events que
+                      // borbulharem do botão de dispensar (já trata o próprio
+                      // Enter/Space nativamente e faz stopPropagation no clique;
+                      // sem isso, Enter no botão duplicaria a ação de abrir o
+                      // detalhe, igual ao mesmo cuidado já tomado em AssetCard.jsx).
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedSignal(signal); }
+                    }}>
 
-                {/* Side bar */}
-                <div className="w-0.5 self-stretch rounded-full shrink-0" style={{ background: isBuy ? '#5db586' : '#e06a5b' }} />
-
-                {/* Signal badge */}
-                <span className="flex items-center gap-1 text-xs font-mono font-bold px-3 py-1.5 rounded-lg shrink-0"
-                  style={isBuy
-                    ? { background: 'rgba(93,181,134,0.15)', color: '#5db586', border: '1px solid rgba(93,181,134,0.4)', boxShadow: 'none' }
-                    : { background: 'rgba(224,106,91,0.15)', color: '#e06a5b', border: '1px solid rgba(224,106,91,0.4)', boxShadow: 'none' }}>
-                  {isBuy ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                  {signal.signal_type}
-                </span>
-
-                {/* Content */}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <TokenIcon symbol={signal.symbol} size={18} />
-                    <span className="font-bold text-sm text-foreground">{signal.symbol?.replace('USDT', '/USDT')}</span>
-                    <span className="text-9px font-mono px-1.5 py-0.5 rounded"
-                      style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.62)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                      {signal.timeframe?.toUpperCase()}
+                    {/* Hora (a data fica no título do dia) + selo BUY/SELL: lado a lado em tela larga, empilhados no celular */}
+                    <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-3 shrink-0">
+                    <span className="text-xs font-mono tabular-nums sm:w-11 shrink-0" style={{ color: 'rgba(255,255,255,0.62)' }}>
+                      {moment(signal.created_date).format('HH:mm')}
                     </span>
-                    {SIGNAL_SOURCES[signal.source]?.tooltip ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="text-8px font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
-                            style={{ background: 'rgba(141,180,226,0.06)', color: 'rgba(141,180,226,0.5)', border: '1px solid rgba(141,180,226,0.12)' }}>
+
+                    {/* Signal badge */}
+                    <span className="flex items-center justify-center gap-1 text-xs font-mono font-semibold px-2.5 py-1.5 rounded-md shrink-0 w-[4.75rem]"
+                      style={isBuy
+                        ? { background: 'rgba(93,181,134,0.12)', color: '#5db586', border: '1px solid rgba(93,181,134,0.35)' }
+                        : { background: 'rgba(224,106,91,0.12)', color: '#e06a5b', border: '1px solid rgba(224,106,91,0.35)' }}>
+                      {isBuy ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                      {signal.signal_type}
+                    </span>
+                    </div>
+
+                    {/* Content */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <TokenIcon symbol={signal.symbol} size={18} />
+                        <span className="font-semibold text-sm text-foreground">{signal.symbol?.replace('USDT', '/USDT')}</span>
+                        <span className="text-11px font-mono px-1.5 py-0.5 rounded"
+                          style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.62)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                          {signal.timeframe?.toUpperCase()}
+                        </span>
+                        {SIGNAL_SOURCES[signal.source]?.tooltip ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="text-11px font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
+                                style={{ background: 'rgba(141,180,226,0.06)', color: 'rgba(141,180,226,0.75)', border: '1px solid rgba(141,180,226,0.15)' }}>
+                                {longSourceLabel(signal.source)}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-[260px] text-11px font-mono normal-case tracking-normal leading-relaxed">
+                              {SIGNAL_SOURCES[signal.source]?.tooltip}
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-11px font-mono px-1.5 py-0.5 rounded"
+                            style={{ background: 'rgba(141,180,226,0.06)', color: 'rgba(141,180,226,0.75)', border: '1px solid rgba(141,180,226,0.15)' }}>
                             {longSourceLabel(signal.source)}
                           </span>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                          {SIGNAL_SOURCES[signal.source]?.tooltip}
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <span className="text-8px font-mono px-1.5 py-0.5 rounded"
-                        style={{ background: 'rgba(141,180,226,0.06)', color: 'rgba(141,180,226,0.5)', border: '1px solid rgba(141,180,226,0.12)' }}>
-                        {longSourceLabel(signal.source)}
-                      </span>
-                    )}
-                    <span className="text-8px font-mono px-1.5 py-0.5 rounded"
-                      style={{ background: prio.bg, color: prio.color, border: `1px solid ${prio.border}` }}>
-                      {prio.label}
-                    </span>
-                    {Number.isFinite(signal.context?.score) && signal.context.score > 0 && (
-                      <span className="text-8px font-mono" style={{ color: signal.context.score >= 85 ? '#e3b45a' : 'rgba(255,255,255,0.55)' }}>
-                        {agreementLabel({ score: signal.context.score })}
-                      </span>
-                    )}
-                  </div>
-                  {signal.reason && (
-                    <p className="text-10px text-muted-foreground truncate mt-0.5">{signal.reason}</p>
-                  )}
-                </div>
+                        )}
+                        <span className="text-11px font-mono px-1.5 py-0.5 rounded"
+                          style={{ background: prio.bg, color: prio.color, border: `1px solid ${prio.border}` }}>
+                          {prio.label}
+                        </span>
+                        {Number.isFinite(signal.context?.score) && signal.context.score > 0 && (
+                          <span className="text-11px font-mono" style={{ color: signal.context.score >= 85 ? '#e3b45a' : 'rgba(255,255,255,0.6)' }}>
+                            {agreementLabel({ score: signal.context.score })}
+                          </span>
+                        )}
+                      </div>
+                      {signal.reason && (
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{signal.reason}</p>
+                      )}
+                    </div>
 
-                {/* Right side */}
-                <div className="flex items-center gap-2 shrink-0">
-                  {signal.price_at_signal && (
-                    <span className="text-10px font-mono text-muted-foreground hidden sm:block">
-                      ${signal.price_at_signal?.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-                    </span>
-                  )}
-                  <span className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.62)' }}>
-                    {moment(signal.created_date).format('DD/MM HH:mm')}
-                  </span>
-                  <button
-                    className="p-2 rounded-lg transition-all hover:bg-rose-500/10"
-                    onClick={(e) => { e.stopPropagation(); dismissMutation.mutate(signal.id); }}>
-                    <Archive className="w-3.5 h-3.5 text-muted-foreground hover:text-rose-400 transition-colors" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+                    {/* Right side */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {signal.price_at_signal && (
+                        <span className="text-xs font-mono text-muted-foreground hidden sm:block">
+                          ${signal.price_at_signal?.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                        </span>
+                      )}
+                      <button
+                        aria-label="Arquivar este alerta"
+                        className="p-2 rounded-md transition-all hover:bg-rose-500/10"
+                        onClick={(e) => { e.stopPropagation(); dismissMutation.mutate(signal.id); }}>
+                        <Archive className="w-3.5 h-3.5 text-muted-foreground hover:text-rose-400 transition-colors" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
+          ))}
         </div>
       )}
 
@@ -369,21 +399,21 @@ export default function Alerts() {
                     ? ['Score', `${selectedSignal.context.score}/100`]
                     : null,
                 ].filter(Boolean).map(([label, val]) => (
-                  <div key={label} className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <p className="text-9px font-mono text-muted-foreground uppercase tracking-wider">{label}</p>
+                  <div key={label} className="rounded-md p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <p className="text-11px font-mono text-muted-foreground">{label}</p>
                     <p className="text-sm font-mono font-semibold text-foreground mt-0.5">{val}</p>
                   </div>
                 ))}
               </div>
               {selectedSignal.reason && (
-                <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <p className="text-9px font-mono text-muted-foreground uppercase tracking-wider mb-1">Razão</p>
+                <div className="rounded-md p-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <p className="text-11px font-mono text-muted-foreground mb-1">Razão</p>
                   <p className="text-sm text-foreground/80">{selectedSignal.reason}</p>
                 </div>
               )}
               {selectedSignal.context && (
-                <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <p className="text-9px font-mono text-muted-foreground uppercase tracking-wider mb-2">Por que este alerta apareceu?</p>
+                <div className="rounded-md p-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <p className="text-11px font-mono text-muted-foreground mb-2">Por que este alerta apareceu?</p>
                   {/* Auditoria do Telegram (2026-09-29), Fase 2 item 2.8 —
                       antes só havia o JSON bruto aqui; tradução humana das
                       chaves conhecidas do context entra ANTES dele, que
@@ -415,8 +445,8 @@ export default function Alerts() {
                       corrigido pro timestamp nesta mesma rodada, aqui é o
                       único controle visível pra revelar o payload. */}
                   <details>
-                    <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.62)' }}>ver dados técnicos →</summary>
-                    <pre className="mt-1 text-10px font-mono overflow-x-auto" style={{ color: 'rgba(93,181,134,0.7)' }}>
+                    <summary className="text-11px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.62)' }}>ver dados técnicos →</summary>
+                    <pre className="mt-1 text-11px font-mono overflow-x-auto" style={{ color: 'rgba(93,181,134,0.7)' }}>
                       {JSON.stringify(selectedSignal.context, null, 2)}
                     </pre>
                   </details>

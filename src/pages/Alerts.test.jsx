@@ -126,12 +126,13 @@ describe('Alerts — JSON de "Contexto Técnico" fica dentro de <details>, fecha
 // Refinamentos (seção E do Raio-X): campo de busca (`w-32`) mais estreito
 // que o próprio placeholder — cortava o fim do texto visualmente.
 describe('Alerts — campo de busca não corta o placeholder (Refinamentos)', () => {
-  it('REGRESSÃO: input não usa mais w-32, agora w-40', async () => {
+  it('REGRESSÃO: input não usa mais w-32; em 21/11/2026 passou a ocupar a largura disponível (até max-w-xs), ainda mais largo que o w-40 de antes', async () => {
     estadoBackend.populated = false;
     renderPage(<Alerts />);
     const search = await screen.findByPlaceholderText('Buscar símbolo...');
     expect(search.className).not.toMatch(/\bw-32\b/);
-    expect(search.className).toMatch(/\bw-40\b/);
+    expect(search.className).toMatch(/\bw-full\b/);
+    expect(search.parentElement.className).toMatch(/sm:max-w-xs/);
   });
 });
 
@@ -143,7 +144,8 @@ describe('Alerts — timestamp do card tem contraste maior (Refinamentos)', () =
     estadoBackend.populated = true;
     renderPage(<Alerts />);
     await screen.findByText('BTC/USDT');
-    const timestamp = screen.getByText(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
+    // 21/11/2026: a data foi para o título do dia (Hoje / Ontem / DD/MM/AAAA); a linha mostra só a hora. O contraste continua o mesmo.
+    const timestamp = screen.getByText(/^\d{2}:\d{2}$/);
     expect(timestamp.style.color).toBe('rgba(255, 255, 255, 0.62)');
   });
 });
@@ -281,5 +283,47 @@ describe('Alerts — deep link ?id= abre o sinal exato (item 5.4)', () => {
     renderPage(<Alerts />);
     await screen.findByText('BTC/USDT');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+// 21/11/2026 — Alertas refeito (estrutura, não só cor): contagens numa linha, filtros em 3 grupos rotulados (abas ligadas) e a lista agrupada
+// por dia (Hoje / Ontem / data) com a hora na linha. Os textos e botões de sempre continuam.
+describe('Alerts — estrutura nova (21/11/2026)', () => {
+  it('a lista tem um título por dia (Hoje, Ontem ou a data) com a contagem do dia', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+    await screen.findByText('BTC/USDT');
+    const titulos = screen.getAllByRole('heading', { level: 2 });
+    expect(titulos.length).toBeGreaterThan(0);
+    expect(titulos[0].textContent).toMatch(/^(Hoje|Ontem|\d{2}\/\d{2}\/\d{4})$/);
+    expect(titulos[0].parentElement.textContent).toMatch(/\d+ alertas?/);
+  });
+
+  it('os filtros são 3 grupos rotulados (Tipo, Prioridade, Fonte), cada um em abas ligadas', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+    await screen.findByText('BTC/USDT');
+    for (const rotulo of ['Tipo', 'Prioridade', 'Fonte']) expect(screen.getByText(rotulo)).toBeTruthy();
+    const buy = screen.getByRole('button', { name: /BUY/ });
+    const sell = screen.getByRole('button', { name: /SELL/ });
+    expect(buy.parentElement).toBe(sell.parentElement);
+    expect(buy.parentElement.className).toMatch(/overflow-hidden/);
+    expect(screen.getByRole('button', { name: 'Todas Fontes' }).parentElement).not.toBe(buy.parentElement);
+  });
+
+  it('as contagens são uma linha só, sem os 3 cartões com ícone', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+    await screen.findByText('BTC/USDT');
+    const linha = screen.getByText('Alta Prioridade').parentElement.parentElement;
+    for (const rotulo of ['Alta Prioridade', 'BUY', 'SELL']) expect(within(linha).getAllByText(rotulo).length).toBeGreaterThan(0);
+    expect(linha.querySelector('svg')).toBeNull();
+  });
+
+  it('o botão de arquivar de cada linha tem nome acessível', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+    await screen.findByText('BTC/USDT');
+    expect(screen.getAllByRole('button', { name: 'Arquivar este alerta' }).length).toBeGreaterThan(0);
   });
 });
