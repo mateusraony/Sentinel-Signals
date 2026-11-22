@@ -62,7 +62,7 @@ export function explainReport(report, source) {
   }
 
   if (num(overall.avgWinR) && num(overall.avgLossR)) {
-    lines.push(`${overall.wins ?? 0} vitórias, ${overall.losses ?? 0} derrotas e ${overall.be ?? 0} empates. Cada vitória rendeu em média ${fmtR(overall.avgWinR)} e cada derrota custou ${fmtR(Math.abs(overall.avgLossR))}.`);
+    lines.push(`${plural(overall.wins ?? 0, 'vitória', 'vitórias')}, ${plural(overall.losses ?? 0, 'derrota', 'derrotas')} e ${plural(overall.be ?? 0, 'empate', 'empates')}. Cada vitória rendeu em média ${fmtR(overall.avgWinR)} e cada derrota custou ${fmtR(Math.abs(overall.avgLossR))}.`);
   }
 
   if ((report?.stillOpenAtCutoff ?? 0) > 0) {
