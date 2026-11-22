@@ -407,10 +407,10 @@ describe('Backtest — Win Rate/Drawdown/Profit Factor com cor compartilhada (Ro
     fireEvent.click(screen.getByText(/Analisar relatório colado/i));
     await screen.findByText('Expectância');
 
+    // 22/11/2026: os cartões viraram planos (sem brilho no canto) — a cor da faixa agora é conferida no próprio número.
     const wrLabel = screen.getAllByText('Taxa de acerto').find(el => el.tagName === 'SPAN');
-    const wrCard = wrLabel.closest('.relative.overflow-hidden');
-    const glow = wrCard.querySelector('.absolute.top-0.right-0');
-    expect(glow.style.background).toMatch(/rgba\(221,154,74/);
+    const wrCard = wrLabel.closest('.glass-card');
+    expect(within(wrCard).getByText('40.0%').style.color).toBe('rgb(221, 154, 74)');
   });
 
   it('REGRESSÃO: Profit Factor 1.2 mostra "⚠ Marginal" em laranja (não mais "⚠ Baixo" dividindo cor com Baixo)', async () => {
@@ -466,8 +466,8 @@ describe('Backtest — Profit Factor não mostra "∞" contraditório quando nã
     expect(screen.getByText('✗ Baixo')).toBeTruthy();
     // "Profit Factor" também aparece como cabeçalho da tabela "Por
     // cascata" (span com tooltip, fora do card) — filtra só o do card.
-    const pfLabel = screen.getAllByText('Profit Factor').find(el => el.closest('.relative.overflow-hidden'));
-    const pfCard = pfLabel.closest('.relative.overflow-hidden');
+    const pfLabel = screen.getAllByText('Profit Factor').find(el => el.closest('.glass-card'));
+    const pfCard = pfLabel.closest('.glass-card');
     expect(within(pfCard).getByText('—')).toBeTruthy();
     expect(within(pfCard).queryByText('∞')).toBeNull();
   });
