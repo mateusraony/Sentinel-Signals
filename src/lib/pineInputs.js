@@ -5,6 +5,11 @@
 // pineInputs.test.js garante que os valores aqui batem com o `parsePineScript`; se o parser mudar, ele falha.
 import { DEFAULTS, SYNCED_STRATEGY_KEYS, NON_PINE_SYNCED_KEYS } from './pineParser';
 
+// Sincronizados (vão para o banco), mas o scanner NÃO os lê — não dá para dizer "Scan e painel" sobre eles. `onlyClosedCandles` é vestigial:
+// scanner.js filtra `c.isClosed` sempre (src/lib/scanner.js, "Only use closed candles"), então ligar/desligar não muda nada. Achado do Codex no PR #615.
+// (`confirmBars` já é lido: scanner.js usa pineConfig.confirmBars em calculateConfirmedSignal.) Se outro parâmetro virar vestigial, entra aqui.
+export const INERT_IN_SCANNER = new Set(['onlyClosedCandles']);
+
 /** Divide uma lista de argumentos nas vírgulas de nível 0 (respeita parênteses, colchetes e aspas). */
 function splitTopLevel(str) {
   const parts = [];
@@ -73,7 +78,7 @@ function readLabel(argsStr, groupVars) {
 /**
  * @param {string} code
  * @returns {{ items: Array<object>, read: Array<object>, ignored: Array<object>, changed: number }}
- *   read: { name, type, title, group, value, defaultValue, isDefault, destination: 'ativos'|'scan'|'local' }
+ *   read: { name, type, title, group, value, defaultValue, isDefault, destination: 'ativos'|'scan'|'inerte'|'local' }
  *   ignored: { name, type, title, group }
  */
 export function analyzePineInputs(code) {
@@ -103,6 +108,7 @@ export function analyzePineInputs(code) {
     if (parserHits.has(name) && ['int', 'float', 'bool', 'string'].includes(type)) {
       const value = parserHits.get(name);
       const destination = (name === 'rng_per' || name === 'rng_qty') ? 'ativos'
+        : INERT_IN_SCANNER.has(name) ? 'inerte'
         : (SYNCED_STRATEGY_KEYS.includes(name) && !NON_PINE_SYNCED_KEYS.has(name)) ? 'scan' : 'local';
       const item = { name, type, title: title ?? name, group, value, defaultValue: DEFAULTS[name], isDefault: value === DEFAULTS[name], destination };
       if (!read.some((r) => r.name === name)) { read.push(item); items.push(item); }
@@ -117,5 +123,6 @@ export function analyzePineInputs(code) {
 export const DESTINATION_LABEL = Object.freeze({
   ativos: 'RF de cada ativo ativo',
   scan: 'Scan e painel',
+  inerte: 'Guardado, mas o scan não usa',
   local: 'Só neste navegador',
 });

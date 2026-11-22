@@ -1264,7 +1264,7 @@ export default function PineScript() {
               <div>
                 <SectionTitle>Lido do seu código</SectionTitle>
                 <div className="rounded-md px-3 py-2.5 text-xs space-y-1" style={PANEL}>
-                  <p><span className="font-mono tabular-nums text-foreground">{report.read.length}</span> <span className="text-foreground/75">parâmetros que o Sentinel usa</span></p>
+                  <p><span className="font-mono tabular-nums text-foreground">{report.read.length}</span> <span className="text-foreground/75">parâmetros que o Sentinel lê</span></p>
                   <p><span className="font-mono tabular-nums" style={{ color: report.changed ? '#dd9a4a' : undefined }}>{report.changed}</span> <span className="text-foreground/75">diferente{report.changed === 1 ? '' : 's'} do padrão</span></p>
                   <p><span className="font-mono tabular-nums text-muted-foreground">{report.ignored.length}</span> <span className="text-muted-foreground">valem só no TradingView</span></p>
                   {report.read.length === 0 && (
@@ -1371,7 +1371,7 @@ export default function PineScript() {
                           {fmtValue(r.value)}{!r.isDefault && <span title="diferente do padrão" aria-label="diferente do padrão"> ●</span>}
                         </td>
                         <td className="px-3 py-1.5 font-mono tabular-nums text-muted-foreground">{fmtValue(r.defaultValue)}</td>
-                        <td className="px-3 py-1.5 text-foreground/75">{DESTINATION_LABEL[r.destination]}</td>
+                        <td className="px-3 py-1.5" style={{ color: r.destination === 'inerte' ? '#dd9a4a' : 'rgba(255,255,255,0.75)' }}>{DESTINATION_LABEL[r.destination]}</td>
                       </tr>
                     ))}
                   </tbody>

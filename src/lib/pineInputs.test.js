@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { analyzePineInputs, DESTINATION_LABEL } from './pineInputs';
+import { analyzePineInputs, DESTINATION_LABEL, INERT_IN_SCANNER } from './pineInputs';
 import { parsePineScript, DEFAULTS } from './pineParser';
 
 // pineParser puxa o cliente do backend (e este o Firebase) na importação; aqui só importam as funções puras.
@@ -66,7 +66,17 @@ webhookSecret = input.string("MEU_SECRET_AQUI", "Webhook Secret", group = groupB
   it('o destino: RF vai para os ativos; o resto sincronizado vai para scan e painel', () => {
     expect(r.read.find((x) => x.name === 'rng_per').destination).toBe('ativos');
     expect(r.read.find((x) => x.name === 'minScore').destination).toBe('scan');
-    expect(Object.keys(DESTINATION_LABEL)).toEqual(['ativos', 'scan', 'local']);
+    expect(Object.keys(DESTINATION_LABEL)).toEqual(['ativos', 'scan', 'inerte', 'local']);
+  });
+  it('REGRESSÃO (Codex, PR #615): onlyClosedCandles é guardado mas o scanner não o lê — não pode aparecer como "Scan e painel"', () => {
+    const r = analyzePineInputs('onlyClosedCandles = input.bool(false, "Confirmar somente com candle fechado")\nconfirmBars = input.int(2, "Candles")');
+    expect(r.read.find((x) => x.name === 'onlyClosedCandles').destination).toBe('inerte');
+    expect(r.read.find((x) => x.name === 'confirmBars').destination).toBe('scan'); // esse o scanner lê de fato
+    expect([...INERT_IN_SCANNER]).toEqual(['onlyClosedCandles']);
+  });
+  it('GUARDA: nenhum parâmetro marcado como "inerte" é lido por scanner.js (se alguém passar a ler, a marca precisa sair)', () => {
+    const scanner = readFileSync(new URL('./scanner.js', import.meta.url), 'utf8');
+    for (const k of INERT_IN_SCANNER) expect(scanner.includes(`pineConfig.${k}`) || scanner.includes(`pineConfig?.${k}`), k).toBe(false);
   });
   it('código vazio: nada lido, nada quebrado', () => {
     expect(analyzePineInputs('')).toEqual({ items: [], read: [], ignored: [], changed: 0 });

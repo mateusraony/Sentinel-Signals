@@ -128,7 +128,7 @@ describe('PineScript — entendimento (22/11/2026)', () => {
   it('Editor: painel "Lido do seu código" com contagens do código atual; ao editar um valor, conta como diferente do padrão', async () => {
     renderPage(<PineScript />);
     const painel = await screen.findByRole('complementary', { name: 'O que o Sentinel lê do código' });
-    expect(within(painel).getByText(/parâmetros que o Sentinel usa/)).toBeTruthy();
+    expect(within(painel).getByText(/parâmetros que o Sentinel lê/)).toBeTruthy();
     expect(within(painel).getByText(/valem só no TradingView/)).toBeTruthy();
     expect(within(painel).getByText(/diferentes do padrão/).parentElement.textContent).toMatch(/^0 diferentes/);
     const editor = screen.getByRole('textbox', { name: 'Código Pine Script' });
@@ -180,6 +180,15 @@ describe('PineScript — entendimento (22/11/2026)', () => {
     expect(within(corpo[0]).getByText('33')).toBeTruthy();
     expect(within(corpo[1]).getByText('82')).toBeTruthy();
     expect(within(corpo[0]).getByLabelText('diferente do padrão')).toBeTruthy();
+  });
+
+  it('Sincronização: onlyClosedCandles aparece como "Guardado, mas o scan não usa" (achado do Codex, PR #615)', async () => {
+    renderPage(<PineScript />);
+    await openSyncTab();
+    const tabela = await screen.findByRole('table');
+    const linha = within(tabela).getByText('onlyClosedCandles').closest('tr');
+    expect(within(linha).getByText('Guardado, mas o scan não usa')).toBeTruthy();
+    expect(within(linha).queryByText('Scan e painel')).toBeNull();
   });
 
   it('Sincronização: cada linha de "Como o scan usa a estratégia" diz de onde vem (sem ✓ falso em tudo)', async () => {
