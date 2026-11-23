@@ -176,8 +176,9 @@ describe('MonthlyReport — Profit Factor não mostra "∞" contraditório quand
     tradeOperationFilterMock.mockImplementation(async () => OPS_SO_BE);
     renderPage(<MonthlyReport />);
     await screen.findByText('✗ Baixo');
-    const pfLabel = screen.getAllByText('Profit Factor').find(el => el.closest('.relative.overflow-hidden'));
-    const pfCard = pfLabel.closest('.relative.overflow-hidden');
+    // Cartão plano (21–23/11/2026): a classe `glass-card` substituiu o cartão com brilho (`.relative.overflow-hidden`).
+    const pfLabel = screen.getAllByText('Profit Factor').find(el => el.closest('.glass-card'));
+    const pfCard = pfLabel.closest('.glass-card');
     expect(within(pfCard).getByText('—')).toBeTruthy();
     expect(within(pfCard).queryByText('∞')).toBeNull();
   });

@@ -27,7 +27,7 @@ const PONTOS = [
   ['src/components/dashboard/CorrelationWidget.jsx', 5],
   ['src/components/dashboard/ComparePanel.jsx', 2],
   ['src/components/dashboard/PredictiveAnalysis.jsx', 1],
-  ['src/pages/MonthlyReport.jsx', 1],
+  ['src/pages/MonthlyReport.jsx', 2], // tabela de operações + tabela por ativo (Relatório mensal refeito, 23/11/2026)
   ['src/pages/Backtest.jsx', 2],
   ['src/components/assets/AddAssetForm.jsx', 2],
 ];
