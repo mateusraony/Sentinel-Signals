@@ -110,6 +110,15 @@ const plural = (n, um, varios) => (n === 1 ? um : varios);
  */
 export function explainMonth(a, { partial = false, openCount = 0 } = {}) {
   const lines = [];
+  // Nenhuma operação com resultado conhecido (ex.: registros antigos sem preço de saída): não há o que somar — dizer "+0.00%" seria falso.
+  if (a.counted === 0) {
+    return {
+      tone: 'neutral',
+      headline: `${a.n} ${plural(a.n, 'operação fechada', 'operações fechadas')}, mas nenhuma com resultado que dê para medir`,
+      lines: ['Falta o preço de saída (ou o stop) registrado nessas operações, então resultado, taxa de acerto e média por operação não podem ser calculados.'],
+      note: openCount > 0 ? `${openCount} ${plural(openCount, 'operação aberta neste mês ainda não fechou e não entra', 'operações abertas neste mês ainda não fecharam e não entram')} nestas contas.` : null,
+    };
+  }
   const tone = a.totalPnl > 0 ? 'positive' : a.totalPnl < 0 ? 'negative' : 'neutral';
   const word = a.totalPnl > 0 ? 'positivo' : a.totalPnl < 0 ? 'negativo' : 'zerado';
   const headline = `Mês ${word}: ${fmtPct(a.totalPnl)} em ${a.n} ${plural(a.n, 'operação fechada', 'operações fechadas')}`;
@@ -178,12 +187,13 @@ export function explainMonth(a, { partial = false, openCount = 0 } = {}) {
 
 /**
  * Compara o mês com o anterior. Cada linha diz quem melhorou (`better`: true/false/null = indiferente/sem base).
- * Só compara quando os dois meses têm operação fechada.
+ * Só compara quando os dois meses têm operação fechada COM resultado conhecido.
  * @param {ReturnType<typeof analyzeMonth>|null} cur
  * @param {ReturnType<typeof analyzeMonth>|null} prev
  */
 export function compareMonths(cur, prev) {
-  if (!cur || !prev) return null;
+  // Mês sem nenhuma operação com resultado conhecido não tem número para comparar (os agregados seriam zeros inventados).
+  if (!cur || !prev || cur.counted === 0 || prev.counted === 0) return null;
   const row = (label, c, p, fmt, higherIsBetter) => {
     const bothNum = Number.isFinite(c) && Number.isFinite(p);
     const delta = bothNum ? c - p : null;

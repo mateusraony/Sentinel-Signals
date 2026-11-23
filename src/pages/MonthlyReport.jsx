@@ -396,10 +396,13 @@ export default function MonthlyReport() {
 
   // Contagens e números só afirmam depois de carregar: enquanto carrega (ou se a carga falhou sem dado) mostram "—", nunca "0".
   const unknownData = isLoading || (isError && operations.length === 0);
-  const dash = (v) => (unknownData || !analysis ? '—' : v);
+  const dash = (v) => (unknownData || !analysis || analysis.counted === 0 ? '—' : v);
   const vStyle = unknownData ? TONE_STYLE.unknown : (verdict ? TONE_STYLE[verdict.tone] : TONE_STYLE.unknown);
   const VIcon = isLoading ? Loader2 : vStyle.icon;
-  const hasMonthData = !unknownData && analysis;
+  // measurable: há ao menos uma operação com resultado conhecido. Mês com operações fechadas mas SEM resultado medível (ex.: registros antigos sem preço
+  // de saída) mostra a tabela, mas nenhum número agregado — somar "nada" daria +0.00% e 0% de acerto, que seriam falsos.
+  const hasOps = !unknownData && !!analysis;
+  const hasMonthData = hasOps && analysis.counted > 0;
   const maxAssetAbs = analysis ? Math.max(0, ...analysis.byAsset.map(g => Math.abs(g.pnl))) : 0;
   const shownAssets = analysis ? (showAllAssets ? analysis.byAsset : analysis.byAsset.slice(0, ASSET_LIMIT)) : [];
   const maxSideAbs = analysis ? Math.max(0, ...analysis.bySide.map(g => Math.abs(g.pnl))) : 0;
@@ -645,7 +648,7 @@ export default function MonthlyReport() {
                 ) : prevError ? (
                   <p className="text-xs text-muted-foreground">Não foi possível ler o mês anterior; a comparação fica de fora.</p>
                 ) : !comparison ? (
-                  <p className="text-xs text-muted-foreground">O mês anterior ({prevMonthLabel}) não teve operação fechada, então não há com o que comparar.</p>
+                  <p className="text-xs text-muted-foreground">O mês anterior ({prevMonthLabel}) não teve operação fechada com resultado medível, então não há com o que comparar.</p>
                 ) : (
                   <table className="w-full text-xs">
                     <thead>
@@ -679,6 +682,11 @@ export default function MonthlyReport() {
             </section>
           </div>
 
+        </>
+      )}
+
+      {hasOps && (
+        <>
           {/* Operações do mês */}
           <section className="space-y-2" aria-label="Operações do mês">
             <SectionTitle hint={`${filteredOps.length} de ${monthOps.length}`}>Operações do Mês</SectionTitle>

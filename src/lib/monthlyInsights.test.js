@@ -186,6 +186,33 @@ describe('compareMonths', () => {
   });
 });
 
+// Registro antigo: fechado, mas sem preço de saída nem stop registrado → o resultado é desconhecido (UNKNOWN no summarizeOps).
+const unknownOp = (id) => ({ id, symbol: 'BTCUSDT', side: 'BUY', status: 'CLOSED', entry_price: 100, created_date: at(0), closed_at: at(2) });
+
+describe('mês com operações fechadas mas sem resultado medível (achado do Codex, PR #619)', () => {
+  it('pré-condição: o registro sem saída é mesmo "desconhecido" no summarizeOps', () => {
+    const s = summarizeOps([unknownOp('u1')]);
+    expect(s.total).toBe(1);
+    expect(s.counted).toBe(0);
+    expect(s.unknown).toBe(1);
+  });
+  it('explainMonth não afirma "+0.00%": diz que nenhuma dá para medir', () => {
+    const a = analyzeMonth([unknownOp('u1'), unknownOp('u2')]);
+    const e = explainMonth(a, { openCount: 1 });
+    expect(e.tone).toBe('neutral');
+    expect(e.headline).toBe('2 operações fechadas, mas nenhuma com resultado que dê para medir');
+    expect(e.headline).not.toMatch(/\+0\.00|zerado|positivo|negativo/);
+    expect(e.lines[0]).toMatch(/Falta o preço de saída/);
+    expect(e.note).toMatch(/1 operação aberta/);
+  });
+  it('compareMonths não compara com mês sem resultado medível (nem marca "melhorou")', () => {
+    const real = analyzeMonth([win('1'), loss('2')]);
+    const vazio = analyzeMonth([unknownOp('u1')]);
+    expect(compareMonths(real, vazio)).toBeNull();
+    expect(compareMonths(vazio, real)).toBeNull();
+  });
+});
+
 describe('costModelText', () => {
   it('lê o modelo padrão (não números soltos)', () => {
     expect(costModelText()).toMatch(/taxa de 0,05% na entrada e 0,05% na saída/);

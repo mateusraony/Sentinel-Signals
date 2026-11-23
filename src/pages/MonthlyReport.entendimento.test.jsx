@@ -107,6 +107,32 @@ describe('Relatório mensal — leitura do mês', () => {
   });
 });
 
+describe('Relatório mensal — operações fechadas sem resultado medível (achado do Codex, PR #619)', () => {
+  const legado = (id) => ({ id, asset_id: id, symbol: 'BTCUSDT', side: 'BUY', status: 'CLOSED', entry_price: 100, created_date: day(0), closed_at: day(2) });
+
+  it('não mostra +0.00% / 0% de acerto: leitura diz que não dá para medir e os cartões ficam em "—"', async () => {
+    filterMock.mockImplementation(async () => [legado('a'), legado('b')]);
+    const { container } = renderPage(<MonthlyReport />);
+    const status = await screen.findByRole('status', { name: 'Leitura do mês' });
+    await within(status).findByText('2 operações fechadas, mas nenhuma com resultado que dê para medir');
+    const card = screen.getByText('P&L acumulado').closest('.glass-card');
+    expect(within(card).getByText('—')).toBeTruthy();
+    expect(container.textContent).not.toMatch(/\+0\.00%/);
+    // a tabela das operações continua visível (o usuário vê o que existe)
+    expect(screen.getByRole('region', { name: 'Operações do mês' })).toBeTruthy();
+    // e nenhum bloco de agregados
+    expect(screen.queryByRole('region', { name: 'De onde veio o resultado' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Como terminaram' })).toBeNull();
+  });
+
+  it('mês anterior sem resultado medível: sem comparação (não marca "melhorou")', async () => {
+    filterMock.mockImplementation(byMonth({ [CUR]: [mk('1', 'BTCUSDT', 112)], [prevKey]: [legado('p')] }));
+    renderPage(<MonthlyReport />);
+    await screen.findByText(/não teve operação fechada com resultado medível, então não há com o que comparar/);
+    expect(screen.queryAllByLabelText('melhorou')).toHaveLength(0);
+  });
+});
+
 describe('Relatório mensal — mês × mês anterior', () => {
   it('mostra a comparação quando os dois meses têm operação fechada', async () => {
     filterMock.mockImplementation(byMonth({ [CUR]: [mk('1', 'BTCUSDT', 112)], [prevKey]: [mk('2', 'ETHUSDT', 90, 'STOP_HIT')] }));
@@ -120,7 +146,7 @@ describe('Relatório mensal — mês × mês anterior', () => {
   it('mês anterior vazio: diz que não há com o que comparar', async () => {
     filterMock.mockImplementation(byMonth({ [CUR]: [mk('1', 'BTCUSDT', 112)] }));
     renderPage(<MonthlyReport />);
-    await screen.findByText(/não teve operação fechada, então não há com o que comparar/);
+    await screen.findByText(/não teve operação fechada com resultado medível, então não há com o que comparar/);
   });
 
   it('falha SÓ no mês anterior: o resto da tela segue e a comparação some com aviso', async () => {
