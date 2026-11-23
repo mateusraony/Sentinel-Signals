@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   PARAM_KEYS, datasetKey, requestKey, sweepValues, runKey, sameParams, changedKeys, summarizeRun, loadHistory, saveHistory, addRun, toggleStar, removeRun, rankRuns, bestRun, overfitNote,
-  compareSummaries, assessCandles, timeframeMs, detectTier, buildDefaults, fidelityRows, reevaluationTargets, sensitivityValues, sweepParam, judgeSensitivity,
+  compareSummaries, assessCandles, timeframeMs, detectTier, buildDefaults, fidelityRows, entryTimingRows, reevaluationTargets, sensitivityValues, sweepParam, judgeSensitivity,
   buildTradeChart, rHistogram, exitBreakdown, sideBreakdown, HISTORY_CAP,
 } from './whatIf';
 
@@ -199,6 +199,22 @@ describe('tier e padrões', () => {
     // os interruptores seguem a PRODUÇÃO: tudo desligado no Pine salvo => desligado aqui
     expect(buildDefaults({ pineConfig: { useADX: false, useChop: false, useTimeStop: false } })).toMatchObject({ regime: 0, timeStop: 0 });
     expect(buildDefaults({ pineConfig: { useADX: false, useChop: true } }).regime).toBe(1);
+  });
+  it('entrada: o texto lê a configuração REAL do scanner — com a confirmação de 15 min desligada (bypass), o simulador entra igual; ligada, ela vira "não feito"', () => {
+    const on = fidelityRows({ skip15mConfirmationEnabled: true });
+    expect(on.included.some((t) => /Entrada no fechamento da vela do sinal.*DESLIGADA/.test(t))).toBe(true);
+    expect(on.notIncluded.some((n) => /Confirmação de 15 min/.test(n.label))).toBe(false);
+    const off = fidelityRows({ skip15mConfirmationEnabled: false });
+    expect(off.notIncluded.find((n) => /Confirmação de 15 min/.test(n.label)).production).toMatch(/ligada na configuração atual/);
+    expect(off.included.some((t) => /Entrada no fechamento da vela do sinal/.test(t))).toBe(false);
+    expect(fidelityRows({}).notIncluded.some((n) => /Confirmação de 15 min/.test(n.label))).toBe(true); // chave ausente = a confirmação roda
+    // o filtro 4h para sinais de 1h NÃO existe na produção (só no backtest): nunca é descrito como "ligado na produção"
+    for (const pc of [{}, { skip15mConfirmationEnabled: true }]) {
+      const row = fidelityRows(pc).notIncluded.find((n) => /Filtro de tendência do 4h/.test(n.label));
+      expect(row.production).toMatch(/só existe no backtest/);
+      expect(row.production).not.toMatch(/^ligado na produção/);
+    }
+    expect(entryTimingRows({ skip15mConfirmationEnabled: true })).toHaveLength(1);
   });
   it('buildDefaults: runner e piso R:R seguem a PRODUÇÃO (exit_mode HYBRID_RF_ATR: trailing por ATR + saída pelo RF; minRR do Pine salvo)', () => {
     expect(buildDefaults({ pineConfig: { trailAtrMult: 2.5, minRR: 1.4 } })).toMatchObject({ runnerTrail: 1, runnerTrailDist: 2.5, runnerRf: 1, minRR: 1.4 });
