@@ -8,17 +8,18 @@ import { screen, cleanup, fireEvent, waitFor, within, act } from '@testing-libra
 import { renderPage, makeFakeBackendModule } from './__fixtures__/renderPage.jsx';
 
 const fetchCandlesMock = vi.fn();
+const { setConfigMock, updateAssetMock, statusMock } = vi.hoisted(() => ({ setConfigMock: vi.fn(async () => ({})), updateAssetMock: vi.fn(async () => ({})), statusMock: vi.fn(() => ({ source: 'postgres', degraded: false })) }));
 const ASSETS = [{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, rf_period: 20, rf_multiplier: 3.5 }];
 
 vi.mock('@/api/entities', async () => {
   const mod = makeFakeBackendModule({ populated: false });
   const base = mod.backend;
-  return { backend: { ...base, entities: { ...base.entities, MonitoredAsset: { ...base.entities.MonitoredAsset, list: async () => ASSETS } } } };
+  return { backend: { ...base, entities: { ...base.entities, MonitoredAsset: { ...base.entities.MonitoredAsset, list: async () => ASSETS, update: updateAssetMock }, StrategyConfig: { ...base.entities.StrategyConfig, set: setConfigMock } } } };
 });
 vi.mock('@/lib/pineParser', async (importOriginal) => ({
   ...(await importOriginal()),
   getPineConfig: async () => ({ ...(await importOriginal()).DEFAULTS }),
-  getPineConfigStatus: () => ({ source: 'postgres', degraded: false }),
+  getPineConfigStatus: () => statusMock(),
 }));
 vi.mock('@/lib/firebaseClient', () => ({ db: {}, auth: {}, rtdb: null, app: {} }));
 vi.mock('@/lib/AuthContext', () => ({ AuthProvider: ({ children }) => children, useAuth: () => ({ user: { uid: 't' }, role: 'admin', loading: false }) }));
@@ -42,6 +43,7 @@ function synth(n, seed = 3, vol = 0.012) {
 }
 
 beforeEach(() => {
+  setConfigMock.mockClear(); updateAssetMock.mockClear(); statusMock.mockReturnValue({ source: 'postgres', degraded: false });
   localStorage.clear();
   fetchCandlesMock.mockReset();
   fetchCandlesMock.mockResolvedValue(synth(600));
@@ -464,6 +466,116 @@ describe('What-If — runner depois do TP1 e piso R:R (padrão = produção)', (
     expect(d.getByText(/Piso de risco\/retorno do TP1/)).toBeTruthy();
     expect(d.getByText(/Chop Exit e invalidação do Range Filter ANTES do TP1/)).toBeTruthy();
   });
+});
+
+describe('What-If — aplicar ao scanner AO VIVO: o USUÁRIO escolhe, parâmetro por parâmetro', () => {
+  const openBtn = () => screen.getByRole('button', { name: /Aplicar ao scanner…/ });
+  const nudgeThumb = async (idx, key = 'ArrowRight', times = 2) => { const sl = screen.getAllByRole('slider')[idx]; sl.focus(); for (let i = 0; i < times; i++) fireEvent.keyDown(sl, { key }); };
+  const ready = async () => { await openWhatIf(); await pickAsset(); await screen.findByRole('status', { name: 'O que este resultado diz' }); await waitFor(() => expect(openBtn().disabled).toBe(false), { timeout: 4000 }); };
+  const openDialog = async () => { await waitFor(() => expect(openBtn().disabled).toBe(false), { timeout: 4000 }); fireEvent.click(openBtn()); const dlg = await screen.findByRole('alertdialog'); await within(dlg).findByText(/Lendo a configuração atual do scanner/).catch(() => null); await waitFor(() => expect(within(dlg).queryByText(/Lendo a configuração atual do scanner/)).toBeNull()); return dlg; };
+  const confirmBtn = (dlg) => within(dlg).getByRole('button', { name: /^Aplicar/ });
+
+  it('o botão fica disponível a qualquer hora (mesmo sem ter mexido em nada); sem diferença, o diálogo diz que não há o que aplicar e nada pode ser aplicado', async () => {
+    await ready();
+    const dlg = await openDialog();
+    await within(dlg).findByText(/Nenhum parâmetro desta tela difere do scanner agora/);
+    expect(confirmBtn(dlg).disabled).toBe(true);
+    // os iguais ficam recolhidos num bloco à parte, com o valor atual e a caixinha desligada
+    expect(within(dlg).getByText(/Já iguais ao scanner \(\d+\) — nada a aplicar/)).toBeTruthy();
+    expect(within(dlg).getAllByText(/igual ao scanner/).length).toBeGreaterThan(5);
+    expect(within(dlg).getByRole('checkbox', { name: 'TP1 (R)' }).disabled).toBe(true);
+    expect(setConfigMock).not.toHaveBeenCalled();
+  });
+
+  it('lista TODOS os parâmetros com o valor atual do scanner → o da tela; só os que diferem têm caixinha; grava SÓ o que ficou marcado', async () => {
+    await ready();
+    await nudgeThumb(1); // TP1: 1,5 → 1,7
+    await nudgeThumb(0, 'ArrowLeft', 0); // (sem efeito; mantém o stop no padrão)
+    await nudgeThumb(5); // Piso R:R: 1,2 → 1,4
+    await screen.findByText('2 diferentes do padrão');
+    const dlg = await openDialog();
+    expect(within(dlg).getByText(/2 parâmetros diferem do scanner/)).toBeTruthy();
+    const tp1 = within(dlg).getByRole('checkbox', { name: 'TP1 (R)' });
+    const rr = within(dlg).getByRole('checkbox', { name: 'Piso R:R do TP1' });
+    expect(tp1.checked).toBe(true); expect(rr.checked).toBe(true); // os que diferem vêm marcados; o usuário desmarca o que não quer
+    expect(within(dlg).getByRole('checkbox', { name: 'Score mínimo' }).disabled).toBe(true); // igual ao scanner: sem caixinha
+    expect(within(dlg).getByText(/TP1 \(R\):/).textContent).toMatch(/1\.5.*→.*1\.7/);
+    expect(within(dlg).getByText(/Nenhuma ordem é enviada/)).toBeTruthy();
+    expect(within(dlg).getByText(/ainda não faz a confirmação de 15 min/)).toBeTruthy();
+    expect(setConfigMock).not.toHaveBeenCalled(); // abrir o diálogo não grava nada
+    fireEvent.click(rr); // o usuário DESMARCA o piso: ele escolhe só o TP1
+    expect(confirmBtn(dlg).textContent).toMatch(/Aplicar 1 escolhido/);
+    fireEvent.click(confirmBtn(dlg));
+    await waitFor(() => expect(setConfigMock).toHaveBeenCalledTimes(1));
+    const [id, payload] = setConfigMock.mock.calls[0];
+    expect(id).toBe('current');
+    expect(Object.keys(payload).sort()).toEqual(['tp1R', 'updated_at']); // o piso desmarcado NÃO foi
+    expect(payload.tp1R).toBeCloseTo(1.7, 5);
+    expect(await screen.findByText(/Aplicado ao scanner: 1 parâmetro global/)).toBeTruthy();
+    expect(updateAssetMock).not.toHaveBeenCalled();
+  }, 20000);
+
+  it('"desmarcar todos" deixa o botão desligado; "marcar todos" liga de novo', async () => {
+    await ready();
+    await nudgeThumb(1);
+    await screen.findByText('1 diferente do padrão');
+    const dlg = await openDialog();
+    fireEvent.click(within(dlg).getByRole('button', { name: 'desmarcar todos' }));
+    expect(confirmBtn(dlg).disabled).toBe(true);
+    fireEvent.click(within(dlg).getByRole('button', { name: 'marcar todos' }));
+    expect(confirmBtn(dlg).disabled).toBe(false);
+  }, 20000);
+
+  it('stop (× ATR) não é configuração do scanner: aparece como "não dá para aplicar" e nunca é gravado', async () => {
+    await ready();
+    await nudgeThumb(0); // Stop (× ATR)
+    await screen.findByText('1 diferente do padrão');
+    const dlg = await openDialog();
+    await within(dlg).findByText(/Não dá para aplicar ao scanner:/);
+    expect(within(dlg).getByText(/tier de volatilidade/)).toBeTruthy();
+    expect(confirmBtn(dlg).disabled).toBe(true);
+    expect(setConfigMock).not.toHaveBeenCalled();
+  }, 20000);
+
+  it('configuração do scanner não lida do banco (cópia/padrões): não afirma nada e NÃO deixa aplicar', async () => {
+    await ready();
+    await nudgeThumb(1);
+    await screen.findByText('1 diferente do padrão');
+    await waitFor(() => expect(openBtn().disabled).toBe(false), { timeout: 4000 });
+    statusMock.mockReturnValue({ source: 'cache', degraded: false });
+    fireEvent.click(openBtn());
+    const dlg = await screen.findByRole('alertdialog');
+    await within(dlg).findByText(/Não foi possível ler a configuração atual do scanner/);
+    expect(confirmBtn(dlg).disabled).toBe(true);
+  }, 20000);
+
+  it('Range Filter é POR ATIVO: vem desmarcado; só grava no ativo se você marcar (MonitoredAsset.update, não a configuração global)', async () => {
+    await ready();
+    await nudgeThumb(2); // RF Period: 20 → 22
+    await screen.findByText('1 diferente do padrão');
+    const dlg = await openDialog();
+    const rf = within(dlg).getByRole('checkbox', { name: 'Range Filter deste ativo: período' });
+    expect(rf.checked).toBe(false);
+    expect(confirmBtn(dlg).disabled).toBe(true); // nada marcado
+    fireEvent.click(rf);
+    await waitFor(() => expect(confirmBtn(dlg).disabled).toBe(false));
+    fireEvent.click(confirmBtn(dlg));
+    await waitFor(() => expect(updateAssetMock).toHaveBeenCalledTimes(1));
+    expect(updateAssetMock).toHaveBeenCalledWith('a1', { rf_period: 22 });
+    expect(setConfigMock).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Aplicado ao scanner: Range Filter de BTCUSDT/)).toBeTruthy();
+  }, 20000);
+
+  it('falha ao gravar: diz que NÃO aplicou (nunca afirma "aplicado")', async () => {
+    setConfigMock.mockRejectedValueOnce(new Error('banco fora'));
+    await ready();
+    await nudgeThumb(1);
+    await screen.findByText('1 diferente do padrão');
+    const dlg = await openDialog();
+    fireEvent.click(confirmBtn(dlg));
+    expect(await screen.findByText(/Não foi possível aplicar ao scanner agora \(banco fora\)/)).toBeTruthy();
+    expect(screen.queryByText(/Aplicado ao scanner/)).toBeNull();
+  }, 20000);
 });
 
 describe('What-If — reavaliar o histórico nos dados atuais', () => {
