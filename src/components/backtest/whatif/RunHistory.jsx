@@ -41,7 +41,7 @@ function Row({ run, rank, best, current, onUse, onStar, onRemove, showDataset = 
   );
 }
 
-export default function RunHistory({ ranked, best, currentKey, sortBy, onSort, overfit, saveFailed, onUse, onStar, onRemove, onClear }) {
+export default function RunHistory({ ranked, best, currentKey, sortBy, onSort, overfit, saveFailed, reevalCount = 0, onReeval = () => {}, reevalMsg = null, onUse, onStar, onRemove, onClear }) {
   const [confirmClear, setConfirmClear] = useState(false);
   const total = ranked.same.length + ranked.others.length;
   return (
@@ -61,6 +61,15 @@ export default function RunHistory({ ranked, best, currentKey, sortBy, onSort, o
         )}
       </div>
       <p className="text-11px text-muted-foreground">Cada combinação que você deixa na tela por um instante é registrada sozinha, com o resultado. Fica salva neste navegador.</p>
+      {reevalCount > 0 && (
+        <div className="rounded-md px-3 py-2 space-y-1.5" style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.2)' }}>
+          <p className="text-11px text-foreground/80">Há {reevalCount} {reevalCount === 1 ? 'teste feito' : 'testes feitos'} em dados mais antigos deste mesmo ativo e período. Dá para rodar os mesmos parâmetros nos dados de agora e comparar de forma justa.</p>
+          <button onClick={onReeval} className="text-xs px-3 py-1.5 rounded-md" style={{ background: 'rgba(141,180,226,0.12)', border: '1px solid rgba(141,180,226,0.3)', color: BLUE }}>
+            Reavaliar nos dados atuais ({reevalCount})
+          </button>
+        </div>
+      )}
+      {reevalMsg && <p className="text-xs" style={{ color: GREEN }} role="status">{reevalMsg}</p>}
       {saveFailed && <p className="text-xs" style={{ color: AMBER }}>Não foi possível gravar neste navegador (armazenamento bloqueado ou cheio): o histórico some ao fechar a aba.</p>}
       {overfit && <p className="text-xs" style={{ color: AMBER }}>{overfit}</p>}
 

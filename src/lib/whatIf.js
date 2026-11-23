@@ -4,7 +4,8 @@
 import { calcRealizedR, classifyOutcome } from './tradeMetrics';
 import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 
-export const PARAM_KEYS = ['atrMult', 'tp1R', 'rfPeriod', 'rfMult', 'minScore'];
+// regime e timeStop são interruptores (0/1) guardados junto dos números: entram na identidade, no histórico e na comparação como qualquer parâmetro.
+export const PARAM_KEYS = ['atrMult', 'tp1R', 'rfPeriod', 'rfMult', 'minScore', 'regime', 'timeStop'];
 const r2 = (n) => Math.round(Number(n) * 100) / 100;
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -37,9 +38,17 @@ export function summarizeRun(overall) {
 export const HISTORY_KEY = 'sentinel_whatif_history_v1';
 export const HISTORY_CAP = 60;
 
-function validRun(r) {
-  return r && typeof r.key === 'string' && typeof r.at === 'string' && r.dataset && typeof r.dataset.assetId === 'string'
-    && typeof r.dataset.timeframe === 'string' && finite(r.dataset.candleCount) && r.params && PARAM_KEYS.every((k) => finite(r.params[k]))
+// Testes gravados ANTES dos interruptores de regime/time stop não tinham esses filtros: valem como regime=0, timeStop=0 (e a chave é recalculada).
+const LEGACY_FLAGS = { regime: 0, timeStop: 0 };
+function normalizeRun(r) {
+  const params = { ...LEGACY_FLAGS, ...r.params };
+  return { ...r, params, key: runKey(r.dataset, params), starred: Boolean(r.starred) };
+}
+
+function validLegacyOrNew(r) {
+  const keys = PARAM_KEYS.filter((k) => !(k in LEGACY_FLAGS));
+  return r && typeof r.at === 'string' && r.dataset && typeof r.dataset.assetId === 'string' && typeof r.dataset.timeframe === 'string' && finite(r.dataset.candleCount)
+    && r.params && keys.every((k) => finite(r.params[k])) && Object.keys(LEGACY_FLAGS).every((k) => r.params[k] === undefined || finite(r.params[k]))
     && r.summary && typeof r.summary === 'object';
 }
 
@@ -48,7 +57,14 @@ export function loadHistory(storage) {
     const raw = storage?.getItem(HISTORY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed?.runs) ? parsed.runs.filter(validRun).map((r) => ({ ...r, starred: Boolean(r.starred) })) : [];
+    if (!Array.isArray(parsed?.runs)) return [];
+    // chaves repetidas (duas versões do mesmo teste depois da normalização) ficam com a mais recente
+    const byKey = new Map();
+    for (const r of parsed.runs.filter(validLegacyOrNew).map(normalizeRun)) {
+      const prev = byKey.get(r.key);
+      if (!prev || r.at > prev.at) byKey.set(r.key, { ...r, starred: r.starred || Boolean(prev?.starred) });
+    }
+    return [...byKey.values()];
   } catch {
     return [];
   }
@@ -182,6 +198,9 @@ export function detectTier(closed, pineConfig = {}) {
 /** @param {{ pineConfig?: any, asset?: any, tier?: any }} args */
 export function buildDefaults({ pineConfig = {}, asset = null, tier = null }) {
   return {
+    // Interruptores: o padrão é o que a PRODUÇÃO tem ligado (useADX/useChop/useTimeStop do Pine salvo; ligados quando ausentes).
+    regime: pineConfig.useADX !== false || pineConfig.useChop !== false ? 1 : 0,
+    timeStop: pineConfig.useTimeStop !== false ? 1 : 0,
     atrMult: tier?.atrStopMult ?? 2,
     tp1R: pineConfig.tp1R ?? 1.5,
     rfPeriod: asset?.rf_period ?? pineConfig.rng_per ?? 20,
@@ -191,12 +210,15 @@ export function buildDefaults({ pineConfig = {}, asset = null, tier = null }) {
 }
 
 // ---------- fidelidade: o que o simulador faz e não faz ----------
-export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }) {
+export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags = { regime: 0, timeStop: 0 }) {
+  const state = (on) => (on ? 'ligado neste teste' : 'desligado neste teste');
   const prod = (on) => (on ? 'ligado na produção' : 'desligado na produção');
   const included = [
     'Sinal do Range Filter (período e multiplicador que você escolher)',
     'Score de 0 a 100 (Range Filter + MACD + EMA + RSI + volume), com o mínimo escolhido',
     `Médias EMA ${ema.emaFast}/${ema.emaSlow} no score (as mesmas do scanner)`,
+    `Filtro de regime ADX/Choppiness por tier — ${state(flags.regime)} (produção: ${pc.useADX !== false || pc.useChop !== false ? 'ligado' : 'desligado'}); só barra entradas, como o scanner`,
+    `Time stop por tier (48 / 64 / 96 candles) — ${state(flags.timeStop)} (produção: ${pc.useTimeStop !== false ? 'ligado' : 'desligado'}); só antes do TP1, no fechamento da vela`,
     'Stop a N× ATR e alvos TP1/TP2 em múltiplos de R (TP2 = 2× o TP1)',
     'Stop sobe para a entrada (breakeven) depois do TP1',
     'Se a mesma vela toca o stop e um alvo, o stop vence (regra do motor real)',
@@ -204,14 +226,33 @@ export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }) {
     'Uma operação por vez',
   ];
   const notIncluded = [
-    { label: 'Filtro de regime ADX/Choppiness', production: prod(pc.useADX !== false || pc.useChop !== false), why: 'Barra entradas em mercado lateral/fraco — na produção é o que mais barra sinais.' },
     { label: 'Filtro de tendência do 4h e confirmação de 15 min', production: 'ligado na produção', why: 'O simulador olha um timeframe só.' },
-    { label: 'Time stop', production: prod(pc.useTimeStop !== false), why: 'Fecha a operação parada por muitos candles.' },
-    { label: 'Trailing do stop antes do TP1', production: prod(pc.preTp1TrailEnabled !== false), why: 'O stop acompanha o preço antes do primeiro alvo.' },
+    { label: 'Trailing do stop antes do TP1', production: prod(pc.preTp1TrailEnabled !== false), why: 'O stop acompanha o preço antes do primeiro alvo; sem ele, o drawdown aqui tende a ficar maior que o da produção.' },
     { label: 'Saída do runner por Range Filter/ATR depois do TP1', production: 'ligado na produção', why: 'Aqui o runner só sai no TP2 ou no breakeven.' },
     { label: 'Piso de risco/retorno (minRR)', production: `piso de ${pc.minRR ?? 1.2}R na produção`, why: 'Rejeita entradas com alvo curto demais para o stop.' },
   ];
   return { included, notIncluded };
+}
+
+// ---------- reavaliar o histórico na janela atual ----------
+/**
+ * Testes de OUTRAS janelas do mesmo pedido (ativo + timeframe + candles) cujos parâmetros ainda não têm resultado na janela atual. Devolve os parâmetros
+ * únicos a rodar de novo nos dados de agora (cada execução leva ~2 ms). Não mexe nos registros antigos: o resultado novo vira um registro novo na janela atual.
+ */
+export function reevaluationTargets(history, dataset) {
+  if (!dataset || dataset.windowEnd == null) return [];
+  const req = requestKey(dataset);
+  const have = new Set(history.filter((r) => datasetKey(r.dataset) === datasetKey(dataset)).map((r) => runKey(dataset, r.params)));
+  const seen = new Set();
+  const out = [];
+  for (const r of history) {
+    if (requestKey(r.dataset) !== req || datasetKey(r.dataset) === datasetKey(dataset)) continue;
+    const k = runKey(dataset, r.params);
+    if (have.has(k) || seen.has(k)) continue;
+    seen.add(k);
+    out.push({ params: r.params, starred: r.starred });
+  }
+  return out;
 }
 
 // ---------- sensibilidade ----------
@@ -288,9 +329,11 @@ export function exitBreakdown(ops) {
     tp2: { key: 'tp2', label: 'Alvo final (TP2)', ops: [] },
     tp1_be: { key: 'tp1_be', label: 'TP1 e depois saída no breakeven', ops: [] },
     stop: { key: 'stop', label: 'Stop cheio (perda)', ops: [] },
+    time_stop: { key: 'time_stop', label: 'Time stop (fechada por tempo)', ops: [] },
   };
   for (const op of ops) {
-    if (op.status === 'TP2_HIT') groups.tp2.ops.push(op);
+    if (op.closed_reason === 'TIME_STOP') groups.time_stop.ops.push(op);
+    else if (op.status === 'TP2_HIT') groups.tp2.ops.push(op);
     else if (op.status === 'STOP_HIT' && op.tp1_hit) groups.tp1_be.ops.push(op);
     else if (op.status === 'STOP_HIT') groups.stop.ops.push(op);
   }

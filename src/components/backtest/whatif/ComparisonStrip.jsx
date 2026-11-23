@@ -26,6 +26,8 @@ function Delta({ cell, m }) {
 export default function ComparisonStrip({ cmp, isDefault, stale }) {
   if (!cmp) return null;
   const exp = cmp.expectancyR;
+  // Todas as métricas iguais (e medidas): o que mudou nos controles não alterou operação nenhuma — melhor dizer isso do que falar de "margem de erro".
+  const identical = exp.delta !== null && CELLS.every(c => cmp[c.key].delta === null || Math.abs(cmp[c.key].delta) < 1e-9);
   return (
     <section aria-label="Atual comparado com o padrão" className="rounded-md px-4 py-3 space-y-2" style={{ background: 'rgba(24,23,21,0.8)', border: '1px solid rgba(255,255,255,0.06)', opacity: stale ? 0.6 : 1 }}>
       <div className="flex items-center gap-2 flex-wrap">
@@ -47,7 +49,10 @@ export default function ComparisonStrip({ cmp, isDefault, stale }) {
           );
         })}
       </div>
-      {!isDefault && exp.delta !== null && (
+      {!isDefault && identical && (
+        <p className="text-xs text-muted-foreground">Mexer nisso não mudou nenhuma operação nesta janela: o resultado é idêntico ao do padrão.</p>
+      )}
+      {!isDefault && !identical && exp.delta !== null && (
         <p className="text-xs" style={{ color: exp.withinNoise ? 'rgba(255,255,255,0.62)' : AMBER }}>
           {cmp.noiseR === null
             ? 'Poucas operações para medir a margem de erro: não dá para dizer se a diferença é real.'

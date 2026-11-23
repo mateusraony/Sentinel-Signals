@@ -139,7 +139,8 @@ describe('Backtest — Ajuste Fino (What-If): "padrão X" em cada controle', () 
     renderPage(<Backtest />);
     fireEvent.click(await screen.findByRole('tab', { name: /Ajuste Fino \(What-If\)/ }));
     expect(await screen.findByText('tudo no padrão')).toBeTruthy();
-    expect(screen.getAllByText(/^padrão /)).toHaveLength(5);
+    expect(screen.getAllByText(/^padrão /)).toHaveLength(7); // 5 controles + os 2 interruptores (regime e time stop)
+    expect(screen.getAllByText('padrão ligado (como na produção)')).toHaveLength(2);
     expect(screen.getByText('Escolha um ativo para executar.')).toBeTruthy();
     expect(screen.getByText(/aparece aqui assim que você escolher um ativo/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /Executar Backtest/ }).disabled).toBe(true);

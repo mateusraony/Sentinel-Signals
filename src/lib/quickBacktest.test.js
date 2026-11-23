@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { runQuickBacktest } from './quickBacktest';
+import { runQuickBacktest, chopSeries, atrPctSmoothSeries } from './quickBacktest';
+import { calculateChoppiness } from './indicators/choppiness';
+import { calculateADX } from './indicators/adx';
+import { calculateATRSeries } from './indicators/atr';
+import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 import { goldenCandles } from './indicators/__fixtures__/candles.js';
 import { isClosedOp } from './tradeMetrics';
 
@@ -114,7 +118,7 @@ describe('runQuickBacktest — invariantes (auditoria)', () => {
   it('stats: todo sinal do Range Filter tem destino (aberto, barrado pelo score ou ignorado com posição aberta)', () => {
     for (const seed of seeds.slice(0, 15)) {
       const { ops, stillOpen, stats } = runQuickBacktest(synth(800, seed), CFG, META);
-      expect(stats.signals).toBe(stats.taken + stats.rejectedByScore + stats.skippedWhileOpen);
+      expect(stats.signals).toBe(stats.taken + stats.rejectedByScore + stats.rejectedByRegime + stats.skippedWhileOpen);
       expect(stats.taken).toBe(ops.length + (stillOpen ? 1 : 0));
       expect(stats.startIndex).toBeGreaterThan(0);
       expect(stats.candlesTotal).toBe(800);
@@ -139,5 +143,112 @@ describe('runQuickBacktest — invariantes (auditoria)', () => {
     const b = runQuickBacktest(c, { ...CFG, tp1R: 2.5 }, META).ops[0];
     expect(a.created_date).toBe(b.created_date);
     expect(a.initial_stop).toBe(b.initial_stop);
+  });
+});
+
+// ---- Filtro de regime e time stop (22/11/2026): as MESMAS regras do scanner, provadas contra as funções de produção. ----
+const REGIME = { useADX: true, useChop: true, adxLen: 14, adxSmooth: 14, chopLen: 14 };
+const THRESH = { tier2: 0.8, tier3: 1.5 };
+
+describe('séries por barra == função de produção no prefixo (paridade, sem olhar o futuro)', () => {
+  it('chopSeries[i] == calculateChoppiness(candles.slice(0, i + 1)) em todas as barras', () => {
+    const c = synth(300, 5);
+    const s = chopSeries(c, 14);
+    for (let i = 0; i < c.length; i++) expect(s[i]).toBeCloseTo(calculateChoppiness(c.slice(0, i + 1), 14), 9);
+  });
+  it('atrPctSmoothSeries[i] == calculateAtrPctSmooth(prefixo) a partir da barra em que o ATR existe', () => {
+    const c = synth(300, 6);
+    const s = atrPctSmoothSeries(c, calculateATRSeries(c, 14), 14, 20);
+    for (let i = 60; i < c.length; i += 7) expect(s[i]).toBeCloseTo(calculateAtrPctSmooth(c.slice(0, i + 1), 14, 20), 9);
+  });
+});
+
+describe('runQuickBacktest — filtro de regime ADX/Choppiness', () => {
+  const seeds = Array.from({ length: 40 }, (_, i) => i + 1);
+
+  it('toda entrada aberta COM o filtro passou no gate (conferido com ADX/Chop/tier calculados no prefixo, de forma independente)', () => {
+    let checked = 0;
+    for (const seed of seeds) {
+      const candles = synth(800, seed);
+      const idxByClose = new Map(candles.map((c, i) => [c.closeTime, i]));
+      const { ops } = runQuickBacktest(candles, { ...CFG, regimeFilter: REGIME, tierThresholds: THRESH }, META);
+      for (const op of ops) {
+        const i = idxByClose.get(op.created_date);
+        const prefix = candles.slice(0, i + 1);
+        const tier = classifyTier(calculateAtrPctSmooth(prefix, 14, 20), THRESH);
+        expect(calculateADX(prefix, 14, 14).adx).toBeGreaterThanOrEqual(tier.adxMinVal);
+        expect(calculateChoppiness(prefix, 14)).toBeLessThanOrEqual(tier.chopMaxVal);
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+  });
+
+  it('o filtro barra sinais de verdade (rejectedByRegime > 0), não muda quantos sinais o Range Filter emite e sem ele fica em 0', () => {
+    let barrados = 0;
+    for (const seed of seeds) {
+      const c = synth(800, seed);
+      const on = runQuickBacktest(c, { ...CFG, regimeFilter: REGIME }, META).stats;
+      const off = runQuickBacktest(c, CFG, META).stats;
+      expect(on.signals).toBe(off.signals); // o gate não mexe na geração de sinais
+      expect(off.rejectedByRegime).toBe(0);
+      expect(on.signals).toBe(on.taken + on.rejectedByScore + on.rejectedByRegime + on.skippedWhileOpen);
+      barrados += on.rejectedByRegime;
+    }
+    expect(barrados).toBeGreaterThan(0);
+  });
+
+  it('useADX/useChop desligados: o gate correspondente deixa de barrar (tudo desligado == sem filtro)', () => {
+    for (const seed of seeds.slice(0, 12)) {
+      const c = synth(800, seed);
+      const sig = (cfg) => JSON.stringify(runQuickBacktest(c, { ...CFG, ...cfg }, META).ops.map((o) => [o.created_date, o.closed_at]));
+      expect(sig({ regimeFilter: { ...REGIME, useADX: false, useChop: false } })).toBe(sig({}));
+    }
+  });
+});
+
+describe('runQuickBacktest — time stop (só antes do TP1, no fechamento da vela)', () => {
+  const seeds = Array.from({ length: 40 }, (_, i) => i + 1);
+  const TS = { T1: 5, T2: 5, T3: 5 }; // curto de propósito, para disparar com frequência
+
+  it('fecha EXATAMENTE após N candles, no preço de fechamento, sem TP1; nada sem TP1 passa de N candles', () => {
+    let timeStops = 0;
+    for (const seed of seeds) {
+      const candles = synth(800, seed);
+      const idxByClose = new Map(candles.map((c, i) => [c.closeTime, i]));
+      const { ops } = runQuickBacktest(candles, { ...CFG, timeStop: TS }, META);
+      for (const op of ops) {
+        const held = idxByClose.get(op.closed_at) - idxByClose.get(op.created_date);
+        if (op.closed_reason === 'TIME_STOP') {
+          expect(op.status).toBe('CLOSED');
+          expect(held).toBe(5);
+          expect(op.exit_price).toBe(candles[idxByClose.get(op.closed_at)].close);
+          expect(op.tp1_hit).toBe(false);
+          timeStops += 1;
+        } else if (!op.tp1_hit) {
+          expect(held).toBeLessThanOrEqual(5); // se não é time stop e não bateu TP1, foi stop dentro do prazo
+        }
+      }
+    }
+    expect(timeStops).toBeGreaterThan(5);
+  });
+
+  it('sem timeStop nunca aparece operação fechada por tempo; as demais regras (stop vence) seguem valendo', () => {
+    for (const seed of seeds.slice(0, 15)) {
+      const { ops } = runQuickBacktest(synth(800, seed), CFG, META);
+      expect(ops.some((o) => o.closed_reason === 'TIME_STOP')).toBe(false);
+    }
+  });
+
+  it('o prazo vem do TIER na entrada (ATR% alto = T3 = prazo maior)', () => {
+    const calm = synth(800, 3, 0.004); const wild = synth(800, 3, 0.03);
+    const run = (c) => runQuickBacktest(c, { ...CFG, minScore: 50, timeStop: { T1: 4, T2: 9, T3: 14 } }, META).ops.filter((o) => o.closed_reason === 'TIME_STOP');
+    const idx = (c) => new Map(c.map((x, i) => [x.closeTime, i]));
+    const held = (c, o) => idx(c).get(o.closed_at) - idx(c).get(o.created_date);
+    const calmHeld = new Set(run(calm).map((o) => held(calm, o)));
+    const wildHeld = new Set(run(wild).map((o) => held(wild, o)));
+    expect([...calmHeld].every((h) => [4, 9, 14].includes(h))).toBe(true);
+    expect([...wildHeld].every((h) => [4, 9, 14].includes(h))).toBe(true);
+    expect(Math.max(...wildHeld, 0)).toBeGreaterThan(Math.max(...calmHeld, 0)); // mais volátil -> tier maior -> prazo maior
   });
 });
