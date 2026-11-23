@@ -1511,7 +1511,7 @@ export default function PineScript() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={doReset}>Restaurar</AlertDialogAction>
+            <AlertDialogAction destructive onClick={doReset}>Restaurar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
