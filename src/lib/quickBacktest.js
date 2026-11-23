@@ -16,7 +16,7 @@ import { calculateRSI } from './indicators/rsi';
 import { calculateMACD } from './indicators/macd';
 import { calculateEMAs } from './indicators/movingAverages';
 import { calculateSignalStrength } from './indicators/confluence';
-import { advancePreTp1Trailing } from './opExitRules';
+import { advancePreTp1Trailing, advanceTrailingStop } from './opExitRules';
 
 function simpleMovingAverage(values, i, period) {
   if (i < period - 1) return null;
@@ -50,7 +50,7 @@ export function atrPctSmoothSeries(candles, atrSeries, atrLen = 14, smoothLen = 
 }
 
 function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, symbol, timeframe, closedReason = null) {
-  const { side, entryPrice, entryTime, initialStop, tp1, tp2, tp1Hit, score, trailed } = position;
+  const { side, entryPrice, entryTime, initialStop, tp1, tp2, tp1Hit, score, trailed, runnerTrailed } = position;
   const dir = side === 'BUY' ? 1 : -1;
   const riskDist = Math.abs(entryPrice - initialStop);
 
@@ -79,6 +79,7 @@ function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, 
     ...(closedReason ? { closed_reason: closedReason } : {}),
     // O stop chegou a subir pelo trailing antes do TP1 (só exibição: separa "stop do trailing" de "stop cheio" na análise das saídas).
     ...(trailed ? { pre_tp1_trailed: true } : {}),
+    ...(runnerTrailed ? { runner_trailed: true } : {}),
     created_date: entryTime,
     closed_at: exitTime,
     score,
@@ -96,10 +97,13 @@ function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, 
  *   regimeFilter?: { useADX, useChop, adxLen, adxSmooth, chopLen } | null,   // filtro ADX/Choppiness por tier, SÓ barra entrada (como evaluateRegime do scanner)
  *   timeStop?: { T1, T2, T3 } | null,                                        // fecha ANTES do TP1 após N candles (N por tier), no fechamento da vela
  *   tierThresholds?: { tier2, tier3 },                                       // limites de ATR% do tier (Pine: 0.8 / 1.5)
- *   preTp1Trail?: { startAtrMult, trailAtrMult } | null }                    // trailing do stop ANTES do TP1 (advancePreTp1Trailing do scanner); null = stop parado até o TP1
+ *   preTp1Trail?: { startAtrMult, trailAtrMult } | null,                     // trailing do stop ANTES do TP1 (advancePreTp1Trailing do scanner); null = stop parado até o TP1
+ *   runnerTrail?: { trailAtrMult } | null,                                   // trailing do stop do RUNNER depois do TP1 (advanceTrailingStop do scanner); null = stop fica no breakeven
+ *   runnerRfExit?: boolean,                                                  // runner sai no fechamento quando o Range Filter vira contra e o preço cruza o filtro (invalidação direta do scanner)
+ *   minRR?: number | null }                                                  // piso de risco/retorno do TP1 (passesRiskReward): entrada só abre se |TP1-entrada| / |entrada-stop| >= minRR
  *   Sem regimeFilter/timeStop (o padrão) o comportamento é o de sempre.
  * @param {{symbol: string, timeframe: string}} meta
- * @returns {{ ops: Array, stillOpen: Object|null, stats: { signals: number, taken: number, rejectedByScore: number, rejectedByRegime: number, skippedWhileOpen: number, startIndex: number, candlesTotal: number, firstTradableTime: number|null } }}
+ * @returns {{ ops: Array, stillOpen: Object|null, stats: { signals: number, taken: number, rejectedByScore: number, rejectedByRegime: number, rejectedByRR: number, skippedWhileOpen: number, startIndex: number, candlesTotal: number, firstTradableTime: number|null } }}
  *   `stats` conta o que aconteceu com cada sinal do Range Filter (aditivo: quem só usa ops/stillOpen não muda).
  */
 export function runQuickBacktest(candles, config, meta) {
@@ -110,7 +114,7 @@ export function runQuickBacktest(candles, config, meta) {
   // Médias do score: as MESMAS que o scanner usa (Pine: 20/50 — resolveIndicatorParams, known-risks item 27). Até 22/11/2026 este
   // simulador usava 9/21 fixas, o que muda a tendência EMA (20 pts do score) em ~15% das barras. Par inválido (rápida >= lenta) cai
   // inteiro nos valores do Pine, como no scanner (item 31).
-  const { regimeFilter = null, timeStop = null, preTp1Trail = null, tierThresholds = { tier2: 0.8, tier3: 1.5 } } = config;
+  const { regimeFilter = null, timeStop = null, preTp1Trail = null, runnerTrail = null, runnerRfExit = false, minRR = null, tierThresholds = { tier2: 0.8, tier3: 1.5 } } = config;
   let { emaFast = 20, emaSlow = 50 } = config;
   if (!(Number.isInteger(emaFast) && Number.isInteger(emaSlow) && emaFast > 0 && emaFast < emaSlow)) { emaFast = 20; emaSlow = 50; }
   const { symbol, timeframe } = meta;
@@ -127,7 +131,7 @@ export function runQuickBacktest(candles, config, meta) {
   const emas = calculateEMAs(candles, emaFast, emaSlow);
   const volumes = candles.map(c => c.volume || 0);
 
-  const { signals, direction: rfDirection } = rf.series;
+  const { signals, direction: rfDirection, filterValues: rfFilter } = rf.series;
   const rsiSeries = rsi.series;
   const { histogram } = macd.series;
   const { shortEMA, longEMA } = emas.series;
@@ -149,7 +153,7 @@ export function runQuickBacktest(candles, config, meta) {
   let position = null;
   const startIdx = minRequired;
   // O que aconteceu com cada sinal do Range Filter a partir do início da simulação (para explicar "por que só N operações").
-  const stats = { signals: 0, taken: 0, rejectedByScore: 0, rejectedByRegime: 0, skippedWhileOpen: 0, startIndex: startIdx, candlesTotal: candles.length, firstTradableTime: candles[startIdx]?.closeTime ?? null };
+  const stats = { signals: 0, taken: 0, rejectedByScore: 0, rejectedByRegime: 0, rejectedByRR: 0, skippedWhileOpen: 0, startIndex: startIdx, candlesTotal: candles.length, firstTradableTime: candles[startIdx]?.closeTime ?? null };
 
   for (let i = startIdx; i < candles.length; i++) {
     const candle = candles[i];
@@ -167,6 +171,11 @@ export function runQuickBacktest(candles, config, meta) {
         position = null;
       } else if (position.tp1Hit && hitTp2) {
         ops.push(closeSimulatedOp(position, tp2, candle.closeTime, 'TP2_HIT', tp1QtyPercent, symbol, timeframe));
+        position = null;
+      } else if (position.tp1Hit && runnerRfExit && (side === 'BUY' ? (rfDirection[i] === -1 && candle.close < rfFilter[i]) : (rfDirection[i] === 1 && candle.close > rfFilter[i]))) {
+        // Saída do runner pelo Range Filter (scanner: invalidação direta no ramo RUNNER_ACTIVE, exit_mode HYBRID_RF_ATR): o filtro VIROU contra a posição E o
+        // fechamento cruzou o filtro. Decidida no FECHAMENTO da vela, depois do stop e do TP2 (mesma ordem do scanner).
+        ops.push(closeSimulatedOp(position, candle.close, candle.closeTime, 'INVALIDATED', tp1QtyPercent, symbol, timeframe, 'INVALIDATION'));
         position = null;
       } else if (!position.tp1Hit && position.timeStopBars != null && i - position.entryIndex >= position.timeStopBars) {
         // Time stop (como o scanner, que só o aplica ANTES do TP1): fecha no FECHAMENTO da vela, depois de o stop ter sido checado e ANTES de contar um TP1 desta vela.
@@ -186,6 +195,11 @@ export function runQuickBacktest(candles, config, meta) {
           atrValue: atrSeries[i], startAtrMult: preTp1Trail.startAtrMult, trailAtrMult: preTp1Trail.trailAtrMult, closePrice: candle.close,
         });
         if (next !== position.stop) { position.stop = next; position.trailed = true; }
+      } else if (position.tp1Hit && runnerTrail) {
+        // Trailing do RUNNER (scanner: advanceTrailingStop, só depois de nenhuma saída na vela): o stop sobe para fechamento ∓ N×ATR, nunca recua, e só protege a
+        // vela SEGUINTE (a vela já foi checada contra o stop armazenado acima). Começa no breakeven.
+        const next = advanceTrailingStop({ isBuy: side === 'BUY', currentStop: position.stop, closePrice: candle.close, atrValue: atrSeries[i], trailMult: runnerTrail.trailAtrMult });
+        if (next !== position.stop) { position.stop = next; position.runnerTrailed = true; }
       }
     }
 
@@ -226,7 +240,11 @@ export function runQuickBacktest(candles, config, meta) {
         if (!regimeOk) stats.rejectedByRegime += 1;
       }
 
-      if (passed && regimeOk) {
+      // Piso de risco/retorno (passesRiskReward do scanner): depende só do TP1 e do stop desta entrada — aqui, com TP1 = stop × tp1R, é exatamente `tp1R`. Por isso
+      // um TP1 abaixo do piso barra TODAS as entradas (o acoplamento tp1R × minRR que a produção também tem — item 116).
+      const rrOk = !(passed && regimeOk) || minRR == null || tp1R >= minRR - 1e-9;
+      if (passed && regimeOk && !rrOk) stats.rejectedByRR += 1;
+      if (passed && regimeOk && rrOk) {
         stats.taken += 1;
         const atr = atrSeries[i];
         const entryPrice = candle.close;
@@ -238,7 +256,7 @@ export function runQuickBacktest(candles, config, meta) {
           side, entryTime: candle.closeTime, entryPrice,
           stop, initialStop: stop, tp1, tp2, tp1Hit: false, score,
           entryIndex: i, timeStopBars: timeStop ? tierHere.timeStopBars : null,
-          extreme: entryPrice, trailed: false,
+          extreme: entryPrice, trailed: false, runnerTrailed: false,
         };
       }
     }

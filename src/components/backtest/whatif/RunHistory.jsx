@@ -117,7 +117,7 @@ export default function RunHistory({ ranked, best, currentKey, currentRun = null
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Apagar todo o histórico de testes?</AlertDialogTitle>
-            <AlertDialogDescription>Os {total} testes salvos neste navegador, inclusive os favoritos, serão apagados. Não dá para desfazer.</AlertDialogDescription>
+            <AlertDialogDescription>{total === 1 ? 'O 1 teste salvo' : `Os ${total} testes salvos`} neste navegador, inclusive os favoritos, {total === 1 ? 'será apagado' : 'serão apagados'}. Não dá para desfazer.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>

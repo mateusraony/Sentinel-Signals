@@ -118,7 +118,7 @@ describe('runQuickBacktest — invariantes (auditoria)', () => {
   it('stats: todo sinal do Range Filter tem destino (aberto, barrado pelo score ou ignorado com posição aberta)', () => {
     for (const seed of seeds.slice(0, 15)) {
       const { ops, stillOpen, stats } = runQuickBacktest(synth(800, seed), CFG, META);
-      expect(stats.signals).toBe(stats.taken + stats.rejectedByScore + stats.rejectedByRegime + stats.skippedWhileOpen);
+      expect(stats.signals).toBe(stats.taken + stats.rejectedByScore + stats.rejectedByRegime + stats.rejectedByRR + stats.skippedWhileOpen);
       expect(stats.taken).toBe(ops.length + (stillOpen ? 1 : 0));
       expect(stats.startIndex).toBeGreaterThan(0);
       expect(stats.candlesTotal).toBe(800);
@@ -406,5 +406,153 @@ describe('runQuickBacktest — trailing do stop antes do TP1 (padrão do scanner
       }
     }
     expect(seen).toBeGreaterThan(0);
+  });
+});
+
+// ---- Runner depois do TP1 (trailing por ATR e saída pelo Range Filter) e piso de risco/retorno (minRR): regras do scanner, conferidas de forma independente. ----
+import { advanceTrailingStop } from './opExitRules';
+import { calculateRangeFilter } from './indicators/rangeFilter';
+
+describe('runQuickBacktest — trailing do runner depois do TP1 (advanceTrailingStop do scanner)', () => {
+  const seeds = Array.from({ length: 40 }, (_, i) => i + 1);
+  const RT = { trailAtrMult: 2.0 };
+  const idx = (candles) => new Map(candles.map((c, i) => [c.closeTime, i]));
+
+  // Stop que cada vela depois do TP1 enfrenta, recalculado do zero com a função de produção (ATR só do prefixo). Sem trailing pré-TP1 o stop no TP1 é a entrada.
+  function runnerStops(candles, op, trailMult) {
+    const m = idx(candles); const isBuy = op.side === 'BUY';
+    let i = m.get(op.created_date) + 1;
+    while (!(isBuy ? candles[i].high >= op.tp1 : candles[i].low <= op.tp1)) i += 1; // vela do TP1 (a operação sobreviveu até ela: o stop não foi tocado antes)
+    let stop = op.entry_price; const faced = [];
+    for (let k = i + 1; k <= m.get(op.closed_at); k++) {
+      faced.push({ k, stop });
+      const atr = calculateATRSeries(candles.slice(0, k + 1), 14).at(-1);
+      stop = advanceTrailingStop({ isBuy, currentStop: stop, closePrice: candles[k].close, atrValue: atr, trailMult });
+    }
+    return faced;
+  }
+
+  it('o stop do runner que fecha a operação é EXATAMENTE o que a função de produção produz vela a vela (conferido do zero), e o trailing sobe o stop além da entrada em várias', () => {
+    let checked = 0; let beyondEntry = 0;
+    for (const trailMult of [2.0, 0.8]) {
+      for (const seed of seeds) {
+        const candles = synth(800, seed);
+        const { ops } = runQuickBacktest(candles, { ...CFG, runnerTrail: { trailAtrMult: trailMult } }, META);
+        for (const op of ops) {
+          if (!(op.tp1_hit && op.status === 'STOP_HIT')) continue;
+          const faced = runnerStops(candles, op, trailMult);
+          expect(faced.length).toBeGreaterThan(0);
+          expect(op.exit_price).toBeCloseTo(faced.at(-1).stop, 9);
+          if (op.runner_trailed) beyondEntry += 1;
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(30);
+    expect(beyondEntry).toBeGreaterThan(5); // não-vacuidade
+  });
+
+  it('o stop do runner nunca recua e termina melhor ou igual à entrada; sem trailing o runner só sai no breakeven (comportamento de antes)', () => {
+    for (const seed of seeds) {
+      const candles = synth(800, seed);
+      const withTrail = runQuickBacktest(candles, { ...CFG, runnerTrail: RT }, META).ops;
+      for (const op of withTrail) {
+        if (!(op.tp1_hit && op.status === 'STOP_HIT')) continue;
+        expect(op.side === 'BUY' ? op.exit_price >= op.entry_price : op.exit_price <= op.entry_price).toBe(true);
+      }
+      const without = runQuickBacktest(candles, CFG, META).ops;
+      for (const op of without) if (op.tp1_hit && op.status === 'STOP_HIT') expect(op.exit_price).toBe(op.entry_price);
+    }
+  });
+
+  it('SEM OLHAR O FUTURO com o trailing do runner e a saída pelo Range Filter ligados', () => {
+    let compared = 0;
+    for (const seed of seeds.slice(0, 20)) {
+      const candles = synth(800, seed);
+      const cut = 560; const T = candles[cut - 1].closeTime;
+      const cfg = { ...CFG, runnerTrail: RT, runnerRfExit: true };
+      const full = runQuickBacktest(candles, cfg, META).ops.filter((o) => o.closed_at <= T);
+      const part = runQuickBacktest(candles.slice(0, cut), cfg, META).ops;
+      expect(part.map((o) => [o.created_date, o.closed_at, o.side, o.exit_price, o.status])).toEqual(full.map((o) => [o.created_date, o.closed_at, o.side, o.exit_price, o.status]));
+      compared += full.length;
+    }
+    expect(compared).toBeGreaterThan(20);
+  });
+
+  it('desligados (null/false) o resultado é IDÊNTICO ao de antes', () => {
+    for (const seed of seeds.slice(0, 10)) {
+      const candles = synth(800, seed);
+      const a = runQuickBacktest(candles, CFG, META);
+      const b = runQuickBacktest(candles, { ...CFG, runnerTrail: null, runnerRfExit: false, minRR: null }, META);
+      expect(b.ops).toEqual(a.ops);
+      expect(b.stats).toEqual(a.stats);
+    }
+  });
+});
+
+describe('runQuickBacktest — saída do runner pelo Range Filter (invalidação direta do scanner)', () => {
+  const seeds = Array.from({ length: 40 }, (_, i) => i + 1);
+
+  it('toda saída "invalidada" foi no FECHAMENTO, depois do TP1, com o filtro virado contra a posição E o preço além do filtro (RF recalculado no prefixo); e nenhuma vela anterior do runner já satisfazia a regra', () => {
+    let rfExits = 0;
+    for (const seed of seeds) {
+      const candles = synth(800, seed);
+      const m = new Map(candles.map((c, i) => [c.closeTime, i]));
+      const { ops } = runQuickBacktest(candles, { ...CFG, runnerRfExit: true }, META);
+      for (const op of ops) {
+        if (op.tp1_hit !== true) continue;
+        const buy = op.side === 'BUY';
+        const cond = (k) => {
+          const rf = calculateRangeFilter(candles.slice(0, k + 1), 20, 3.5);
+          return buy ? (rf.direction === -1 && candles[k].close < rf.filterValue) : (rf.direction === 1 && candles[k].close > rf.filterValue);
+        };
+        const exitIdx = m.get(op.closed_at);
+        if (op.status === 'INVALIDATED') {
+          expect(op.closed_reason).toBe('INVALIDATION');
+          expect(op.exit_price).toBe(candles[exitIdx].close);
+          expect(cond(exitIdx)).toBe(true);
+          rfExits += 1;
+        }
+        // velas do runner ANTES da saída que satisfaziam a regra teriam encerrado antes (a menos que o stop/TP2 tenha vindo antes na mesma vela)
+        let tp1Idx = m.get(op.created_date) + 1;
+        while (!(buy ? candles[tp1Idx].high >= op.tp1 : candles[tp1Idx].low <= op.tp1)) tp1Idx += 1;
+        for (let k = tp1Idx + 1; k < exitIdx; k++) expect(cond(k)).toBe(false);
+      }
+    }
+    expect(rfExits).toBeGreaterThan(5);
+  });
+
+  it('sem runnerRfExit nunca aparece operação invalidada pelo RF', () => {
+    for (const seed of seeds.slice(0, 15)) {
+      const { ops } = runQuickBacktest(synth(800, seed), CFG, META);
+      expect(ops.some((o) => o.status === 'INVALIDATED')).toBe(false);
+    }
+  });
+});
+
+describe('runQuickBacktest — piso de risco/retorno minRR (passesRiskReward)', () => {
+  it('TP1 abaixo do piso barra TODAS as entradas (acoplamento tp1R × minRR); a conta fecha: sinais = operações + barrados + ignorados', () => {
+    const candles = synth(800, 3);
+    const open = runQuickBacktest(candles, { ...CFG, tp1R: 1.5, minRR: 1.2 }, META);
+    const same = runQuickBacktest(candles, { ...CFG, tp1R: 1.5 }, META);
+    expect(open.ops).toEqual(same.ops); // TP1 1,5R com piso de 1,2R: o piso não barra nada
+    expect(open.stats.rejectedByRR).toBe(0);
+    const blocked = runQuickBacktest(candles, { ...CFG, tp1R: 1.0, minRR: 1.2 }, META);
+    expect(blocked.ops).toHaveLength(0);
+    expect(blocked.stats.rejectedByRR).toBeGreaterThan(0);
+    expect(blocked.stats.taken).toBe(0);
+    const { signals, taken, rejectedByScore, rejectedByRegime, rejectedByRR, skippedWhileOpen } = blocked.stats;
+    expect(taken + rejectedByScore + rejectedByRegime + rejectedByRR + skippedWhileOpen).toBe(signals);
+  });
+
+  it('o piso usa o R:R do TP1 da própria entrada, igual ao passesRiskReward do scanner', async () => {
+    const { passesRiskReward } = await import('./opExitRules');
+    const candles = synth(800, 5);
+    const { ops } = runQuickBacktest(candles, { ...CFG, tp1R: 1.3 }, META);
+    expect(ops.length).toBeGreaterThan(0);
+    for (const op of ops) {
+      expect(passesRiskReward({ entry: op.entry_price, stop: op.initial_stop, tp1: op.tp1, tp2: op.tp2, minRR: 1.3 - 1e-9 }).pass).toBe(true);
+      expect(passesRiskReward({ entry: op.entry_price, stop: op.initial_stop, tp1: op.tp1, tp2: op.tp2, minRR: 1.31 }).pass).toBe(false);
+    }
   });
 });

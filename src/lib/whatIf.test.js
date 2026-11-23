@@ -6,7 +6,7 @@ import {
 } from './whatIf';
 
 const DS = { assetId: 'a1', symbol: 'BTCUSDT', timeframe: '4h', candleCount: 500 };
-const P = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2 };
+const P = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, minRR: 1.2, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2, runnerTrail: 1, runnerTrailDist: 2, runnerRf: 1 };
 const rec = (over = {}, at = '2026-11-22T10:00:00.000Z', exp = 0.1) => ({
   key: runKey(DS, { ...P, ...over }), at, dataset: DS, params: { ...P, ...over },
   summary: { expectancyR: exp, counted: 10, winRate: 50, profitFactor: 1.2, maxDrawdownPct: 5, ciHalfWidth: 0.2 }, starred: false,
@@ -35,6 +35,11 @@ describe('identidade e parâmetros', () => {
     // ligado, os valores contam; e ligar/desligar é uma mudança
     expect(runKey(DS, { ...P, trailDist: 3 })).not.toBe(runKey(DS, P));
     expect(changedKeys(off, P)).toEqual(['trail']); // ligar/desligar é UMA mudança (começo e distância não contam à parte)
+    // o runner segue a mesma regra: desligado, a distância dele não existe
+    const runnerOff = { ...P, runnerTrail: 0 };
+    expect(changedKeys({ ...runnerOff, runnerTrailDist: 4 }, runnerOff)).toEqual([]);
+    expect(changedKeys(runnerOff, P)).toEqual(['runnerTrail']);
+    expect(changedKeys({ ...P, runnerTrailDist: 3, minRR: 1.5, runnerRf: 0 }, P)).toEqual(['minRR', 'runnerTrailDist', 'runnerRf']);
     expect(changedKeys({ ...P, trailStart: 1.5, trailDist: 3 }, P)).toEqual(['trailStart', 'trailDist']);
   });
   it('summarizeRun guarda só números válidos', () => {
@@ -189,11 +194,15 @@ describe('tier e padrões', () => {
   });
   it('buildDefaults: stop vem do tier (não do trailAtrMult); RF vem do ATIVO; resto do Pine', () => {
     const d = buildDefaults({ pineConfig: { trailAtrMult: 3, tp1R: 1.8, minScore: 80, rng_per: 20, rng_qty: 3.5 }, asset: { rf_period: 14, rf_multiplier: 3 }, tier: { atrStopMult: 2.5 } });
-    expect(d).toEqual({ atrMult: 2.5, tp1R: 1.8, rfPeriod: 14, rfMult: 3, minScore: 80, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2 });
-    expect(buildDefaults({})).toEqual({ atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2 });
+    expect(d).toEqual({ atrMult: 2.5, tp1R: 1.8, rfPeriod: 14, rfMult: 3, minScore: 80, minRR: 1.2, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2, runnerTrail: 1, runnerTrailDist: 3, runnerRf: 1 });
+    expect(buildDefaults({})).toEqual({ atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, minRR: 1.2, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2, runnerTrail: 1, runnerTrailDist: 2, runnerRf: 1 });
     // os interruptores seguem a PRODUÇÃO: tudo desligado no Pine salvo => desligado aqui
     expect(buildDefaults({ pineConfig: { useADX: false, useChop: false, useTimeStop: false } })).toMatchObject({ regime: 0, timeStop: 0 });
     expect(buildDefaults({ pineConfig: { useADX: false, useChop: true } }).regime).toBe(1);
+  });
+  it('buildDefaults: runner e piso R:R seguem a PRODUÇÃO (exit_mode HYBRID_RF_ATR: trailing por ATR + saída pelo RF; minRR do Pine salvo)', () => {
+    expect(buildDefaults({ pineConfig: { trailAtrMult: 2.5, minRR: 1.4 } })).toMatchObject({ runnerTrail: 1, runnerTrailDist: 2.5, runnerRf: 1, minRR: 1.4 });
+    expect(buildDefaults({})).toMatchObject({ runnerTrail: 1, runnerTrailDist: 2, runnerRf: 1, minRR: 1.2 });
   });
   it('buildDefaults: trailing pré-TP1 segue a PRODUÇÃO (proteção mestre E modo trailing ligados) e os valores vêm do Pine salvo', () => {
     expect(buildDefaults({ pineConfig: { preTp1StopProtectionEnabled: true, preTp1TrailEnabled: true, preTp1TrailStartAtrMult: 1.5, preTp1TrailAtrMult: 2.5 } })).toMatchObject({ trail: 1, trailStart: 1.5, trailDist: 2.5 });
@@ -209,7 +218,12 @@ describe('tier e padrões', () => {
     expect(f.notIncluded.some((n) => /Trailing do stop antes do TP1/.test(n.label))).toBe(false); // agora é feito pelo simulador
     expect(fidelityRows({ preTp1TrailEnabled: true }, undefined, { regime: 1, timeStop: 1, trail: 1 }).included.find((t) => /Trailing do stop ANTES do TP1/.test(t))).toMatch(/ligado neste teste.*produção: ligado/);
     expect(fidelityRows({ preTp1TrailEnabled: false }, undefined, { regime: 1, timeStop: 1, trail: 0 }).included.find((t) => /Trailing do stop ANTES do TP1/.test(t))).toMatch(/desligado neste teste.*produção: desligado/);
-    expect(f.notIncluded.find((n) => /minRR/.test(n.label)).production).toMatch(/1\.2R/);
+    // runner e piso R:R agora são feitos pelo simulador; sobra o que a produção também não usa por padrão e o filtro 4h/15m
+    expect(f.notIncluded.some((n) => /minRR|Piso/.test(n.label))).toBe(false);
+    expect(f.notIncluded.some((n) => /Saída do runner/.test(n.label))).toBe(false);
+    expect(f.included.find((t) => /Trailing do stop do RUNNER/.test(t))).toMatch(/desligado neste teste|ligado neste teste/);
+    expect(f.included.find((t) => /Piso de risco\/retorno/.test(t))).toMatch(/1\.2R/);
+    expect(f.notIncluded.find((n) => /Chop Exit/.test(n.label)).production).toMatch(/desligados por padrão/);
     expect(fidelityRows({ useADX: false, useChop: false, useTimeStop: false }).included.find((t) => /Filtro de regime/.test(t))).toMatch(/produção: desligado/);
   });
 });
@@ -263,12 +277,13 @@ describe('dados dos gráficos', () => {
   it('exitBreakdown separa TP2, TP1+breakeven e stop cheio, e as partes somam o total', () => {
     const ops = [op(), op(), op({ status: 'TP2_HIT', exit_price: 106, tp1_hit: true }), op({ tp1_hit: true, exit_price: 100 })];
     const b = exitBreakdown(ops);
-    expect(b.map((x) => x.count)).toEqual([1, 1, 0, 2, 0]); // TP2, TP1+BE, stop do trailing, stop cheio, time stop
+    expect(b.map((x) => x.count)).toEqual([1, 1, 0, 0, 2, 0]); // TP2, TP1+stop do runner, saída RF, stop do trailing, stop cheio, time stop
     expect(b.reduce((s, x) => s + x.count, 0)).toBe(4);
     const withTs = exitBreakdown([...ops, op({ status: 'CLOSED', closed_reason: 'TIME_STOP', exit_price: 101, tp1_hit: false })]);
     expect(withTs.find((x) => x.key === 'time_stop').count).toBe(1);
     expect(withTs.reduce((s, x) => s + x.count, 0)).toBe(5);
     const withTrail = exitBreakdown([...ops, op({ pre_tp1_trailed: true, exit_price: 101 })]);
+    expect(exitBreakdown([...ops, op({ status: 'INVALIDATED', tp1_hit: true, exit_price: 104 })]).find((x) => x.key === 'rf_exit').count).toBe(1); // saída do runner pelo Range Filter
     expect(withTrail.find((x) => x.key === 'stop_trail').count).toBe(1); // stop que subiu pelo trailing antes do TP1 não é "stop cheio"
     expect(withTrail.find((x) => x.key === 'stop').count).toBe(2);
     expect(b.find((x) => x.key === 'stop').avgR).toBeLessThan(0);
@@ -296,11 +311,11 @@ describe('migração e reavaliação do histórico', () => {
     const h = loadHistory(st);
     expect(h).toHaveLength(1);
     expect(h[0].params).toMatchObject({ regime: 0, timeStop: 0, minScore: 75 });
-    expect(h[0].key).toBe(runKey(DS, { ...legacyParams, regime: 0, timeStop: 0, trail: 0 }));
-    expect(h[0].params).toMatchObject({ regime: 0, timeStop: 0, trail: 0 }); // antes do trailing o stop ficava parado: vale trailing desligado
+    expect(h[0].key).toBe(runKey(DS, { ...legacyParams, regime: 0, timeStop: 0, trail: 0, runnerTrail: 0, runnerRf: 0, minRR: 0 }));
+    expect(h[0].params).toMatchObject({ regime: 0, timeStop: 0, trail: 0, runnerTrail: 0, runnerRf: 0, minRR: 0 }); // runner só no TP2/breakeven e sem piso R:R: vale tudo desligado // antes do trailing o stop ficava parado: vale trailing desligado
     expect(h[0].starred).toBe(true);
     // o mesmo teste, agora COM os filtros ligados, é OUTRO teste (chave diferente)
-    expect(runKey(DS, { ...legacyParams, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2 })).not.toBe(h[0].key);
+    expect(runKey(DS, { ...P, ...legacyParams })).not.toBe(h[0].key);
     // registro sem os cinco números continua inválido
     st.setItem('sentinel_whatif_history_v1', JSON.stringify({ v: 1, runs: [{ ...legacy, params: { atrMult: 2 } }] }));
     expect(loadHistory(st)).toEqual([]);
