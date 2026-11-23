@@ -299,3 +299,112 @@ describe('runQuickBacktest — time stop (só antes do TP1, no fechamento da vel
     expect(Math.max(...wildHeld, 0)).toBeGreaterThan(Math.max(...calmHeld, 0)); // mais volátil -> tier maior -> prazo maior
   });
 });
+
+// ---- Trailing do stop ANTES do TP1 (23/11/2026): a regra é a de produção (advancePreTp1Trailing), conferida de forma INDEPENDENTE. ----
+import { advancePreTp1Trailing } from './opExitRules';
+
+describe('runQuickBacktest — trailing do stop antes do TP1 (padrão do scanner)', () => {
+  const seeds = Array.from({ length: 40 }, (_, i) => i + 1);
+  const TRAIL = { startAtrMult: 1.0, trailAtrMult: 2.0 };
+
+  // Reconstrói o stop do trailing de uma operação DO ZERO, vela a vela, só com o que existia em cada vela (ATR do prefixo, extremo até ali),
+  // chamando a função de produção. Devolve o stop vigente no início de cada vela depois da entrada e o índice em que a operação terminou.
+  function replayStop(candles, op, cfg, trail = TRAIL) {
+    const idxByClose = new Map(candles.map((c, i) => [c.closeTime, i]));
+    const e = idxByClose.get(op.created_date);
+    const isBuy = op.side === 'BUY';
+    let stop = op.initial_stop; let extreme = op.entry_price; const stops = [];
+    for (let i = e + 1; i <= idxByClose.get(op.closed_at); i++) {
+      stops.push({ i, stop }); // stop ARMAZENADO que esta vela enfrenta
+      const c = candles[i];
+      extreme = isBuy ? Math.max(extreme, c.high) : Math.min(extreme, c.low);
+      const atr = calculateATRSeries(candles.slice(0, i + 1), cfg.atrLen).at(-1); // ATR calculado só com o prefixo (sem futuro)
+      stop = advancePreTp1Trailing({ isBuy, currentStop: stop, entry: op.entry_price, favorableExtreme: extreme, atrValue: atr, startAtrMult: trail.startAtrMult, trailAtrMult: trail.trailAtrMult, closePrice: c.close });
+    }
+    return stops;
+  }
+
+  it('o stop de saída antes do TP1 é EXATAMENTE o que a função de produção produz vela a vela (conferido do zero, sem olhar o futuro) — com o padrão e com um trailing apertado, onde o limite do fechamento age', () => {
+    let trailedStops = 0; let checked = 0;
+    for (const trail of [TRAIL, { startAtrMult: 0.3, trailAtrMult: 0.4 }]) {
+      for (const seed of seeds) {
+        const candles = synth(800, seed);
+        const idxByClose = new Map(candles.map((c, i) => [c.closeTime, i]));
+        const { ops } = runQuickBacktest(candles, { ...CFG, preTp1Trail: trail }, META);
+        for (const op of ops) {
+          if (op.tp1_hit || op.status !== 'STOP_HIT') continue;
+          const stops = replayStop(candles, op, CFG, trail);
+          const last = stops.at(-1); // stop que a vela de saída enfrentou
+          expect(last.i).toBe(idxByClose.get(op.closed_at));
+          expect(op.exit_price).toBeCloseTo(last.stop, 9);
+          if (op.pre_tp1_trailed) trailedStops += 1;
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(60);
+    expect(trailedStops).toBeGreaterThan(10); // não-vacuidade: o trailing realmente subiu o stop em várias operações
+  });
+
+  it('o stop NUNCA recua, nunca passa do fechamento e, quando o trailing agiu, a saída é melhor que o stop inicial', () => {
+    for (const seed of seeds) {
+      const candles = synth(800, seed);
+      const { ops } = runQuickBacktest(candles, { ...CFG, preTp1Trail: TRAIL }, META);
+      for (const op of ops) {
+        const buy = op.side === 'BUY';
+        const stops = replayStop(candles, op, CFG).map((x) => x.stop);
+        for (let k = 1; k < stops.length; k++) expect(buy ? stops[k] >= stops[k - 1] : stops[k] <= stops[k - 1]).toBe(true);
+        if (op.pre_tp1_trailed && op.status === 'STOP_HIT' && !op.tp1_hit) expect(buy ? op.exit_price > op.initial_stop : op.exit_price < op.initial_stop).toBe(true);
+      }
+    }
+  });
+
+  it('SEM OLHAR O FUTURO com o trailing ligado: o que fechou até T é idêntico com a série inteira e cortada em T', () => {
+    let compared = 0;
+    for (const seed of seeds.slice(0, 20)) {
+      const candles = synth(800, seed);
+      const cut = 560;
+      const T = candles[cut - 1].closeTime;
+      const cfg = { ...CFG, preTp1Trail: TRAIL };
+      const full = runQuickBacktest(candles, cfg, META).ops.filter((o) => o.closed_at <= T);
+      const part = runQuickBacktest(candles.slice(0, cut), cfg, META).ops;
+      expect(part.map((o) => [o.created_date, o.closed_at, o.side, o.exit_price])).toEqual(full.map((o) => [o.created_date, o.closed_at, o.side, o.exit_price]));
+      compared += full.length;
+    }
+    expect(compared).toBeGreaterThan(20);
+  });
+
+  it('sem preTp1Trail (ou null) o resultado é IDÊNTICO ao de antes: stop parado até o TP1', () => {
+    for (const seed of seeds.slice(0, 12)) {
+      const candles = synth(800, seed);
+      const a = runQuickBacktest(candles, CFG, META);
+      const b = runQuickBacktest(candles, { ...CFG, preTp1Trail: null }, META);
+      expect(b.ops).toEqual(a.ops);
+      expect(a.ops.every((o) => o.pre_tp1_trailed === undefined)).toBe(true);
+    }
+  });
+
+  it('a regra é monotônica na distância: mesma âncora, trailing mais LONGE protege menos (função pura de produção)', () => {
+    const base = { isBuy: true, currentStop: 90, entry: 100, favorableExtreme: 110, atrValue: 2, startAtrMult: 1, closePrice: 109 };
+    expect(advancePreTp1Trailing({ ...base, trailAtrMult: 1 })).toBeGreaterThan(advancePreTp1Trailing({ ...base, trailAtrMult: 4 }));
+    const sell = { isBuy: false, currentStop: 110, entry: 100, favorableExtreme: 90, atrValue: 2, startAtrMult: 1, closePrice: 91 };
+    expect(advancePreTp1Trailing({ ...sell, trailAtrMult: 1 })).toBeLessThan(advancePreTp1Trailing({ ...sell, trailAtrMult: 4 }));
+  });
+
+  it('TP1 depois de o trailing já ter subido o stop além da entrada: o stop NÃO volta para a entrada (nunca piora)', () => {
+    // trailing apertado + TP1 curto: o stop passa da entrada antes/junto do TP1; depois do TP1 ele deve continuar onde estava (melhor que a entrada), não voltar ao breakeven
+    let seen = 0;
+    for (const seed of seeds) {
+      const candles = synth(800, seed);
+      const cfg = { ...CFG, tp1R: 1.0, preTp1Trail: { startAtrMult: 0.3, trailAtrMult: 0.6 } };
+      const { ops } = runQuickBacktest(candles, cfg, META);
+      for (const op of ops) {
+        if (!(op.tp1_hit && op.status === 'STOP_HIT')) continue;
+        const buy = op.side === 'BUY';
+        expect(buy ? op.exit_price >= op.entry_price : op.exit_price <= op.entry_price).toBe(true);
+        if (buy ? op.exit_price > op.entry_price : op.exit_price < op.entry_price) seen += 1;
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
+  });
+});

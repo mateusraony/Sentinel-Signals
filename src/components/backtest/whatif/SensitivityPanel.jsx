@@ -18,7 +18,8 @@ export default function SensitivityPanel({ runSummary, params, defaults, dataset
     setState({ status: 'running', sig: null, results: null });
     // setTimeout 0: deixa o "Analisando…" aparecer antes do cálculo síncrono.
     setTimeout(() => {
-      const results = QBT_SLIDERS.map(def => {
+      // Os ajustes do trailing só entram na varredura quando o trailing está ligado (desligado, variar o valor não muda nada).
+      const results = QBT_SLIDERS.filter(def => !def.onlyWhen || params[def.onlyWhen]).map(def => {
         const points = sweepParam({ runSummary, params, key: def.key, values: sweepValues(def, params[def.key]) });
         return { def, points, verdict: judgeSensitivity(points, params[def.key]) };
       });

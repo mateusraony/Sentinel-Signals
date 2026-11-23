@@ -211,7 +211,7 @@ describe('What-If — confiança nos dados e análise', () => {
     await screen.findByRole('status', { name: 'O que este resultado diz' });
     fireEvent.click(screen.getByRole('button', { name: 'Analisar sensibilidade' }));
     expect(await screen.findByRole('button', { name: 'Analisar de novo' })).toBeTruthy();
-    expect(screen.getAllByRole('img', { name: /^Expectância em R conforme/ })).toHaveLength(5);
+    expect(screen.getAllByRole('img', { name: /^Expectância em R conforme/ })).toHaveLength(7); // os 5 controles + os 2 do trailing (ligado por padrão, como na produção)
   });
 });
 
@@ -264,7 +264,7 @@ describe('What-If — filtro de regime e time stop (padrão = produção)', () =
     const d = within(screen.getByText(/Posso confiar\?/).closest('details'));
     expect(d.getByText(/Filtro de regime ADX\/Choppiness por tier — ligado neste teste/)).toBeTruthy();
     expect(d.getByText(/Time stop por tier \(48 \/ 64 \/ 96 candles\) — ligado neste teste/)).toBeTruthy();
-    expect(d.getByText(/Trailing do stop antes do TP1/)).toBeTruthy(); // o que falta continua declarado
+    expect(d.getByText(/Trailing do stop ANTES do TP1 — ligado neste teste/)).toBeTruthy(); // agora também é simulado (padrão = produção)
   });
 });
 
@@ -342,6 +342,78 @@ describe('What-If — o histórico só registra quando o controle é SOLTO e nã
     expect(within(hist2).getByRole('note').textContent).toMatch(/não bloqueia nada.*11 combinações.*sorte/);
     expect(within(hist2).getByRole('status', { name: 'Este teste no histórico' }).textContent).toMatch(/Em tela agora: #\d+ de 11/);
   }, 20000);
+});
+
+describe('What-If — trailing do stop antes do TP1 (padrão = produção)', () => {
+  // O rótulo acessível fica no contêiner do Radix, não no polegar (role=slider): os dois do trailing são os polegares 5 e 6 (depois dos 5 controles principais).
+  const THUMB = { 'Trailing: começa em (× ATR)': 5, 'Trailing: distância (× ATR)': 6 };
+  const sliderByName = (name) => screen.getAllByRole('slider')[THUMB[name]];
+  const isDisabled = (el) => el.hasAttribute('data-disabled');
+
+  it('vem LIGADO como na produção, com os dois ajustes (começo e distância) usáveis e o padrão 1 / 2 × ATR', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    const sw = screen.getByRole('switch', { name: 'Trailing do stop antes do TP1' });
+    expect(sw.getAttribute('aria-checked')).toBe('true');
+    const start = sliderByName('Trailing: começa em (× ATR)'); const dist = sliderByName('Trailing: distância (× ATR)');
+    expect(start.getAttribute('aria-valuenow')).toBe('1');
+    expect(dist.getAttribute('aria-valuenow')).toBe('2');
+    expect(isDisabled(start) || isDisabled(dist)).toBe(false);
+    expect(screen.getByText('tudo no padrão')).toBeTruthy();
+  });
+
+  it('desligar apaga os dois ajustes, conta 1 diferente do padrão e grava o teste com trailing desligado; ligar de novo volta ao teste do padrão (sem duplicar)', async () => {
+    await openWhatIf();
+    await pickAsset();
+    const hist = await screen.findByRole('complementary', { name: 'Histórico de testes' });
+    await waitFor(() => expect(within(hist).getByText('1 nesta janela')).toBeTruthy(), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('switch', { name: 'Trailing do stop antes do TP1' }));
+    expect(await screen.findByText('1 diferente do padrão')).toBeTruthy();
+    expect(isDisabled(sliderByName('Trailing: começa em (× ATR)'))).toBe(true);
+    expect(isDisabled(sliderByName('Trailing: distância (× ATR)'))).toBe(true);
+    await waitFor(() => expect(within(hist).getByText('2 nesta janela')).toBeTruthy(), { timeout: 4000 });
+    const saved = JSON.parse(localStorage.getItem('sentinel_whatif_history_v1')).runs;
+    expect(saved.some(r => r.params.trail === 0)).toBe(true);
+    expect(within(hist).getByText(/Trailing off/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('switch', { name: 'Trailing do stop antes do TP1' }));
+    await screen.findByText('tudo no padrão');
+    await new Promise(r => setTimeout(r, 1500));
+    expect(within(hist).getByText('2 nesta janela')).toBeTruthy(); // o teste do padrão só foi atualizado
+  }, 15000);
+
+  it('mexer na distância do trailing marca ● e conta como diferente do padrão', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    const dist = sliderByName('Trailing: distância (× ATR)');
+    dist.focus();
+    fireEvent.keyDown(dist, { key: 'ArrowRight' });
+    fireEvent.keyDown(dist, { key: 'ArrowRight' });
+    expect(await screen.findByText('1 diferente do padrão')).toBeTruthy();
+    expect(sliderByName('Trailing: distância (× ATR)').getAttribute('aria-valuenow')).toBe('2.2');
+  });
+
+  it('a análise das saídas tem a linha "Stop do trailing" e o painel "Posso confiar?" diz que o trailing é simulado', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    expect(screen.getByText('Stop do trailing (antes do TP1)')).toBeTruthy();
+    const d = within(screen.getByText(/Posso confiar\?/).closest('details'));
+    expect(d.getByText(/Trailing do stop ANTES do TP1 — ligado neste teste/)).toBeTruthy();
+  });
+
+  it('a sensibilidade só varre os ajustes do trailing quando ele está ligado', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    fireEvent.click(screen.getByRole('switch', { name: 'Trailing do stop antes do TP1' }));
+    await screen.findByText('1 diferente do padrão');
+    await waitFor(() => expect(screen.queryByText(/Recalculando/)).toBeNull(), { timeout: 4000 });
+    fireEvent.click(screen.getByRole('button', { name: 'Analisar sensibilidade' }));
+    expect(await screen.findByRole('button', { name: 'Analisar de novo' })).toBeTruthy();
+    expect(screen.getAllByRole('img', { name: /^Expectância em R conforme/ })).toHaveLength(5); // sem os 2 do trailing
+  }, 15000);
 });
 
 describe('What-If — reavaliar o histórico nos dados atuais', () => {

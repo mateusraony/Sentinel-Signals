@@ -16,6 +16,7 @@ import { calculateRSI } from './indicators/rsi';
 import { calculateMACD } from './indicators/macd';
 import { calculateEMAs } from './indicators/movingAverages';
 import { calculateSignalStrength } from './indicators/confluence';
+import { advancePreTp1Trailing } from './opExitRules';
 
 function simpleMovingAverage(values, i, period) {
   if (i < period - 1) return null;
@@ -49,7 +50,7 @@ export function atrPctSmoothSeries(candles, atrSeries, atrLen = 14, smoothLen = 
 }
 
 function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, symbol, timeframe, closedReason = null) {
-  const { side, entryPrice, entryTime, initialStop, tp1, tp2, tp1Hit, score } = position;
+  const { side, entryPrice, entryTime, initialStop, tp1, tp2, tp1Hit, score, trailed } = position;
   const dir = side === 'BUY' ? 1 : -1;
   const riskDist = Math.abs(entryPrice - initialStop);
 
@@ -76,6 +77,8 @@ function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, 
     exit_price: exitPrice,
     status,
     ...(closedReason ? { closed_reason: closedReason } : {}),
+    // O stop chegou a subir pelo trailing antes do TP1 (só exibição: separa "stop do trailing" de "stop cheio" na análise das saídas).
+    ...(trailed ? { pre_tp1_trailed: true } : {}),
     created_date: entryTime,
     closed_at: exitTime,
     score,
@@ -92,7 +95,8 @@ function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, 
  * @param {Object} config - { rfPeriod, rfMult, atrMult, tp1R, tp1QtyPercent, minScore, atrLen, emaFast, emaSlow,
  *   regimeFilter?: { useADX, useChop, adxLen, adxSmooth, chopLen } | null,   // filtro ADX/Choppiness por tier, SÓ barra entrada (como evaluateRegime do scanner)
  *   timeStop?: { T1, T2, T3 } | null,                                        // fecha ANTES do TP1 após N candles (N por tier), no fechamento da vela
- *   tierThresholds?: { tier2, tier3 } }                                      // limites de ATR% do tier (Pine: 0.8 / 1.5)
+ *   tierThresholds?: { tier2, tier3 },                                       // limites de ATR% do tier (Pine: 0.8 / 1.5)
+ *   preTp1Trail?: { startAtrMult, trailAtrMult } | null }                    // trailing do stop ANTES do TP1 (advancePreTp1Trailing do scanner); null = stop parado até o TP1
  *   Sem regimeFilter/timeStop (o padrão) o comportamento é o de sempre.
  * @param {{symbol: string, timeframe: string}} meta
  * @returns {{ ops: Array, stillOpen: Object|null, stats: { signals: number, taken: number, rejectedByScore: number, rejectedByRegime: number, skippedWhileOpen: number, startIndex: number, candlesTotal: number, firstTradableTime: number|null } }}
@@ -106,7 +110,7 @@ export function runQuickBacktest(candles, config, meta) {
   // Médias do score: as MESMAS que o scanner usa (Pine: 20/50 — resolveIndicatorParams, known-risks item 27). Até 22/11/2026 este
   // simulador usava 9/21 fixas, o que muda a tendência EMA (20 pts do score) em ~15% das barras. Par inválido (rápida >= lenta) cai
   // inteiro nos valores do Pine, como no scanner (item 31).
-  const { regimeFilter = null, timeStop = null, tierThresholds = { tier2: 0.8, tier3: 1.5 } } = config;
+  const { regimeFilter = null, timeStop = null, preTp1Trail = null, tierThresholds = { tier2: 0.8, tier3: 1.5 } } = config;
   let { emaFast = 20, emaSlow = 50 } = config;
   if (!(Number.isInteger(emaFast) && Number.isInteger(emaSlow) && emaFast > 0 && emaFast < emaSlow)) { emaFast = 20; emaSlow = 50; }
   const { symbol, timeframe } = meta;
@@ -170,7 +174,18 @@ export function runQuickBacktest(candles, config, meta) {
         position = null;
       } else if (hitTp1) {
         position.tp1Hit = true;
-        position.stop = position.entryPrice; // breakeven pós-TP1, mesma regra do runner real
+        // Breakeven pós-TP1, mesma regra do runner real — e NUNCA piora um stop que o trailing já levou além da entrada (o banco só aceita stop melhor: clampMonotonicStop).
+        position.stop = side === 'BUY' ? Math.max(position.stop, position.entryPrice) : Math.min(position.stop, position.entryPrice);
+      } else if (preTp1Trail && !position.tp1Hit) {
+        // Trailing ANTES do TP1 (scanner: bloco pré-TP1 de persistScanResults, modo 'trailing'): roda só se a vela não gerou saída nem TP1, DEPOIS de o stop
+        // ter sido checado contra o valor ARMAZENADO — o avanço só protege a partir da vela seguinte (sem olhar o futuro). Âncora = extremo favorável desde a
+        // entrada (inclui esta vela); o stop nunca passa do fechamento desta vela e nunca recua.
+        position.extreme = side === 'BUY' ? Math.max(position.extreme, candle.high) : Math.min(position.extreme, candle.low);
+        const next = advancePreTp1Trailing({
+          isBuy: side === 'BUY', currentStop: position.stop, entry: position.entryPrice, favorableExtreme: position.extreme,
+          atrValue: atrSeries[i], startAtrMult: preTp1Trail.startAtrMult, trailAtrMult: preTp1Trail.trailAtrMult, closePrice: candle.close,
+        });
+        if (next !== position.stop) { position.stop = next; position.trailed = true; }
       }
     }
 
@@ -223,6 +238,7 @@ export function runQuickBacktest(candles, config, meta) {
           side, entryTime: candle.closeTime, entryPrice,
           stop, initialStop: stop, tp1, tp2, tp1Hit: false, score,
           entryIndex: i, timeStopBars: timeStop ? tierHere.timeStopBars : null,
+          extreme: entryPrice, trailed: false,
         };
       }
     }

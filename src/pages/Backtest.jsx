@@ -557,7 +557,7 @@ function SimulatedTradesTable({ ops }) {
               // fora do escopo desta rodada.
               const [label, color] = outcome === 'BE'
                 ? ['🟡 BE', '#64748b']
-                : [op.closed_reason === 'TIME_STOP' ? '⏱ Time stop' : (STATUS_ICON_COLOR[op.status]?.[0] || op.status), outcomeColor(op.status, outcome)];
+                : [op.closed_reason === 'TIME_STOP' ? '⏱ Time stop' : (op.pre_tp1_trailed && op.status === 'STOP_HIT' && !op.tp1_hit ? 'Stop (trailing)' : (STATUS_ICON_COLOR[op.status]?.[0] || op.status)), outcomeColor(op.status, outcome)];
               const isBuy = op.side === 'BUY';
               return (
                 <tr key={op.id} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
@@ -583,16 +583,19 @@ function SimulatedTradesTable({ ops }) {
 const WHATIF_AUTO_KEY = 'sentinel_whatif_auto_v1';
 const readAuto = () => { try { return localStorage.getItem(WHATIF_AUTO_KEY) !== '0'; } catch { return true; } };
 const safeStorage = () => { try { return localStorage; } catch { return null; } };
-const FALLBACK_DEFAULTS = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1 };
+const FALLBACK_DEFAULTS = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2 };
 const NO_RUN = { expectancyR: null, counted: 0 };
 
 // Uma simulação completa: motor + relatório (mesmo summarizeOps das outras abas) + resumo numérico. Nunca lança: erro vira { ok: false, error }.
 function simulate(closed, params, extra, meta) {
   try {
-    // `regime` e `timeStop` são interruptores 0/1 nos parâmetros; o motor recebe os objetos de configuração (ou null).
-    const { regime, timeStop, ...nums } = params;
+    // `regime`, `timeStop` e `trail` são interruptores 0/1 nos parâmetros; o motor recebe os objetos de configuração (ou null).
+    const { regime, timeStop, trail, trailStart, trailDist, ...nums } = params;
     const { regimeCfg, timeStopCfg, ...rest } = extra;
-    const { ops, stillOpen, stats } = runQuickBacktest(closed, { ...nums, ...rest, regimeFilter: regime ? regimeCfg : null, timeStop: timeStop ? timeStopCfg : null }, meta);
+    const { ops, stillOpen, stats } = runQuickBacktest(closed, {
+      ...nums, ...rest, regimeFilter: regime ? regimeCfg : null, timeStop: timeStop ? timeStopCfg : null,
+      preTp1Trail: trail ? { startAtrMult: trailStart, trailAtrMult: trailDist } : null,
+    }, meta);
     const allOps = stillOpen ? [...ops, { ...stillOpen, status: 'SIGNAL_CONFIRMED' }] : ops;
     const report = buildReportFromOps(allOps);
     return { ok: true, ops, stillOpen, stats, report, summary: summarizeRun(report.overall) };
@@ -714,7 +717,7 @@ function QuickBacktestTab() {
   const quality = useMemo(() => (data ? assessCandles({ raw: data.raw, closed: data.closed, requested: candleCount, timeframe, startIndex: run?.ok ? run.stats.startIndex : 0, now: data.fetchedAt }) : null),
     [data, candleCount, timeframe, run]);
   const cmp = useMemo(() => (run?.ok && baseline?.ok ? compareSummaries(run.summary, baseline.summary) : null), [run, baseline]);
-  const fidelity = useMemo(() => fidelityRows(pineConfig ?? {}, { emaFast: extra.emaFast, emaSlow: extra.emaSlow }, { regime: applied.regime, timeStop: applied.timeStop }), [pineConfig, extra, applied]);
+  const fidelity = useMemo(() => fidelityRows(pineConfig ?? {}, { emaFast: extra.emaFast, emaSlow: extra.emaSlow }, { regime: applied.regime, timeStop: applied.timeStop, trail: applied.trail }), [pineConfig, extra, applied]);
   const chart = useMemo(() => (run?.ok ? buildTradeChart(data.closed, run.ops, run.stats.startIndex) : null), [run, data]);
   const analysis = useMemo(() => (run?.ok ? analyzeOps(run.ops) : null), [run]);
   const isDefault = sameParams(applied, defaults);
@@ -765,6 +768,24 @@ function QuickBacktestTab() {
   };
   const toggleAuto = (v) => { setAuto(v); try { localStorage.setItem(WHATIF_AUTO_KEY, v ? '1' : '0'); } catch { /* sem armazenamento: só não lembra */ } };
   const onAssetChange = (id) => { touchedRef.current = false; setAssetId(id); };
+
+  // Um controle deslizante com o valor, o "padrão X" e o ● de diferente. `off` apaga o controle (ex.: ajustes do trailing com o trailing desligado).
+  const renderSlider = (s, off = false) => {
+    const differs = !off && params[s.key] !== defaults[s.key];
+    return (
+      <div key={s.key} className="rounded-md px-3 py-2" title={s.help} style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${differs ? 'rgba(221,154,74,0.3)' : 'rgba(255,255,255,0.05)'}` }}>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs text-muted-foreground">{s.label}{differs && <span aria-label="diferente do padrão" style={{ color: '#dd9a4a' }}> ●</span>}</span>
+          <span className="text-xs font-mono font-semibold tabular-nums" style={{ color: s.color }}>{params[s.key]}</span>
+        </div>
+        <Slider value={[params[s.key]]} min={s.min} max={s.max} step={s.step} aria-label={s.label} disabled={off}
+          onPointerDown={() => setInteracting(true)}
+          onValueChange={([v]) => setParam(s.key, v)}
+          onValueCommit={() => setInteracting(false)} />
+        <p className="text-11px text-muted-foreground mt-1.5">padrão {defaults[s.key]}</p>
+      </div>
+    );
+  };
 
   const fieldStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.8)' };
 
@@ -830,24 +851,9 @@ function QuickBacktestTab() {
               (múltiplos prazos + SMC) que o scanner real usa. Bom pra explorar rápido, não é o resultado exato do motor de verdade.
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              {QBT_SLIDERS.map(s => {
-                const differs = params[s.key] !== defaults[s.key];
-                return (
-                  <div key={s.key} className="rounded-md px-3 py-2" title={s.help} style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${differs ? 'rgba(221,154,74,0.3)' : 'rgba(255,255,255,0.05)'}` }}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs text-muted-foreground">{s.label}{differs && <span aria-label="diferente do padrão" style={{ color: '#dd9a4a' }}> ●</span>}</span>
-                      <span className="text-xs font-mono font-semibold tabular-nums" style={{ color: s.color }}>{params[s.key]}</span>
-                    </div>
-                    <Slider value={[params[s.key]]} min={s.min} max={s.max} step={s.step} aria-label={s.label}
-                      onPointerDown={() => setInteracting(true)}
-                      onValueChange={([v]) => setParam(s.key, v)}
-                      onValueCommit={() => setInteracting(false)} />
-                    <p className="text-11px text-muted-foreground mt-1.5">padrão {defaults[s.key]}</p>
-                  </div>
-                );
-              })}
+              {QBT_SLIDERS.filter(s => !s.onlyWhen).map(s => renderSlider(s))}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
               {QBT_SWITCHES.map(sw => {
                 const differs = params[sw.key] !== defaults[sw.key];
                 return (
@@ -860,6 +866,10 @@ function QuickBacktestTab() {
                   </div>
                 );
               })}
+            </div>
+            {/* Os dois ajustes do trailing só valem com o interruptor dele ligado; desligado ficam à vista, apagados. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3" aria-label="Ajustes do trailing" style={{ opacity: params.trail ? 1 : 0.45 }}>
+              {QBT_SLIDERS.filter(s => s.onlyWhen).map(s => renderSlider(s, !params[s.onlyWhen]))}
             </div>
             {tier && (
               <p className="text-11px text-muted-foreground mt-2">

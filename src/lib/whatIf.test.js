@@ -6,7 +6,7 @@ import {
 } from './whatIf';
 
 const DS = { assetId: 'a1', symbol: 'BTCUSDT', timeframe: '4h', candleCount: 500 };
-const P = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1 };
+const P = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2 };
 const rec = (over = {}, at = '2026-11-22T10:00:00.000Z', exp = 0.1) => ({
   key: runKey(DS, { ...P, ...over }), at, dataset: DS, params: { ...P, ...over },
   summary: { expectancyR: exp, counted: 10, winRate: 50, profitFactor: 1.2, maxDrawdownPct: 5, ciHalfWidth: 0.2 }, starred: false,
@@ -26,6 +26,16 @@ describe('identidade e parâmetros', () => {
     expect(sameParams(P, { ...P })).toBe(true);
     expect(changedKeys({ ...P, minScore: 80, tp1R: 2 }, P)).toEqual(['tp1R', 'minScore']);
     expect(changedKeys(P, P)).toEqual([]);
+  });
+  it('trailing desligado: começo e distância dele NÃO contam (não viram "outro teste" nem "diferente do padrão")', () => {
+    const off = { ...P, trail: 0 };
+    expect(runKey(DS, { ...off, trailStart: 0.5, trailDist: 4 })).toBe(runKey(DS, { ...off, trailStart: 1, trailDist: 2 }));
+    expect(sameParams({ ...off, trailStart: 0.5 }, off)).toBe(true);
+    expect(changedKeys({ ...off, trailStart: 0.5, trailDist: 4 }, off)).toEqual([]);
+    // ligado, os valores contam; e ligar/desligar é uma mudança
+    expect(runKey(DS, { ...P, trailDist: 3 })).not.toBe(runKey(DS, P));
+    expect(changedKeys(off, P)).toEqual(['trail']); // ligar/desligar é UMA mudança (começo e distância não contam à parte)
+    expect(changedKeys({ ...P, trailStart: 1.5, trailDist: 3 }, P)).toEqual(['trailStart', 'trailDist']);
   });
   it('summarizeRun guarda só números válidos', () => {
     const s = summarizeRun({ expectancyR: NaN, winRate: 40, counted: 7, expectancyRCI95HalfWidth: 0.3, conclusive: false });
@@ -179,11 +189,16 @@ describe('tier e padrões', () => {
   });
   it('buildDefaults: stop vem do tier (não do trailAtrMult); RF vem do ATIVO; resto do Pine', () => {
     const d = buildDefaults({ pineConfig: { trailAtrMult: 3, tp1R: 1.8, minScore: 80, rng_per: 20, rng_qty: 3.5 }, asset: { rf_period: 14, rf_multiplier: 3 }, tier: { atrStopMult: 2.5 } });
-    expect(d).toEqual({ atrMult: 2.5, tp1R: 1.8, rfPeriod: 14, rfMult: 3, minScore: 80, regime: 1, timeStop: 1 });
-    expect(buildDefaults({})).toEqual({ atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1 });
+    expect(d).toEqual({ atrMult: 2.5, tp1R: 1.8, rfPeriod: 14, rfMult: 3, minScore: 80, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2 });
+    expect(buildDefaults({})).toEqual({ atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2 });
     // os interruptores seguem a PRODUÇÃO: tudo desligado no Pine salvo => desligado aqui
     expect(buildDefaults({ pineConfig: { useADX: false, useChop: false, useTimeStop: false } })).toMatchObject({ regime: 0, timeStop: 0 });
     expect(buildDefaults({ pineConfig: { useADX: false, useChop: true } }).regime).toBe(1);
+  });
+  it('buildDefaults: trailing pré-TP1 segue a PRODUÇÃO (proteção mestre E modo trailing ligados) e os valores vêm do Pine salvo', () => {
+    expect(buildDefaults({ pineConfig: { preTp1StopProtectionEnabled: true, preTp1TrailEnabled: true, preTp1TrailStartAtrMult: 1.5, preTp1TrailAtrMult: 2.5 } })).toMatchObject({ trail: 1, trailStart: 1.5, trailDist: 2.5 });
+    expect(buildDefaults({ pineConfig: { preTp1TrailEnabled: false } }).trail).toBe(0);
+    expect(buildDefaults({ pineConfig: { preTp1StopProtectionEnabled: false } }).trail).toBe(0); // sem a proteção mestre o scanner nem roda o bloco pré-TP1
   });
   it('fidelityRows: regime e time stop passam a ser feitos pelo simulador; o que falta continua declarado', () => {
     const f = fidelityRows({ useADX: true, useChop: true, useTimeStop: true, preTp1TrailEnabled: true, minRR: 1.2 }, { emaFast: 20, emaSlow: 50 }, { regime: 1, timeStop: 0 });
@@ -191,7 +206,9 @@ describe('tier e padrões', () => {
     expect(f.included.find((t) => /Filtro de regime/.test(t))).toMatch(/ligado neste teste.*produção: ligado/);
     expect(f.included.find((t) => /Time stop/.test(t))).toMatch(/desligado neste teste.*produção: ligado/);
     expect(f.notIncluded.some((n) => /ADX/.test(n.label))).toBe(false);
-    expect(f.notIncluded.find((n) => /Trailing do stop antes do TP1/.test(n.label)).production).toBe('ligado na produção');
+    expect(f.notIncluded.some((n) => /Trailing do stop antes do TP1/.test(n.label))).toBe(false); // agora é feito pelo simulador
+    expect(fidelityRows({ preTp1TrailEnabled: true }, undefined, { regime: 1, timeStop: 1, trail: 1 }).included.find((t) => /Trailing do stop ANTES do TP1/.test(t))).toMatch(/ligado neste teste.*produção: ligado/);
+    expect(fidelityRows({ preTp1TrailEnabled: false }, undefined, { regime: 1, timeStop: 1, trail: 0 }).included.find((t) => /Trailing do stop ANTES do TP1/.test(t))).toMatch(/desligado neste teste.*produção: desligado/);
     expect(f.notIncluded.find((n) => /minRR/.test(n.label)).production).toMatch(/1\.2R/);
     expect(fidelityRows({ useADX: false, useChop: false, useTimeStop: false }).included.find((t) => /Filtro de regime/.test(t))).toMatch(/produção: desligado/);
   });
@@ -246,11 +263,14 @@ describe('dados dos gráficos', () => {
   it('exitBreakdown separa TP2, TP1+breakeven e stop cheio, e as partes somam o total', () => {
     const ops = [op(), op(), op({ status: 'TP2_HIT', exit_price: 106, tp1_hit: true }), op({ tp1_hit: true, exit_price: 100 })];
     const b = exitBreakdown(ops);
-    expect(b.map((x) => x.count)).toEqual([1, 1, 2, 0]);
+    expect(b.map((x) => x.count)).toEqual([1, 1, 0, 2, 0]); // TP2, TP1+BE, stop do trailing, stop cheio, time stop
     expect(b.reduce((s, x) => s + x.count, 0)).toBe(4);
     const withTs = exitBreakdown([...ops, op({ status: 'CLOSED', closed_reason: 'TIME_STOP', exit_price: 101, tp1_hit: false })]);
     expect(withTs.find((x) => x.key === 'time_stop').count).toBe(1);
     expect(withTs.reduce((s, x) => s + x.count, 0)).toBe(5);
+    const withTrail = exitBreakdown([...ops, op({ pre_tp1_trailed: true, exit_price: 101 })]);
+    expect(withTrail.find((x) => x.key === 'stop_trail').count).toBe(1); // stop que subiu pelo trailing antes do TP1 não é "stop cheio"
+    expect(withTrail.find((x) => x.key === 'stop').count).toBe(2);
     expect(b.find((x) => x.key === 'stop').avgR).toBeLessThan(0);
     expect(b.find((x) => x.key === 'tp2').avgR).toBeGreaterThan(0);
   });
@@ -276,10 +296,11 @@ describe('migração e reavaliação do histórico', () => {
     const h = loadHistory(st);
     expect(h).toHaveLength(1);
     expect(h[0].params).toMatchObject({ regime: 0, timeStop: 0, minScore: 75 });
-    expect(h[0].key).toBe(runKey(DS, { ...legacyParams, regime: 0, timeStop: 0 }));
+    expect(h[0].key).toBe(runKey(DS, { ...legacyParams, regime: 0, timeStop: 0, trail: 0 }));
+    expect(h[0].params).toMatchObject({ regime: 0, timeStop: 0, trail: 0 }); // antes do trailing o stop ficava parado: vale trailing desligado
     expect(h[0].starred).toBe(true);
     // o mesmo teste, agora COM os filtros ligados, é OUTRO teste (chave diferente)
-    expect(runKey(DS, { ...legacyParams, regime: 1, timeStop: 1 })).not.toBe(h[0].key);
+    expect(runKey(DS, { ...legacyParams, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2 })).not.toBe(h[0].key);
     // registro sem os cinco números continua inválido
     st.setItem('sentinel_whatif_history_v1', JSON.stringify({ v: 1, runs: [{ ...legacy, params: { atrMult: 2 } }] }));
     expect(loadHistory(st)).toEqual([]);
