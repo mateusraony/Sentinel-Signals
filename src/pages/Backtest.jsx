@@ -1,5 +1,5 @@
 import TokenIcon from '@/components/TokenIcon';
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import moment from 'moment';
 import {
@@ -14,6 +14,22 @@ import { backend } from '@/api/entities';
 import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { SYNCED_STRATEGY_KEYS, DEFAULTS as PINE_DEFAULTS, getPineConfig, getPineConfigStatus } from '@/lib/pineParser';
 import { explainReport, reasonLabel, diffAppliedConfig } from '@/lib/backtestInsights';
+import { analyzeOps } from '@/lib/backtestAnalysis';
+import { resolveIndicatorParams } from '@/lib/scanner';
+import {
+  summarizeRun, requestKey, runKey, sameParams, changedKeys, loadHistory, saveHistory, addRun, toggleStar, removeRun, rankRuns, bestRun, overfitNote,
+  compareSummaries, assessCandles, detectTier, buildDefaults, fidelityRows, buildTradeChart, rHistogram, exitBreakdown, sideBreakdown,
+} from '@/lib/whatIf';
+import { QBT_TIMEFRAMES, QBT_CANDLE_OPTIONS, QBT_SLIDERS, clampDefaults } from '@/components/backtest/whatif/params';
+import { SectionTitle } from '@/components/backtest/whatif/ui';
+import ComparisonStrip from '@/components/backtest/whatif/ComparisonStrip';
+import TrustPanel, { DataBadge } from '@/components/backtest/whatif/TrustPanel';
+import TradesPriceChart from '@/components/backtest/whatif/TradesPriceChart';
+import OutcomeAnalysis from '@/components/backtest/whatif/OutcomeAnalysis';
+import SignalFunnel from '@/components/backtest/whatif/SignalFunnel';
+import SensitivityPanel from '@/components/backtest/whatif/SensitivityPanel';
+import RunHistory from '@/components/backtest/whatif/RunHistory';
+import { Switch } from '@/components/ui/switch';
 import { logInfo } from '@/lib/logger';
 import { isClosedOp, getClosedAt, summarizeOps, calcRealizedPnlPct, getExitPrice, classifyOutcome } from '@/lib/tradeMetrics';
 import { outcomeColor } from '@/lib/outcomeColor';
@@ -563,36 +579,44 @@ function SimulatedTradesTable({ ops }) {
   );
 }
 
-const QBT_TIMEFRAMES = [
-  { id: '1h', label: '1H', minutes: 60 },
-  { id: '4h', label: '4H', minutes: 240 },
-  { id: '1d', label: '1D', minutes: 1440 },
-];
-const QBT_CANDLE_OPTIONS = [200, 500, 1000];
-const QBT_SLIDERS = [
-  { key: 'atrMult', label: 'ATR Mult', min: 0.5, max: 5, step: 0.1, color: '#e06a5b' },
-  { key: 'tp1R', label: 'TP1 (R)', min: 0.5, max: 4, step: 0.1, color: '#e3b45a' },
-  { key: 'rfPeriod', label: 'RF Period', min: 5, max: 50, step: 1, color: '#8db4e2' },
-  { key: 'rfMult', label: 'RF Mult', min: 0.5, max: 8, step: 0.1, color: '#5db586' },
-  { key: 'minScore', label: 'Min Score', min: 50, max: 100, step: 1, color: '#a78bfa' },
-];
+const WHATIF_AUTO_KEY = 'sentinel_whatif_auto_v1';
+const readAuto = () => { try { return localStorage.getItem(WHATIF_AUTO_KEY) !== '0'; } catch { return true; } };
+const safeStorage = () => { try { return localStorage; } catch { return null; } };
+const FALLBACK_DEFAULTS = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75 };
+const NO_RUN = { expectancyR: null, counted: 0 };
 
-// Simulação instantânea single-asset/single-timeframe — ver
-// src/lib/quickBacktest.js para o porquê de ser uma aproximação simplificada
-// e não o mesmo motor de scanner.js/backtestEngine.js. Roda 100% no
-// navegador, sem GitHub Actions, sem gravar nada — é o "e se eu mudasse
-// este parâmetro?" imediato.
+// Uma simulação completa: motor + relatório (mesmo summarizeOps das outras abas) + resumo numérico. Nunca lança: erro vira { ok: false, error }.
+function simulate(closed, params, extra, meta) {
+  try {
+    const { ops, stillOpen, stats } = runQuickBacktest(closed, { ...params, ...extra }, meta);
+    const allOps = stillOpen ? [...ops, { ...stillOpen, status: 'SIGNAL_CONFIRMED' }] : ops;
+    const report = buildReportFromOps(allOps);
+    return { ok: true, ops, stillOpen, stats, report, summary: summarizeRun(report.overall) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// Simulação instantânea single-asset/single-timeframe — ver src/lib/quickBacktest.js para o porquê de ser uma aproximação simplificada
+// e não o mesmo motor de scanner.js/backtestEngine.js. Roda 100% no navegador, sem GitHub Actions, sem gravar nada no banco.
+// Desde 22/11/2026: recalcula SOZINHA quando você mexe (a conta leva ~2 ms), compara com o padrão, guarda cada teste num histórico
+// (neste navegador) e mostra a conferência dos dados — para você não se perder entre o que testou e o que deu melhor.
 function QuickBacktestTab() {
   const [assetId, setAssetId] = useState('');
   const [timeframe, setTimeframe] = useState('4h');
   const [candleCount, setCandleCount] = useState(500);
-  const [sliders, setSliders] = useState({ atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75 });
-  // Valores com que a tela começa (os do Pine salvo, depois de carregar): é o "padrão X" mostrado em cada controle.
-  const [defaults, setDefaults] = useState({ atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75 });
-  const [baseConfig, setBaseConfig] = useState({ atrLen: 14, tp1QtyPercent: 50 });
-  const [result, setResult] = useState(null); // { report, ops, candleCount, from, to }
-  const [status, setStatus] = useState('idle'); // idle | running | error
+  const [params, setParams] = useState(FALLBACK_DEFAULTS); // o que está nos controles
+  const [applied, setApplied] = useState(FALLBACK_DEFAULTS); // o que gerou o resultado em tela
+  const [auto, setAuto] = useState(readAuto);
+  const [pineConfig, setPineConfig] = useState(null);
+  const [data, setData] = useState(null); // { key, raw, closed, fetchedAt }
+  const [dataStatus, setDataStatus] = useState('idle'); // idle | loading | error
   const [errorMsg, setErrorMsg] = useState(null);
+  const [history, setHistory] = useState(() => loadHistory(safeStorage()));
+  const [sortBy, setSortBy] = useState('expectancy');
+  const [saveFailed, setSaveFailed] = useState(false);
+  const touchedRef = useRef(false); // true depois que o usuário mexe: aí o padrão novo não sobrescreve os controles
+  const fetchSeq = useRef(0);
 
   const { data: assets = [], isLoading: assetsLoading, isError: assetsError, refetch: refetchAssets } = useQuery({
     queryKey: ['all-assets'],
@@ -602,160 +626,281 @@ function QuickBacktestTab() {
 
   useEffect(() => {
     let cancelled = false;
-    getPineConfig().then(config => {
-      if (cancelled) return;
-      setBaseConfig({ atrLen: config.atrLen, tp1QtyPercent: config.tp1QtyPercent });
-      const fromPine = (s) => ({ ...s, atrMult: config.trailAtrMult ?? s.atrMult, tp1R: config.tp1R ?? s.tp1R, minScore: config.minScore ?? s.minScore });
-      setSliders(fromPine);
-      setDefaults(fromPine);
-    });
+    getPineConfig().then(config => { if (!cancelled) setPineConfig(config); });
     return () => { cancelled = true; };
   }, []);
 
   const asset = assets.find(a => a.id === assetId);
+  const assetSymbol = asset?.symbol;
   const tfMeta = QBT_TIMEFRAMES.find(t => t.id === timeframe);
   const approxDays = Math.round((tfMeta.minutes * candleCount) / (60 * 24));
-  const changedCount = QBT_SLIDERS.filter(s => sliders[s.key] !== defaults[s.key]).length;
+  // `windowEnd` = fechamento da última vela carregada: identifica a JANELA REAL de dados (achado do Codex, PR #617). Mudou a janela, mudou o grupo do histórico.
+  const windowEnd = data ? data.closed[data.closed.length - 1]?.closeTime ?? null : null;
+  const dataset = useMemo(() => (assetSymbol ? { assetId, symbol: assetSymbol, timeframe, candleCount, windowEnd } : null), [assetId, assetSymbol, timeframe, candleCount, windowEnd]);
 
-  const handleRun = async () => {
-    if (!asset) return;
-    setStatus('running');
+  // Candles: buscados sozinhos ao escolher/trocar ativo, timeframe ou período (guarda contra resposta atrasada de uma busca antiga).
+  const fetchData = useCallback(async () => {
+    if (!assetSymbol) return;
+    const seq = ++fetchSeq.current;
+    setDataStatus('loading');
     setErrorMsg(null);
     try {
-      const candles = await fetchCandles(asset.symbol, timeframe, candleCount);
-      const closed = candles.filter(c => c.isClosed);
-      const { ops, stillOpen } = runQuickBacktest(closed, { ...sliders, ...baseConfig }, {
-        symbol: asset.symbol, timeframe,
-      });
-      const allOps = stillOpen ? [...ops, { ...stillOpen, status: 'SIGNAL_CONFIRMED' }] : ops;
-      const report = buildReportFromOps(allOps);
-      setResult({
-        report, ops,
-        candleCount: closed.length,
-        from: closed[0]?.closeTime, to: closed[closed.length - 1]?.closeTime,
-      });
-      setStatus('idle');
+      const raw = await fetchCandles(assetSymbol, timeframe, candleCount);
+      if (seq !== fetchSeq.current) return;
+      setData({ key: `${assetId}|${timeframe}|${candleCount}`, raw, closed: raw.filter(c => c.isClosed), fetchedAt: Date.now() });
+      setDataStatus('idle');
     } catch (e) {
-      setStatus('error');
+      if (seq !== fetchSeq.current) return;
+      setDataStatus('error');
       setErrorMsg(e.message);
     }
+  }, [assetId, assetSymbol, timeframe, candleCount]);
+
+  useEffect(() => {
+    setData(null);
+    if (assetSymbol) fetchData();
+    else { fetchSeq.current += 1; setDataStatus('idle'); }
+  }, [fetchData, assetSymbol]);
+
+  // Padrões: o stop vem do TIER do ativo (como no scanner), o RF vem do próprio ativo, o resto do Pine salvo.
+  const tier = useMemo(() => (data ? detectTier(data.closed, pineConfig ?? {}) : null), [data, pineConfig]);
+  const defaults = useMemo(() => clampDefaults(buildDefaults({ pineConfig: pineConfig ?? {}, asset, tier })), [pineConfig, asset, tier]);
+
+  useEffect(() => {
+    if (!touchedRef.current) { setParams(defaults); setApplied(defaults); }
+  }, [defaults]);
+
+  // Recalcula sozinho (com um respiro de 250 ms para o slider não disparar a cada pixel).
+  useEffect(() => {
+    if (!auto || sameParams(params, applied)) return undefined;
+    const t = setTimeout(() => setApplied(params), 250);
+    return () => clearTimeout(t);
+  }, [params, applied, auto]);
+
+  const stale = !sameParams(params, applied);
+  const meta = useMemo(() => ({ symbol: assetSymbol, timeframe }), [assetSymbol, timeframe]);
+  const extra = useMemo(() => {
+    const ind = resolveIndicatorParams(asset ?? {}, pineConfig ?? {});
+    return { tp1QtyPercent: pineConfig?.tp1QtyPercent ?? 50, atrLen: ind.atrStopPeriod, emaFast: ind.emaFast, emaSlow: ind.emaSlow };
+  }, [asset, pineConfig]);
+
+  const run = useMemo(() => (data ? simulate(data.closed, applied, extra, meta) : null), [data, applied, extra, meta]);
+  const baseline = useMemo(() => (data ? simulate(data.closed, defaults, extra, meta) : null), [data, defaults, extra, meta]);
+  const runSummary = useCallback((p) => {
+    const r = data ? simulate(data.closed, p, extra, meta) : null;
+    return r?.ok ? r.summary : NO_RUN;
+  }, [data, extra, meta]);
+
+  const quality = useMemo(() => (data ? assessCandles({ raw: data.raw, closed: data.closed, requested: candleCount, timeframe, startIndex: run?.ok ? run.stats.startIndex : 0, now: data.fetchedAt }) : null),
+    [data, candleCount, timeframe, run]);
+  const cmp = useMemo(() => (run?.ok && baseline?.ok ? compareSummaries(run.summary, baseline.summary) : null), [run, baseline]);
+  const fidelity = useMemo(() => fidelityRows(pineConfig ?? {}, { emaFast: extra.emaFast, emaSlow: extra.emaSlow }), [pineConfig, extra]);
+  const chart = useMemo(() => (run?.ok ? buildTradeChart(data.closed, run.ops, run.stats.startIndex) : null), [run, data]);
+  const analysis = useMemo(() => (run?.ok ? analyzeOps(run.ops) : null), [run]);
+  const isDefault = sameParams(applied, defaults);
+
+  // Histórico: cada combinação que fica na tela (depois de um respiro) é registrada sozinha, com o resultado.
+  const currentKey = dataset ? runKey(dataset, applied) : null;
+  useEffect(() => {
+    if (!dataset || !run?.ok || !data || data.key !== requestKey(dataset)) return undefined;
+    const t = setTimeout(() => {
+      const rec = { key: runKey(dataset, applied), at: new Date().toISOString(), dataset: { ...dataset, lastCandleTime: data.closed[data.closed.length - 1]?.closeTime ?? null }, params: applied, summary: run.summary, starred: false };
+      setHistory(h => addRun(h, rec));
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [run, dataset, applied, data]);
+  useEffect(() => { setSaveFailed(!saveHistory(safeStorage(), history)); }, [history]);
+
+  const ranked = useMemo(() => (dataset ? rankRuns(history, dataset, sortBy) : { same: [], others: history }), [history, dataset, sortBy]);
+  const best = useMemo(() => bestRun(ranked.same), [ranked]);
+  const overfit = dataset ? overfitNote(ranked.same.length) : null;
+
+  const changedCount = changedKeys(params, defaults).length;
+  const setParam = (key, v) => { touchedRef.current = true; setParams(prev => ({ ...prev, [key]: v })); };
+  const resetToDefaults = () => { touchedRef.current = false; setParams(defaults); setApplied(defaults); };
+  const handleRun = () => { setApplied(params); fetchData(); };
+  const handleUse = (r) => {
+    touchedRef.current = true;
+    setAssetId(r.dataset.assetId); setTimeframe(r.dataset.timeframe); setCandleCount(r.dataset.candleCount);
+    setParams(r.params); setApplied(r.params);
   };
+  const toggleAuto = (v) => { setAuto(v); try { localStorage.setItem(WHATIF_AUTO_KEY, v ? '1' : '0'); } catch { /* sem armazenamento: só não lembra */ } };
+  const onAssetChange = (id) => { touchedRef.current = false; setAssetId(id); };
 
   const fieldStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.8)' };
 
   return (
-    <div className="space-y-5">
-      <Section title="Configuração do Backtest" hint="1 ativo e 1 timeframe, roda no navegador e não grava nada">
-        {assetsError && assets.length === 0 && (
-          <div className="rounded-md p-4" style={{ background: 'rgba(221,154,74,0.06)', border: '1px solid rgba(221,154,74,0.2)' }}>
-            <QueryErrorState message="Não foi possível carregar os ativos agora — o seletor abaixo está vazio e 'Executar Backtest' fica desativado até a próxima atualização." onRetry={refetchAssets} />
-          </div>
-        )}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">Ativo</label>
-            <select value={assetId} onChange={e => setAssetId(e.target.value)}
-              className="w-full px-3 py-2 rounded-md text-xs font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              style={fieldStyle}>
-              <option value="">{assetsLoading ? 'Carregando ativos...' : 'Selecione...'}</option>
-              {assets.map(a => <option key={a.id} value={a.id}>{a.display_name || a.symbol}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">Timeframe</label>
-            <div className="flex items-center rounded-md overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
-              {QBT_TIMEFRAMES.map((tf, i) => (
-                <button key={tf.id} onClick={() => setTimeframe(tf.id)} aria-pressed={timeframe === tf.id}
-                  className="flex-1 px-3 py-2 text-xs font-mono font-semibold transition-all"
-                  style={{
-                    borderLeft: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.08)',
-                    ...(timeframe === tf.id
-                      ? { background: 'rgba(141,180,226,0.15)', color: '#8db4e2' }
-                      : { background: 'rgba(255,255,255,0.03)', color: 'rgba(255,255,255,0.62)' }),
-                  }}>
-                  {tf.label}
-                </button>
-              ))}
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem] items-start">
+      <div className="space-y-5 min-w-0">
+        <Section title="Configuração do Backtest" hint="1 ativo e 1 timeframe, roda no navegador e não grava nada no banco">
+          {assetsError && assets.length === 0 && (
+            <div className="rounded-md p-4" style={{ background: 'rgba(221,154,74,0.06)', border: '1px solid rgba(221,154,74,0.2)' }}>
+              <QueryErrorState message="Não foi possível carregar os ativos agora — o seletor abaixo está vazio e 'Executar Backtest' fica desativado até a próxima atualização." onRetry={refetchAssets} />
             </div>
-            <p className="text-11px text-muted-foreground mt-1">~{approxDays} dias</p>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1">Período (candles)</label>
-            <select value={candleCount} onChange={e => setCandleCount(Number(e.target.value))}
-              className="w-full px-3 py-2 rounded-md text-xs font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              style={fieldStyle}>
-              {QBT_CANDLE_OPTIONS.map(n => <option key={n} value={n}>{n} candles</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <Sparkles className="w-3.5 h-3.5" style={{ color: '#e3b45a' }} aria-hidden="true" />
-            <span className="text-xs font-semibold" style={{ color: '#e3b45a' }}>Ajuste fino (what-if)</span>
-            <span className="text-xs text-muted-foreground">altere para testar cenários sem afetar o scanner</span>
-            <span className="text-xs ml-auto" style={{ color: changedCount ? '#dd9a4a' : undefined }}>
-              {changedCount ? `${changedCount} diferente${changedCount === 1 ? '' : 's'} do padrão` : 'tudo no padrão'}
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">
-            Simulação simplificada de 1 ativo/1 timeframe por vez — não reproduz a cascata completa
-            (múltiplos prazos + SMC) que o scanner real usa. Bom pra explorar rápido, não é o resultado exato do motor de verdade.
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {QBT_SLIDERS.map(s => {
-              const differs = sliders[s.key] !== defaults[s.key];
-              return (
-                <div key={s.key} className="rounded-md px-3 py-2" style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${differs ? 'rgba(221,154,74,0.3)' : 'rgba(255,255,255,0.05)'}` }}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs text-muted-foreground">{s.label}{differs && <span aria-label="diferente do padrão" style={{ color: '#dd9a4a' }}> ●</span>}</span>
-                    <span className="text-xs font-mono font-semibold tabular-nums" style={{ color: s.color }}>{sliders[s.key]}</span>
-                  </div>
-                  <Slider value={[sliders[s.key]]} min={s.min} max={s.max} step={s.step}
-                    onValueChange={([v]) => setSliders(prev => ({ ...prev, [s.key]: v }))} />
-                  <p className="text-11px text-muted-foreground mt-1.5">padrão {defaults[s.key]}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 pt-1 flex-wrap">
-          <button onClick={handleRun} disabled={!asset || status === 'running'}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-md text-xs font-mono font-semibold transition-all disabled:opacity-40"
-            style={{ background: 'rgba(93,181,134,0.1)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }}>
-            {status === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-            {status === 'running' ? 'Simulando...' : 'Executar Backtest'}
-          </button>
-          {asset ? (
-            <span className="text-xs font-mono text-muted-foreground">
-              {asset.symbol} · {timeframe.toUpperCase()} · {candleCount} candles
-            </span>
-          ) : (
-            <span className="text-xs text-muted-foreground">Escolha um ativo para executar.</span>
           )}
-        </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Ativo</label>
+              <select value={assetId} onChange={e => onAssetChange(e.target.value)}
+                className="w-full px-3 py-2 rounded-md text-xs font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                style={fieldStyle}>
+                <option value="">{assetsLoading ? 'Carregando ativos...' : 'Selecione...'}</option>
+                {assets.map(a => <option key={a.id} value={a.id}>{a.display_name || a.symbol}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Timeframe</label>
+              <div className="flex items-center rounded-md overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+                {QBT_TIMEFRAMES.map((tf, i) => (
+                  <button key={tf.id} onClick={() => setTimeframe(tf.id)} aria-pressed={timeframe === tf.id}
+                    className="flex-1 px-3 py-2 text-xs font-mono font-semibold transition-all"
+                    style={{
+                      borderLeft: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                      ...(timeframe === tf.id
+                        ? { background: 'rgba(141,180,226,0.15)', color: '#8db4e2' }
+                        : { background: 'rgba(255,255,255,0.03)', color: 'rgba(255,255,255,0.62)' }),
+                    }}>
+                    {tf.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-11px text-muted-foreground mt-1">~{approxDays} dias</p>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Período (candles)</label>
+              <select value={candleCount} onChange={e => setCandleCount(Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-md text-xs font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                style={fieldStyle}>
+                {QBT_CANDLE_OPTIONS.map(n => <option key={n} value={n}>{n} candles</option>)}
+              </select>
+            </div>
+          </div>
 
-        {status === 'error' && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-md text-xs font-mono" style={{ background: 'rgba(224,106,91,0.1)', border: '1px solid rgba(224,106,91,0.3)', color: '#e06a5b' }}>
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{errorMsg}
+          <div className="pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <Sparkles className="w-3.5 h-3.5" style={{ color: '#e3b45a' }} aria-hidden="true" />
+              <span className="text-xs font-semibold" style={{ color: '#e3b45a' }}>Ajuste fino (what-if)</span>
+              <span className="text-xs text-muted-foreground">altere para testar cenários sem afetar o scanner</span>
+              <span className="text-xs ml-auto" style={{ color: changedCount ? '#dd9a4a' : undefined }}>
+                {changedCount ? `${changedCount} diferente${changedCount === 1 ? '' : 's'} do padrão` : 'tudo no padrão'}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              Simulação simplificada de 1 ativo/1 timeframe por vez — não reproduz a cascata completa
+              (múltiplos prazos + SMC) que o scanner real usa. Bom pra explorar rápido, não é o resultado exato do motor de verdade.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {QBT_SLIDERS.map(s => {
+                const differs = params[s.key] !== defaults[s.key];
+                return (
+                  <div key={s.key} className="rounded-md px-3 py-2" title={s.help} style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${differs ? 'rgba(221,154,74,0.3)' : 'rgba(255,255,255,0.05)'}` }}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-muted-foreground">{s.label}{differs && <span aria-label="diferente do padrão" style={{ color: '#dd9a4a' }}> ●</span>}</span>
+                      <span className="text-xs font-mono font-semibold tabular-nums" style={{ color: s.color }}>{params[s.key]}</span>
+                    </div>
+                    <Slider value={[params[s.key]]} min={s.min} max={s.max} step={s.step} aria-label={s.label}
+                      onValueChange={([v]) => setParam(s.key, v)} />
+                    <p className="text-11px text-muted-foreground mt-1.5">padrão {defaults[s.key]}</p>
+                  </div>
+                );
+              })}
+            </div>
+            {tier && (
+              <p className="text-11px text-muted-foreground mt-2">
+                Tier do ativo: <span className="text-foreground/80">{tier.tier}</span> (volatilidade ATR% {tier.atrPctSmooth.toFixed(2)}) → o scanner usa stop de {tier.atrStopMult}× ATR, por isso esse é o padrão do Stop.
+                {asset?.rf_period != null && ' O RF padrão é o configurado neste ativo.'}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-x-4 gap-y-2 pt-1 flex-wrap">
+            <button onClick={handleRun} disabled={!asset || dataStatus === 'loading'}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-md text-xs font-mono font-semibold transition-all disabled:opacity-40"
+              style={{ background: 'rgba(93,181,134,0.1)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }}>
+              {dataStatus === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+              {dataStatus === 'loading' ? 'Buscando candles...' : 'Executar Backtest'}
+            </button>
+            <button onClick={resetToDefaults} disabled={!changedCount && !stale}
+              className="px-3 py-2 rounded-md text-xs font-mono transition-all disabled:opacity-40"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)' }}>
+              Voltar ao padrão
+            </button>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+              <Switch checked={auto} onCheckedChange={toggleAuto} aria-label="Atualizar o resultado sozinho" />
+              Atualizar o resultado sozinho ao mexer
+            </label>
+            {asset ? (
+              <span className="text-xs font-mono text-muted-foreground">{asset.symbol} · {timeframe.toUpperCase()} · {candleCount} candles</span>
+            ) : (
+              <span className="text-xs text-muted-foreground">Escolha um ativo para executar.</span>
+            )}
+          </div>
+
+          {stale && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md text-xs" role="status" style={{ background: 'rgba(221,154,74,0.08)', border: '1px solid rgba(221,154,74,0.3)', color: '#dd9a4a' }}>
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              {auto ? 'Recalculando…' : 'Você mexeu nos parâmetros: o resultado abaixo ainda é do teste anterior. Clique em Executar Backtest para atualizar.'}
+            </div>
+          )}
+          {dataStatus === 'error' && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md text-xs font-mono" role="alert" style={{ background: 'rgba(224,106,91,0.1)', border: '1px solid rgba(224,106,91,0.3)', color: '#e06a5b' }}>
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />Não foi possível buscar os candles: {errorMsg}
+              <button onClick={fetchData} className="ml-auto underline underline-offset-2">Tentar de novo</button>
+            </div>
+          )}
+        </Section>
+
+        {!asset && <p className="text-xs text-muted-foreground px-1">O resultado, com a leitura em português, aparece aqui assim que você escolher um ativo — e se atualiza sozinho a cada ajuste.</p>}
+
+        {asset && dataStatus === 'loading' && !data && (
+          <div className="flex justify-center py-12" role="status" aria-label="Buscando candles"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+        )}
+
+        {data && run && !run.ok && (
+          <div className="rounded-md px-4 py-3 text-xs flex items-start gap-2" role="alert" style={{ background: 'rgba(224,106,91,0.08)', border: '1px solid rgba(224,106,91,0.3)', color: '#e06a5b' }}>
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>Não foi possível simular: {run.error}. Escolha mais candles ou outro timeframe.</span>
           </div>
         )}
-      </Section>
 
-      {result ? (
-        <>
-          <p className="text-xs font-mono text-muted-foreground">
-            📅 {moment(result.from).format('DD/MM/YYYY')} → {moment(result.to).format('DD/MM/YYYY')}
-            &nbsp;&nbsp;{result.candleCount} candles processados
-            &nbsp;&nbsp;RF {sliders.rfPeriod}/{sliders.rfMult} · ATR {sliders.atrMult}x · TP1 {sliders.tp1R}R
-          </p>
-          <ReportBody report={result.report} hideCascadeTable source="quick" />
-          <SimulatedTradesTable ops={result.ops} />
-        </>
-      ) : (
-        <p className="text-xs text-muted-foreground px-1">O resultado, com a leitura em português, aparece aqui depois de executar.</p>
-      )}
+        {data && run?.ok && (
+          <>
+            <div className="rounded-md px-4 py-2.5 flex items-center gap-x-5 gap-y-1 flex-wrap text-xs" style={{ background: 'rgba(24,23,21,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <span className="font-mono text-foreground/85">{assetSymbol} · {timeframe.toUpperCase()}</span>
+              <span className="text-muted-foreground">operando de {moment(run.stats.firstTradableTime).format('DD/MM/YYYY')} a {moment(data.closed[data.closed.length - 1].closeTime).format('DD/MM/YYYY')} · {data.closed.length} candles ({run.stats.startIndex} de aquecimento)</span>
+              <DataBadge quality={quality} />
+              <span className="text-muted-foreground ml-auto">dados de {moment(data.fetchedAt).format('HH:mm:ss')}</span>
+            </div>
+
+            <ComparisonStrip cmp={cmp} isDefault={isDefault} stale={stale} />
+            <TrustPanel quality={quality} fidelity={fidelity} />
+
+            <ReportBody report={run.report} hideCascadeTable source="quick" />
+
+            <Section title="Onde o simulador entrou e saiu" hint="o preço com cada operação desenhada">
+              <TradesPriceChart points={chart.points} trades={chart.trades} symbol={assetSymbol} />
+            </Section>
+            <section className="space-y-2">
+              <SectionTitle hint="a distribuição do resultado">Como as operações terminaram</SectionTitle>
+              <OutcomeAnalysis histogram={rHistogram(run.ops)} exits={exitBreakdown(run.ops)} sides={sideBreakdown(run.ops)} concentration={analysis?.concentration} total={run.ops.length} positiveTotal={(run.summary.expectancyR ?? 0) > 0} />
+            </section>
+            <section className="space-y-2">
+              <SectionTitle hint="o que aconteceu com cada sinal do Range Filter">Por que só {run.ops.length} {run.ops.length === 1 ? 'operação' : 'operações'}?</SectionTitle>
+              <SignalFunnel stats={run.stats} />
+            </section>
+            <section className="space-y-2">
+              <SectionTitle hint="este valor é estável ou sorte?">Sensibilidade dos parâmetros</SectionTitle>
+              <SensitivityPanel runSummary={runSummary} params={applied} defaults={defaults} dataset={dataset} disabled={stale} />
+            </section>
+            <SimulatedTradesTable ops={run.ops} />
+          </>
+        )}
+      </div>
+
+      <aside className="lg:sticky lg:top-4 min-w-0" aria-label="Histórico de testes">
+        <RunHistory ranked={ranked} best={best} currentKey={currentKey} sortBy={sortBy} onSort={setSortBy} overfit={overfit} saveFailed={saveFailed}
+          onUse={handleUse} onStar={(k) => setHistory(h => toggleStar(h, k))} onRemove={(k) => setHistory(h => removeRun(h, k))} onClear={() => setHistory([])} />
+      </aside>
     </div>
   );
 }

@@ -141,7 +141,7 @@ describe('Backtest — Ajuste Fino (What-If): "padrão X" em cada controle', () 
     expect(await screen.findByText('tudo no padrão')).toBeTruthy();
     expect(screen.getAllByText(/^padrão /)).toHaveLength(5);
     expect(screen.getByText('Escolha um ativo para executar.')).toBeTruthy();
-    expect(screen.getByText(/aparece aqui depois de executar/)).toBeTruthy();
+    expect(screen.getByText(/aparece aqui assim que você escolher um ativo/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /Executar Backtest/ }).disabled).toBe(true);
   });
 

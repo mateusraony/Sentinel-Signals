@@ -62,18 +62,24 @@ function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, 
  * Roda a simulação simplificada sobre uma série de candles JÁ FECHADOS de um
  * único símbolo/timeframe.
  * @param {Array} candles - candles normalizados, ordem ascendente, só fechados
- * @param {Object} config - { rfPeriod, rfMult, atrMult, tp1R, tp1QtyPercent, minScore, atrLen }
+ * @param {Object} config - { rfPeriod, rfMult, atrMult, tp1R, tp1QtyPercent, minScore, atrLen, emaFast, emaSlow }
  * @param {{symbol: string, timeframe: string}} meta
- * @returns {{ ops: Array, stillOpen: Object|null }}
+ * @returns {{ ops: Array, stillOpen: Object|null, stats: { signals: number, taken: number, rejectedByScore: number, skippedWhileOpen: number, startIndex: number, candlesTotal: number, firstTradableTime: number|null } }}
+ *   `stats` conta o que aconteceu com cada sinal do Range Filter (aditivo: quem só usa ops/stillOpen não muda).
  */
 export function runQuickBacktest(candles, config, meta) {
   const {
     rfPeriod = 20, rfMult = 3.5, atrMult = 2, tp1R = 1.5,
     tp1QtyPercent = 50, minScore = 75, atrLen = 14,
   } = config;
+  // Médias do score: as MESMAS que o scanner usa (Pine: 20/50 — resolveIndicatorParams, known-risks item 27). Até 22/11/2026 este
+  // simulador usava 9/21 fixas, o que muda a tendência EMA (20 pts do score) em ~15% das barras. Par inválido (rápida >= lenta) cai
+  // inteiro nos valores do Pine, como no scanner (item 31).
+  let { emaFast = 20, emaSlow = 50 } = config;
+  if (!(Number.isInteger(emaFast) && Number.isInteger(emaSlow) && emaFast > 0 && emaFast < emaSlow)) { emaFast = 20; emaSlow = 50; }
   const { symbol, timeframe } = meta;
 
-  const minRequired = Math.max(rfPeriod + 10, atrLen + 1, 26 + 9, 21 + 2, 14 + 1) + 20;
+  const minRequired = Math.max(rfPeriod + 10, atrLen + 1, 26 + 9, emaSlow + 2, 14 + 1) + 20;
   if (!candles || candles.length < minRequired) {
     throw new Error(`Candles insuficientes para simular: ${candles?.length || 0}, mínimo ${minRequired}`);
   }
@@ -82,7 +88,7 @@ export function runQuickBacktest(candles, config, meta) {
   const atrSeries = calculateATRSeries(candles, atrLen);
   const rsi = calculateRSI(candles, 14);
   const macd = calculateMACD(candles, 12, 26, 9);
-  const emas = calculateEMAs(candles, 9, 21);
+  const emas = calculateEMAs(candles, emaFast, emaSlow);
   const volumes = candles.map(c => c.volume || 0);
 
   const { signals, direction: rfDirection } = rf.series;
@@ -93,6 +99,8 @@ export function runQuickBacktest(candles, config, meta) {
   const ops = [];
   let position = null;
   const startIdx = minRequired;
+  // O que aconteceu com cada sinal do Range Filter a partir do início da simulação (para explicar "por que só N operações").
+  const stats = { signals: 0, taken: 0, rejectedByScore: 0, skippedWhileOpen: 0, startIndex: startIdx, candlesTotal: candles.length, firstTradableTime: candles[startIdx]?.closeTime ?? null };
 
   for (let i = startIdx; i < candles.length; i++) {
     const candle = candles[i];
@@ -117,6 +125,9 @@ export function runQuickBacktest(candles, config, meta) {
       }
     }
 
+    if (signals[i] !== 'NONE') stats.signals += 1;
+    if (position && signals[i] !== 'NONE') stats.skippedWhileOpen += 1;
+
     if (!position && signals[i] !== 'NONE') {
       const side = signals[i];
       const rfResult = { signal: side, direction: rfDirection[i] };
@@ -138,7 +149,9 @@ export function runQuickBacktest(candles, config, meta) {
         timeframe, volumeData, minScore, null,
       );
 
+      if (!passed) stats.rejectedByScore += 1;
       if (passed) {
+        stats.taken += 1;
         const atr = atrSeries[i];
         const entryPrice = candle.close;
         const stopDist = atr * atrMult;
@@ -161,5 +174,5 @@ export function runQuickBacktest(candles, config, meta) {
     }
     : null;
 
-  return { ops, stillOpen };
+  return { ops, stillOpen, stats };
 }
