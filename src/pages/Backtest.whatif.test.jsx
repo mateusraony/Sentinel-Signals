@@ -4,7 +4,7 @@
 // confere os candles e analisa a sensibilidade. Aqui, a aba inteira contra candles sintéticos (o motor em si tem testes próprios em quickBacktest.test.js).
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
+import { screen, cleanup, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { renderPage, makeFakeBackendModule } from './__fixtures__/renderPage.jsx';
 
 const fetchCandlesMock = vi.fn();
@@ -72,6 +72,7 @@ describe('What-If — automático', () => {
     expect(await screen.findByRole('status', { name: 'O que este resultado diz' })).toBeTruthy();
     expect(fetchCandlesMock).toHaveBeenCalledWith('BTCUSDT', '4h', 500);
     expect(screen.getByRole('region', { name: 'Atual comparado com o padrão' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Resultado ao vivo' })).toBeTruthy(); // faixa grudada: o resultado fica à vista enquanto rola pelos controles
     expect(screen.getByText(/Os parâmetros são os do padrão/)).toBeTruthy();
     expect(screen.getByText(/Tier do ativo:/)).toBeTruthy();
   });
@@ -267,6 +268,82 @@ describe('What-If — filtro de regime e time stop (padrão = produção)', () =
   });
 });
 
+// Slider do Radix no jsdom: sem layout e sem captura de ponteiro. Aqui os dois são simulados para poder ARRASTAR de verdade (mover sem soltar).
+function fakeDrag() {
+  const proto = Element.prototype;
+  proto.setPointerCapture ??= () => {};
+  proto.releasePointerCapture ??= () => {};
+  proto.hasPointerCapture ??= () => true;
+  const root = screen.getAllByRole('slider')[2].parentElement.parentElement;
+  root.getBoundingClientRect = () => ({ left: 0, right: 200, width: 200, top: 0, bottom: 10, height: 10, x: 0, y: 0, toJSON() {} });
+  const fire = (type, x) => root.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: 5 }));
+  return { down: (x) => fire('pointerdown', x), move: (x) => fire('pointermove', x), up: (x) => { fire('pointerup', x); window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true })); } };
+}
+
+describe('What-If — o histórico só registra quando o controle é SOLTO e não duplica valores repetidos (pedido do usuário, 23/11)', () => {
+  it('arrastando um controle nada é registrado; ao soltar, registra UM teste só', async () => {
+    await openWhatIf();
+    await pickAsset();
+    const hist = await screen.findByRole('complementary', { name: 'Histórico de testes' });
+    await waitFor(() => expect(within(hist).getByText('1 nesta janela')).toBeTruthy(), { timeout: 4000 });
+    const drag = fakeDrag();
+    act(() => { drag.down(60); });
+    act(() => { drag.move(80); });
+    act(() => { drag.move(100); });
+    await screen.findByText(/diferente do padrão/); // o resultado acompanha o arrasto…
+    await new Promise(r => setTimeout(r, 1600)); // …mas, com o controle ainda preso, nada é gravado (antes gravava ao pausar 1,2 s)
+    expect(within(hist).getByText('1 nesta janela')).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem('sentinel_whatif_history_v1')).runs).toHaveLength(1);
+    expect(within(hist).getByText(/ainda não registrado/)).toBeTruthy();
+    act(() => { drag.up(100); });
+    await waitFor(() => expect(within(hist).getByText('2 nesta janela')).toBeTruthy(), { timeout: 4000 });
+    expect(JSON.parse(localStorage.getItem('sentinel_whatif_history_v1')).runs).toHaveLength(2);
+  }, 15000);
+
+  it('voltar aos MESMOS valores de um teste já feito não cria outro: o histórico não cresce', async () => {
+    await openWhatIf();
+    await pickAsset();
+    const hist = await screen.findByRole('complementary', { name: 'Histórico de testes' });
+    await waitFor(() => expect(within(hist).getByText('1 nesta janela')).toBeTruthy(), { timeout: 4000 });
+    await nudgeSlider(2); // padrão → valor novo (2 testes)
+    await waitFor(() => expect(within(hist).getByText('2 nesta janela')).toBeTruthy(), { timeout: 4000 });
+    const slider = screen.getAllByRole('slider')[2];
+    slider.focus();
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' });
+    fireEvent.keyDown(slider, { key: 'ArrowLeft' }); // de volta ao padrão
+    await screen.findByText('tudo no padrão');
+    await new Promise(r => setTimeout(r, 1500));
+    expect(within(hist).getByText('2 nesta janela')).toBeTruthy(); // continua 2: o teste do padrão só foi atualizado
+    expect(JSON.parse(localStorage.getItem('sentinel_whatif_history_v1')).runs).toHaveLength(2);
+    expect(within(hist).getByRole('status', { name: 'Este teste no histórico' }).textContent).toMatch(/Em tela agora: #\d de 2/);
+  }, 15000);
+
+  it('o painel mostra "Em tela agora" com a posição, mesmo com a lista longa; e o aviso de "muitas combinações" é só um aviso que não bloqueia', async () => {
+    const mk = (n) => ({
+      key: `k${n}`, at: `2026-11-22T10:${String(n).padStart(2, '0')}:00.000Z`, starred: false,
+      dataset: { assetId: 'a1', symbol: 'BTCUSDT', timeframe: '4h', candleCount: 500, windowEnd: 5 },
+      params: { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 50 + n, regime: 1, timeStop: 1 },
+      summary: { expectancyR: n / 100, counted: 20, winRate: 50, profitFactor: 1.2, maxDrawdownPct: 3, conclusive: false },
+    });
+    // 10 testes numa janela de MESMA identidade da tela exige o mesmo windowEnd: pegamos o da tela depois de carregar e regravamos
+    await openWhatIf();
+    await pickAsset();
+    const hist = await screen.findByRole('complementary', { name: 'Histórico de testes' });
+    await waitFor(() => expect(within(hist).getByText('1 nesta janela')).toBeTruthy(), { timeout: 4000 });
+    const saved = JSON.parse(localStorage.getItem('sentinel_whatif_history_v1')).runs;
+    const windowEnd = saved[0].dataset.windowEnd;
+    const many = Array.from({ length: 10 }, (_, n) => ({ ...mk(n), dataset: { ...mk(n).dataset, windowEnd } }));
+    cleanup();
+    localStorage.setItem('sentinel_whatif_history_v1', JSON.stringify({ v: 1, runs: [...saved, ...many] }));
+    await openWhatIf();
+    await pickAsset();
+    const hist2 = await screen.findByRole('complementary', { name: 'Histórico de testes' });
+    await within(hist2).findByText('11 nesta janela');
+    expect(within(hist2).getByRole('note').textContent).toMatch(/não bloqueia nada.*11 combinações.*sorte/);
+    expect(within(hist2).getByRole('status', { name: 'Este teste no histórico' }).textContent).toMatch(/Em tela agora: #\d+ de 11/);
+  }, 20000);
+});
+
 describe('What-If — reavaliar o histórico nos dados atuais', () => {
   const seed = (runs) => localStorage.setItem('sentinel_whatif_history_v1', JSON.stringify({ v: 1, runs }));
   const old = (over = {}) => ({
@@ -287,10 +364,11 @@ describe('What-If — reavaliar o histórico nos dados atuais', () => {
     fireEvent.click(botao);
     expect(await within(hist).findByText('1 teste reavaliado nos dados atuais.')).toBeTruthy();
     await waitFor(() => expect(within(hist).queryByRole('button', { name: /Reavaliar nos dados atuais/ })).toBeNull());
-    // o teste antigo continua guardado (outra janela) e o novo está na janela atual
+    // o teste é UM SÓ (mesmos valores não duplicam): o resultado novo, da janela atual, SUBSTITUIU o antigo
     const saved = JSON.parse(localStorage.getItem('sentinel_whatif_history_v1')).runs;
-    expect(saved.some(r => r.dataset.windowEnd === 1)).toBe(true);
-    expect(saved.filter(r => r.dataset.windowEnd !== 1 && r.params.minScore === 60)).toHaveLength(1);
+    expect(saved.some(r => r.dataset.windowEnd === 1)).toBe(false);
+    expect(saved.filter(r => r.params.minScore === 60)).toHaveLength(1);
+    expect(saved.find(r => r.params.minScore === 60).dataset.windowEnd).not.toBe(1);
   });
 
   it('não oferece reavaliar para outro ativo nem quando não há nada antigo', async () => {

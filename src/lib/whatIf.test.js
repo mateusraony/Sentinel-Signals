@@ -69,15 +69,27 @@ describe('histórico de testes', () => {
     expect(h).toHaveLength(5);
     expect(HISTORY_CAP).toBeGreaterThan(20);
   });
-  it('REGRESSÃO (Codex, PR #617): a MESMA combinação em outra janela de dados (vela nova fechou) não sobrescreve nem se ranqueia junto', () => {
+  it('mesmos valores em outra janela de dados (vela nova fechou) NÃO duplica: o teste é um só, com o resultado mais novo (pedido do usuário, 23/11)', () => {
     const w1 = { ...DS, windowEnd: 1000 }; const w2 = { ...DS, windowEnd: 2000 };
     const a = { ...rec({}, '2026-11-22T10:00:00.000Z', 0.5), dataset: w1, key: runKey(w1, P) };
     const b = { ...rec({}, '2026-11-22T14:00:00.000Z', -0.2), dataset: w2, key: runKey(w2, P) };
-    expect(a.key).not.toBe(b.key);
+    expect(a.key).toBe(b.key); // mesma identidade: só pedido + valores
     const h = addRun(addRun([], a), b);
-    expect(h).toHaveLength(2); // o resultado antigo NÃO foi sobrescrito
-    const r = rankRuns(h, w2);
-    expect(r.same.map((x) => x.summary.expectancyR)).toEqual([-0.2]); // "melhor até agora" só dentro da janela atual
+    expect(h).toHaveLength(1);
+    expect(h[0].summary.expectancyR).toBe(-0.2); // ficou o resultado da janela mais nova
+    expect(h[0].dataset.windowEnd).toBe(2000);
+  });
+  it('mesmos valores em outro ATIVO, timeframe ou período continuam sendo testes diferentes', () => {
+    expect(runKey({ ...DS, assetId: 'a2' }, P)).not.toBe(runKey(DS, P));
+    expect(runKey({ ...DS, timeframe: '1h' }, P)).not.toBe(runKey(DS, P));
+    expect(runKey({ ...DS, candleCount: 1000 }, P)).not.toBe(runKey(DS, P));
+  });
+  it('o ranking continua só comparando a JANELA atual: teste que ainda está com o resultado de uma janela antiga vai à parte (não comparável)', () => {
+    const w1 = { ...DS, windowEnd: 1000 }; const w2 = { ...DS, windowEnd: 2000 };
+    const old = { ...rec({ minScore: 60 }, '2026-11-22T10:00:00.000Z', 0.5), dataset: w1, key: runKey(w1, { ...P, minScore: 60 }) };
+    const now = { ...rec({ minScore: 70 }, '2026-11-22T14:00:00.000Z', -0.2), dataset: w2, key: runKey(w2, { ...P, minScore: 70 }) };
+    const r = rankRuns([old, now], w2);
+    expect(r.same.map((x) => x.summary.expectancyR)).toEqual([-0.2]);
     expect(r.others.map((x) => x.summary.expectancyR)).toEqual([0.5]);
     expect(bestRun(r.same).summary.expectancyR).toBe(-0.2);
   });
@@ -99,6 +111,7 @@ describe('histórico de testes', () => {
   it('aviso de "melhor entre muitas tentativas" só a partir de 8 combinações', () => {
     expect(overfitNote(7)).toBeNull();
     expect(overfitNote(8)).toMatch(/8 combinações.*sorte/);
+    expect(overfitNote(8)).toMatch(/não bloqueia nada/);
   });
 });
 
@@ -271,11 +284,11 @@ describe('migração e reavaliação do histórico', () => {
     st.setItem('sentinel_whatif_history_v1', JSON.stringify({ v: 1, runs: [{ ...legacy, params: { atrMult: 2 } }] }));
     expect(loadHistory(st)).toEqual([]);
   });
-  it('reevaluationTargets: só parâmetros de OUTRAS janelas do mesmo pedido que ainda não têm resultado na janela atual (sem repetir)', () => {
+  it('reevaluationTargets: só testes do mesmo pedido cujo resultado é de OUTRA janela (cada parâmetro uma vez só)', () => {
     const w1 = { ...DS, windowEnd: 1000 }; const w2 = { ...DS, windowEnd: 2000 };
     const mk = (ds, over, at) => { const params = { ...P, ...over }; return { key: runKey(ds, params), at, dataset: ds, params, summary: { expectancyR: 0.1, counted: 5 }, starred: false }; };
     const h = [
-      mk(w1, { minScore: 60 }, '2026-11-22T10:00:00.000Z'), mk(w1, { minScore: 70 }, '2026-11-22T10:01:00.000Z'), mk(w1, { minScore: 80 }, '2026-11-22T10:02:00.000Z'),
+      mk(w1, { minScore: 60 }, '2026-11-22T10:00:00.000Z'), mk(w1, { minScore: 80 }, '2026-11-22T10:02:00.000Z'),
       mk(w2, { minScore: 70 }, '2026-11-22T14:00:00.000Z'), // já tem resultado na janela atual
       { ...mk({ ...DS, assetId: 'a2', windowEnd: 1000 }, { minScore: 99 }, '2026-11-22T10:03:00.000Z') }, // outro ativo: fora
     ];
@@ -283,8 +296,20 @@ describe('migração e reavaliação do histórico', () => {
     expect(t.map((x) => x.params.minScore).sort()).toEqual([60, 80]);
     expect(reevaluationTargets(h, { ...DS })).toEqual([]); // sem janela (dados ainda não carregaram): nada a fazer
     expect(reevaluationTargets(h, null)).toEqual([]);
-    // depois de reavaliar (criar os registros na janela atual) não sobra nada
-    const done = [...h, mk(w2, { minScore: 60 }, '2026-11-22T14:01:00.000Z'), mk(w2, { minScore: 80 }, '2026-11-22T14:02:00.000Z')];
+    // depois de reavaliar (o resultado novo SUBSTITUI o antigo, mesma chave) não sobra nada e o histórico não cresce
+    let done = h;
+    for (const x of t) done = addRun(done, { ...mk(w2, { minScore: x.params.minScore }, '2026-11-22T14:01:00.000Z'), starred: x.starred });
+    expect(done).toHaveLength(h.length);
     expect(reevaluationTargets(done, w2)).toEqual([]);
+  });
+  it('histórico antigo com o MESMO teste gravado em janelas diferentes (duplicado) vira um só ao carregar: fica o mais recente, mantendo a estrela', () => {
+    const w1 = { ...DS, windowEnd: 1000 }; const w2 = { ...DS, windowEnd: 2000 };
+    const mk = (ds, at, starred, exp) => ({ key: 'x', at, dataset: ds, params: { ...P }, summary: { expectancyR: exp, counted: 5 }, starred });
+    const st = { getItem: () => JSON.stringify({ v: 1, runs: [mk(w1, '2026-11-22T10:00:00.000Z', true, 0.5), mk(w2, '2026-11-22T14:00:00.000Z', false, -0.2)] }) };
+    const h = loadHistory(st);
+    expect(h).toHaveLength(1);
+    expect(h[0].dataset.windowEnd).toBe(2000);
+    expect(h[0].summary.expectancyR).toBe(-0.2);
+    expect(h[0].starred).toBe(true);
   });
 });
