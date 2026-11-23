@@ -6,7 +6,8 @@ import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 
 // regime e timeStop são interruptores (0/1) guardados junto dos números: entram na identidade, no histórico e na comparação como qualquer parâmetro.
 // trail (0/1) liga o trailing do stop antes do TP1; trailStart/trailDist (em × ATR) só valem com ele ligado.
-export const PARAM_KEYS = ['atrMult', 'tp1R', 'rfPeriod', 'rfMult', 'minScore', 'regime', 'timeStop', 'trail', 'trailStart', 'trailDist'];
+// runnerTrail (0/1) liga o trailing do stop do runner depois do TP1 (runnerTrailDist em × ATR); runnerRf (0/1) liga a saída do runner pelo Range Filter; minRR é o piso de risco/retorno do TP1.
+export const PARAM_KEYS = ['atrMult', 'tp1R', 'rfPeriod', 'rfMult', 'minScore', 'minRR', 'regime', 'timeStop', 'trail', 'trailStart', 'trailDist', 'runnerTrail', 'runnerTrailDist', 'runnerRf'];
 const r2 = (n) => Math.round(Number(n) * 100) / 100;
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -18,13 +19,15 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 export const requestKey = (d) => `${d.assetId}|${d.timeframe}|${d.candleCount}`;
 export const datasetKey = (d) => `${requestKey(d)}|${d.windowEnd ?? 'x'}`;
 // Valores que não fazem diferença não contam como "outro teste": com o trailing desligado, começo e distância dele não existem (viram 0 na comparação).
-const effective = (p, k) => ((k === 'trailStart' || k === 'trailDist') && !p?.trail ? 0 : r2(p?.[k]));
+const effective = (p, k) => (((k === 'trailStart' || k === 'trailDist') && !p?.trail) || (k === 'runnerTrailDist' && !p?.runnerTrail) ? 0 : r2(p?.[k]));
 export const runKey = (d, params) => `${requestKey(d)}|${PARAM_KEYS.map((k) => effective(params, k)).join('|')}`;
 export const sameParams = (a, b) => PARAM_KEYS.every((k) => effective(a, k) === effective(b, k));
 // Ligar/desligar o trailing é UMA mudança: quando o interruptor difere do padrão, começo e distância não contam à parte.
 export const changedKeys = (params, defaults) => {
-  const keys = PARAM_KEYS.filter((k) => effective(params, k) !== effective(defaults, k));
-  return keys.includes('trail') ? keys.filter((k) => k !== 'trailStart' && k !== 'trailDist') : keys;
+  let keys = PARAM_KEYS.filter((k) => effective(params, k) !== effective(defaults, k));
+  if (keys.includes('trail')) keys = keys.filter((k) => k !== 'trailStart' && k !== 'trailDist');
+  if (keys.includes('runnerTrail')) keys = keys.filter((k) => k !== 'runnerTrailDist');
+  return keys;
 };
 
 /** Resumo numérico de um conjunto de operações já agregado por summarizeOps (só o que o histórico e a comparação usam). */
@@ -49,7 +52,8 @@ export const HISTORY_CAP = 60;
 
 // Testes gravados ANTES dos interruptores de regime/time stop não tinham esses filtros: valem como regime=0, timeStop=0 (e a chave é recalculada).
 // (mesma regra para o trailing do stop antes do TP1, que também não existia: trail=0, com começo/distância de produção só para ter valor.)
-const LEGACY_FLAGS = { regime: 0, timeStop: 0, trail: 0, trailStart: 1, trailDist: 2 };
+// minRR=0: o piso não existia (nenhuma entrada era barrada por ele); runnerTrail/runnerRf=0: o runner só saía no TP2 ou no breakeven.
+const LEGACY_FLAGS = { regime: 0, timeStop: 0, trail: 0, trailStart: 1, trailDist: 2, runnerTrail: 0, runnerTrailDist: 2, runnerRf: 0, minRR: 0 };
 function normalizeRun(r) {
   const params = { ...LEGACY_FLAGS, ...r.params };
   return { ...r, params, key: runKey(r.dataset, params), starred: Boolean(r.starred) };
@@ -215,6 +219,11 @@ export function buildDefaults({ pineConfig = {}, asset = null, tier = null }) {
     trail: pineConfig.preTp1StopProtectionEnabled !== false && pineConfig.preTp1TrailEnabled !== false ? 1 : 0,
     trailStart: pineConfig.preTp1TrailStartAtrMult ?? 1,
     trailDist: pineConfig.preTp1TrailAtrMult ?? 2,
+    // Runner depois do TP1: o exit_mode de toda operação nova é HYBRID_RF_ATR (trailing por ATR + invalidação pelo Range Filter) — por isso os dois ficam ligados no padrão.
+    runnerTrail: 1,
+    runnerTrailDist: pineConfig.trailAtrMult ?? 2,
+    runnerRf: 1,
+    minRR: pineConfig.minRR ?? 1.2,
     atrMult: tier?.atrStopMult ?? 2,
     tp1R: pineConfig.tp1R ?? 1.5,
     rfPeriod: asset?.rf_period ?? pineConfig.rng_per ?? 20,
@@ -224,7 +233,7 @@ export function buildDefaults({ pineConfig = {}, asset = null, tier = null }) {
 }
 
 // ---------- fidelidade: o que o simulador faz e não faz ----------
-export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags = { regime: 0, timeStop: 0, trail: 0 }) {
+export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags = { regime: 0, timeStop: 0, trail: 0, runnerTrail: 0, runnerRf: 0 }) {
   const state = (on) => (on ? 'ligado neste teste' : 'desligado neste teste');
   const prod = (on) => (on ? 'ligado na produção' : 'desligado na produção');
   const included = [
@@ -236,14 +245,16 @@ export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags 
     'Stop a N× ATR e alvos TP1/TP2 em múltiplos de R (TP2 = 2× o TP1)',
     `Trailing do stop ANTES do TP1 — ${state(flags.trail)} (produção: ${pc.preTp1StopProtectionEnabled !== false && pc.preTp1TrailEnabled !== false ? 'ligado' : 'desligado'}); o stop segue o melhor preço a uma distância em ATR, só sobe, nunca passa do fechamento e só protege a vela seguinte`,
     'Stop sobe para a entrada (breakeven) depois do TP1 (e nunca piora um stop que o trailing já subiu)',
+    `Trailing do stop do RUNNER depois do TP1 — ${state(flags.runnerTrail)} (produção: ligado, ${pc.trailAtrMult ?? 2}× ATR); o stop sobe para fechamento − N× ATR, só sobe e só protege a vela seguinte`,
+    `Saída do runner pelo Range Filter — ${state(flags.runnerRf)} (produção: ligada): fecha no fechamento da vela quando o filtro virou contra a posição e o preço cruzou o filtro`,
+    `Piso de risco/retorno do TP1 (minRR ${pc.minRR ?? 1.2}R na produção): entrada só abre se o TP1 rende pelo menos o piso — com o TP1 abaixo do piso nenhuma entrada passa`,
     'Se a mesma vela toca o stop e um alvo, o stop vence (regra do motor real)',
     'Taxa, slippage e funding descontados (padrão do projeto)',
     'Uma operação por vez',
   ];
   const notIncluded = [
     { label: 'Filtro de tendência do 4h e confirmação de 15 min', production: 'ligado na produção', why: 'O simulador olha um timeframe só.' },
-    { label: 'Saída do runner por Range Filter/ATR depois do TP1', production: 'ligado na produção', why: 'Aqui o runner só sai no TP2 ou no breakeven.' },
-    { label: 'Piso de risco/retorno (minRR)', production: `piso de ${pc.minRR ?? 1.2}R na produção`, why: 'Rejeita entradas com alvo curto demais para o stop.' },
+    { label: 'Chop Exit e invalidação do Range Filter ANTES do TP1', production: 'desligados por padrão na produção', why: 'O scanner tem os dois, mas vêm desligados (useChopExit / useInvalidation); o simulador também não os faz.' },
   ];
   return { included, notIncluded };
 }
@@ -336,7 +347,8 @@ export function rHistogram(ops) {
 export function exitBreakdown(ops) {
   const groups = {
     tp2: { key: 'tp2', label: 'Alvo final (TP2)', ops: [] },
-    tp1_be: { key: 'tp1_be', label: 'TP1 e depois saída no breakeven', ops: [] },
+    tp1_be: { key: 'tp1_be', label: 'TP1 e depois stop do runner (breakeven ou trailing)', ops: [] },
+    rf_exit: { key: 'rf_exit', label: 'TP1 e depois saída pelo Range Filter', ops: [] },
     stop_trail: { key: 'stop_trail', label: 'Stop do trailing (antes do TP1)', ops: [] },
     stop: { key: 'stop', label: 'Stop cheio (perda)', ops: [] },
     time_stop: { key: 'time_stop', label: 'Time stop (fechada por tempo)', ops: [] },
@@ -344,6 +356,7 @@ export function exitBreakdown(ops) {
   for (const op of ops) {
     if (op.closed_reason === 'TIME_STOP') groups.time_stop.ops.push(op);
     else if (op.status === 'TP2_HIT') groups.tp2.ops.push(op);
+    else if (op.status === 'INVALIDATED' && op.tp1_hit) groups.rf_exit.ops.push(op);
     else if (op.status === 'STOP_HIT' && op.tp1_hit) groups.tp1_be.ops.push(op);
     else if (op.status === 'STOP_HIT' && op.pre_tp1_trailed) groups.stop_trail.ops.push(op);
     else if (op.status === 'STOP_HIT') groups.stop.ops.push(op);

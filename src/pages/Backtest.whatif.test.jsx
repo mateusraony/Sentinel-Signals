@@ -211,7 +211,7 @@ describe('What-If — confiança nos dados e análise', () => {
     await screen.findByRole('status', { name: 'O que este resultado diz' });
     fireEvent.click(screen.getByRole('button', { name: 'Analisar sensibilidade' }));
     expect(await screen.findByRole('button', { name: 'Analisar de novo' })).toBeTruthy();
-    expect(screen.getAllByRole('img', { name: /^Expectância em R conforme/ })).toHaveLength(7); // os 5 controles + os 2 do trailing (ligado por padrão, como na produção)
+    expect(screen.getAllByRole('img', { name: /^Expectância em R conforme/ })).toHaveLength(9); // os 6 controles + os 3 de distância do trailing (ligados por padrão, como na produção)
   });
 });
 
@@ -345,8 +345,8 @@ describe('What-If — o histórico só registra quando o controle é SOLTO e nã
 });
 
 describe('What-If — trailing do stop antes do TP1 (padrão = produção)', () => {
-  // O rótulo acessível fica no contêiner do Radix, não no polegar (role=slider): os dois do trailing são os polegares 5 e 6 (depois dos 5 controles principais).
-  const THUMB = { 'Trailing: começa em (× ATR)': 5, 'Trailing: distância (× ATR)': 6 };
+  // O rótulo acessível fica no contêiner do Radix, não no polegar (role=slider): os de trailing são os polegares 6, 7 e 8 (depois dos 6 controles principais).
+  const THUMB = { 'Trailing: começa em (× ATR)': 6, 'Runner: distância do trailing (× ATR)': 7, 'Trailing: distância (× ATR)': 8 };
   const sliderByName = (name) => screen.getAllByRole('slider')[THUMB[name]];
   const isDisabled = (el) => el.hasAttribute('data-disabled');
 
@@ -412,8 +412,58 @@ describe('What-If — trailing do stop antes do TP1 (padrão = produção)', () 
     await waitFor(() => expect(screen.queryByText(/Recalculando/)).toBeNull(), { timeout: 4000 });
     fireEvent.click(screen.getByRole('button', { name: 'Analisar sensibilidade' }));
     expect(await screen.findByRole('button', { name: 'Analisar de novo' })).toBeTruthy();
-    expect(screen.getAllByRole('img', { name: /^Expectância em R conforme/ })).toHaveLength(5); // sem os 2 do trailing
+    expect(screen.getAllByRole('img', { name: /^Expectância em R conforme/ })).toHaveLength(7); // 6 controles + a distância do runner; sem os 2 do trailing pré-TP1
   }, 15000);
+});
+
+describe('What-If — runner depois do TP1 e piso R:R (padrão = produção)', () => {
+  const THUMB_RUNNER = 7; // distância do trailing do runner
+  const THUMB_MINRR = 5; // piso R:R (6º controle principal)
+
+  it('vêm LIGADOS como na produção: trailing do runner 2× ATR, saída pelo Range Filter e piso 1,2R', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    expect(screen.getByRole('switch', { name: 'Trailing do runner depois do TP1' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('switch', { name: 'Saída do runner pelo Range Filter' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getAllByRole('slider')[THUMB_RUNNER].getAttribute('aria-valuenow')).toBe('2');
+    expect(screen.getAllByRole('slider')[THUMB_MINRR].getAttribute('aria-valuenow')).toBe('1.2');
+    expect(screen.getByText('tudo no padrão')).toBeTruthy();
+  });
+
+  it('desligar o trailing do runner apaga só a distância dele e conta como 1 diferente; a saída por RF conta à parte', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    fireEvent.click(screen.getByRole('switch', { name: 'Trailing do runner depois do TP1' }));
+    expect(await screen.findByText('1 diferente do padrão')).toBeTruthy();
+    expect(screen.getAllByRole('slider')[THUMB_RUNNER].hasAttribute('data-disabled')).toBe(true);
+    expect(screen.getAllByRole('slider')[6].hasAttribute('data-disabled')).toBe(false); // o trailing PRÉ-TP1 segue usável
+    fireEvent.click(screen.getByRole('switch', { name: 'Saída do runner pelo Range Filter' }));
+    expect(await screen.findByText('2 diferentes do padrão')).toBeTruthy();
+  });
+
+  it('piso R:R acima do TP1 barra todas as entradas e o funil diz isso (acoplamento tp1R × piso)', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    const minRR = screen.getAllByRole('slider')[THUMB_MINRR];
+    minRR.focus();
+    for (let i = 0; i < 6; i++) fireEvent.keyDown(minRR, { key: 'ArrowRight' }); // 1,2 → 1,8 (acima do TP1 de 1,5)
+    expect(await screen.findByText(/barrados pelo piso de risco\/retorno/, {}, { timeout: 4000 })).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/O piso de risco\/retorno está barrando as entradas/)).toBeTruthy(), { timeout: 4000 });
+  }, 15000);
+
+  it('"Posso confiar?" lista runner e piso como feitos e só o filtro 4h/15m (e Chop/invalidação desligados) como não feitos', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    const d = within(screen.getByText(/Posso confiar\?/).closest('details'));
+    expect(d.getByText(/Trailing do stop do RUNNER depois do TP1 — ligado neste teste/)).toBeTruthy();
+    expect(d.getByText(/Saída do runner pelo Range Filter — ligado neste teste/)).toBeTruthy();
+    expect(d.getByText(/Piso de risco\/retorno do TP1/)).toBeTruthy();
+    expect(d.getByText(/Chop Exit e invalidação do Range Filter ANTES do TP1/)).toBeTruthy();
+  });
 });
 
 describe('What-If — reavaliar o histórico nos dados atuais', () => {
