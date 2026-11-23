@@ -471,7 +471,7 @@ export default function Alerts() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => confirmingDismissAll?.forEach(id => dismissMutation.mutate(id))}>
+            <AlertDialogAction destructive onClick={() => confirmingDismissAll?.forEach(id => dismissMutation.mutate(id))}>
               Arquivar todos
             </AlertDialogAction>
           </AlertDialogFooter>

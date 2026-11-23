@@ -121,7 +121,7 @@ export default function RunHistory({ ranked, best, currentKey, currentRun = null
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={onClear}>Apagar tudo</AlertDialogAction>
+            <AlertDialogAction destructive onClick={onClear}>Apagar tudo</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

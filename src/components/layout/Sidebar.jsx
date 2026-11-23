@@ -224,7 +224,7 @@ function ClearLogsButton() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={doClear}>Limpar logs</AlertDialogAction>
+            <AlertDialogAction destructive onClick={doClear}>Limpar logs</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -462,7 +462,7 @@ export default function Assets() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteMutation.mutate(pendingDelete.id)}>
+            <AlertDialogAction destructive onClick={() => deleteMutation.mutate(pendingDelete.id)}>
               Remover
             </AlertDialogAction>
           </AlertDialogFooter>

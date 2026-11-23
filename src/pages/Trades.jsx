@@ -707,6 +707,7 @@ export default function Trades() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
+              destructive
               onClick={() => {
                 if (confirmingOp?.action === 'invalidate') invalidateMutation.mutate(confirmingOp.op);
                 else if (confirmingOp?.action === 'close') closeMutation.mutate(confirmingOp.op);

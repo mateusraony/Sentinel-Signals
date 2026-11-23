@@ -79,10 +79,13 @@ const AlertDialogDescription = React.forwardRef(
 AlertDialogDescription.displayName =
   AlertDialogPrimitive.Description.displayName
 
+// Botão de confirmar. `destructive` (pedido do usuário, 23/11, "opção B"): ações que apagam/encerram/substituem algo ficam em VERMELHO SUAVE (fundo translúcido + contorno),
+// no tom de perda do painel (#e06a5b) — o mesmo vermelho do resto da tela, sem o vermelho cheio que destoa do visual plano. Sem a prop, é o botão de sempre.
+const DESTRUCTIVE_CLASS = "bg-[#e06a5b]/15 text-[#e06a5b] border border-[#e06a5b]/45 hover:bg-[#e06a5b]/25";
 const AlertDialogAction = React.forwardRef(
-  /** @param {React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action>} props @param {React.ForwardedRef<React.ElementRef<typeof AlertDialogPrimitive.Action>>} ref */
-  ({ className, ...props }, ref) => (
-  <AlertDialogPrimitive.Action ref={ref} className={cn(buttonVariants(), className)} {...props} />
+  /** @param {React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action> & { destructive?: boolean }} props @param {React.ForwardedRef<React.ElementRef<typeof AlertDialogPrimitive.Action>>} ref */
+  ({ className, destructive = false, ...props }, ref) => (
+  <AlertDialogPrimitive.Action ref={ref} className={cn(buttonVariants(), destructive && DESTRUCTIVE_CLASS, className)} {...props} />
 ))
 AlertDialogAction.displayName = AlertDialogPrimitive.Action.displayName
 

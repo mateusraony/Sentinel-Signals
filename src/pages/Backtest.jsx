@@ -1,6 +1,6 @@
 import TokenIcon from '@/components/TokenIcon';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import moment from 'moment';
 import {
   AreaChart, Area, ReferenceLine, PieChart, Pie, Cell, BarChart, Bar,
@@ -24,6 +24,8 @@ import { QBT_TIMEFRAMES, QBT_CANDLE_OPTIONS, QBT_SLIDERS, QBT_SWITCHES, clampDef
 import { SectionTitle } from '@/components/backtest/whatif/ui';
 import ComparisonStrip from '@/components/backtest/whatif/ComparisonStrip';
 import LiveResultBar from '@/components/backtest/whatif/LiveResultBar';
+import ApplyToScannerDialog from '@/components/backtest/whatif/ApplyToScannerDialog';
+import { scannerPayload, assetPayload } from '@/lib/whatIfApply';
 import TrustPanel, { DataBadge } from '@/components/backtest/whatif/TrustPanel';
 import TradesPriceChart from '@/components/backtest/whatif/TradesPriceChart';
 import OutcomeAnalysis from '@/components/backtest/whatif/OutcomeAnalysis';
@@ -790,6 +792,40 @@ function QuickBacktestTab() {
     );
   };
 
+  // Aplicar ao scanner AO VIVO (pedido do usuário, 23/11): abre um diálogo que lê a configuração AGORA e mostra o que muda; só grava depois do clique.
+  const queryClient = useQueryClient();
+  const [confirmingScanner, setConfirmingScanner] = useState(false);
+  const [applyMsg, setApplyMsg] = useState(null); // null | { type: 'working' | 'ok' | 'error', text }
+  const getLiveConfig = useCallback(async () => {
+    const cfg = await getPineConfig();
+    // Só vale uma leitura FRESCA do banco: cópia guardada/padrões podem estar velhos (outro navegador ou administrador pode ter mudado a configuração).
+    return getPineConfigStatus().source === 'postgres' ? cfg : 'erro';
+  }, []);
+  const doApplyToScanner = async (plan, chosen) => {
+    setApplyMsg({ type: 'working', text: 'Aplicando ao scanner…' });
+    const done = [];
+    try {
+      const globalPayload = scannerPayload(plan, chosen, new Date().toISOString());
+      const globalKeys = Object.keys(globalPayload).filter(k => k !== 'updated_at');
+      if (globalKeys.length > 0) {
+        // StrategyConfig.set MESCLA: só as chaves que o usuário ESCOLHEU vão no payload e o resto da configuração fica intacto.
+        await backend.entities.StrategyConfig.set('current', globalPayload);
+        done.push(`${globalKeys.length} ${globalKeys.length === 1 ? 'parâmetro global' : 'parâmetros globais'}`);
+      }
+      const assetFields = assetPayload(plan, chosen);
+      if (Object.keys(assetFields).length > 0) {
+        await backend.entities.MonitoredAsset.update(assetId, assetFields);
+        done.push(`Range Filter de ${assetSymbol}`);
+      }
+      logInfo('backtest', 'Valores escolhidos no Ajuste Fino aplicados ao scanner ao vivo', { config_keys: globalKeys, asset_fields: Object.keys(assetFields), asset: assetSymbol });
+      setPineConfig(await getPineConfig()); // o "padrão" da tela passa a ser a configuração nova
+      queryClient.invalidateQueries({ queryKey: ['all-assets'] });
+      setApplyMsg({ type: 'ok', text: `Aplicado ao scanner: ${done.join(' e ')}. Vale a partir do próximo scan.` });
+    } catch (e) {
+      setApplyMsg({ type: 'error', text: `${done.length ? `Gravou só ${done.join(' e ')}. ` : ''}Não foi possível aplicar ao scanner agora (${e.message}). Confira a configuração antes de tentar de novo.` });
+    }
+  };
+
   const fieldStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(141,180,226,0.2)', color: 'rgba(255,255,255,0.8)' };
 
   return (
@@ -895,6 +931,12 @@ function QuickBacktestTab() {
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.75)' }}>
               Voltar ao padrão
             </button>
+            <button onClick={() => { setApplyMsg(null); setConfirmingScanner(true); }} disabled={!asset || !run?.ok || stale}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-mono transition-all disabled:opacity-40"
+              title="Abre a lista de parâmetros para VOCÊ escolher o que gravar no scanner ao vivo (mostra o valor atual de cada um)"
+              style={{ background: 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }}>
+              <Rocket className="w-3.5 h-3.5" aria-hidden="true" />Aplicar ao scanner…
+            </button>
             <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
               <Switch checked={auto} onCheckedChange={toggleAuto} aria-label="Atualizar o resultado sozinho" />
               Atualizar o resultado sozinho ao mexer
@@ -905,6 +947,17 @@ function QuickBacktestTab() {
               <span className="text-xs text-muted-foreground">Escolha um ativo para executar.</span>
             )}
           </div>
+
+          {applyMsg && (
+            <div className="px-3 py-2 rounded-md text-xs" role="status" style={applyMsg.type === 'ok'
+              ? { background: 'rgba(93,181,134,0.08)', border: '1px solid rgba(93,181,134,0.3)', color: '#5db586' }
+              : applyMsg.type === 'error' ? { background: 'rgba(224,106,91,0.1)', border: '1px solid rgba(224,106,91,0.3)', color: '#e06a5b' }
+                : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.7)' }}>
+              {applyMsg.text}
+            </div>
+          )}
+          <ApplyToScannerDialog open={confirmingScanner} onOpenChange={setConfirmingScanner} params={params} defaults={defaults} asset={asset}
+            summary={run?.ok ? run.summary : null} testedCount={ranked.same.length} getLive={getLiveConfig} onApply={doApplyToScanner} />
 
           {stale && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-md text-xs" role="status" style={{ background: 'rgba(221,154,74,0.08)', border: '1px solid rgba(221,154,74,0.3)', color: '#dd9a4a' }}>
