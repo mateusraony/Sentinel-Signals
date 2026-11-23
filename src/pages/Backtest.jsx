@@ -23,6 +23,7 @@ import {
 import { QBT_TIMEFRAMES, QBT_CANDLE_OPTIONS, QBT_SLIDERS, QBT_SWITCHES, clampDefaults } from '@/components/backtest/whatif/params';
 import { SectionTitle } from '@/components/backtest/whatif/ui';
 import ComparisonStrip from '@/components/backtest/whatif/ComparisonStrip';
+import LiveResultBar from '@/components/backtest/whatif/LiveResultBar';
 import TrustPanel, { DataBadge } from '@/components/backtest/whatif/TrustPanel';
 import TradesPriceChart from '@/components/backtest/whatif/TradesPriceChart';
 import OutcomeAnalysis from '@/components/backtest/whatif/OutcomeAnalysis';
@@ -618,6 +619,8 @@ function QuickBacktestTab() {
   const [history, setHistory] = useState(() => loadHistory(safeStorage()));
   const [sortBy, setSortBy] = useState('expectancy');
   const [saveFailed, setSaveFailed] = useState(false);
+  // true enquanto o usuário ARRASTA um controle: o histórico só registra um teste depois que ele SOLTA (pedido do usuário, 23/11).
+  const [interacting, setInteracting] = useState(false);
   const touchedRef = useRef(false); // true depois que o usuário mexe: aí o padrão novo não sobrescreve os controles
   const fetchSeq = useRef(0);
 
@@ -673,6 +676,14 @@ function QuickBacktestTab() {
     if (!touchedRef.current) { setParams(defaults); setApplied(defaults); }
   }, [defaults]);
 
+  // Soltou o botão do mouse/dedo em qualquer lugar: o arrasto acabou (rede de segurança caso o próprio slider não avise).
+  useEffect(() => {
+    const end = () => setInteracting(false);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    return () => { window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end); };
+  }, []);
+
   // Recalcula sozinho (com um respiro de 250 ms para o slider não disparar a cada pixel).
   useEffect(() => {
     if (!auto || sameParams(params, applied)) return undefined;
@@ -708,21 +719,26 @@ function QuickBacktestTab() {
   const analysis = useMemo(() => (run?.ok ? analyzeOps(run.ops) : null), [run]);
   const isDefault = sameParams(applied, defaults);
 
-  // Histórico: cada combinação que fica na tela (depois de um respiro) é registrada sozinha, com o resultado.
+  // Histórico: o teste é registrado sozinho, mas SÓ depois que o usuário solta o controle (nada de gravar valores do meio do arrasto) e com o resultado já
+  // calculado para esses valores. A identidade é pedido + valores: repetir os mesmos valores atualiza o registro, não cria outro.
   const currentKey = dataset ? runKey(dataset, applied) : null;
+  const recordable = !interacting && sameParams(params, applied);
   useEffect(() => {
-    if (!dataset || !run?.ok || !data || data.key !== requestKey(dataset)) return undefined;
+    if (!recordable || !dataset || !run?.ok || !data || data.key !== requestKey(dataset)) return undefined;
     const t = setTimeout(() => {
       const rec = { key: runKey(dataset, applied), at: new Date().toISOString(), dataset: { ...dataset, lastCandleTime: data.closed[data.closed.length - 1]?.closeTime ?? null }, params: applied, summary: run.summary, starred: false };
       setHistory(h => addRun(h, rec));
-    }, 1200);
+    }, 700);
     return () => clearTimeout(t);
-  }, [run, dataset, applied, data]);
+  }, [run, dataset, applied, data, recordable]);
   useEffect(() => { setSaveFailed(!saveHistory(safeStorage(), history)); }, [history]);
 
   const ranked = useMemo(() => (dataset ? rankRuns(history, dataset, sortBy) : { same: [], others: history }), [history, dataset, sortBy]);
   const best = useMemo(() => bestRun(ranked.same), [ranked]);
   const overfit = dataset ? overfitNote(ranked.same.length) : null;
+  // "Este teste" sempre à vista no painel do histórico (com 10+ testes a linha dele pode estar fora da parte visível da lista).
+  const currentRank = currentKey ? ranked.same.findIndex(r => r.key === currentKey) : -1;
+  const currentRun = currentRank >= 0 ? ranked.same[currentRank] : null;
 
   // Reavaliar: roda de novo, nos dados de AGORA, os parâmetros de testes feitos em janelas anteriores (cada execução leva ~2 ms).
   const [reevalMsg, setReevalMsg] = useState(null);
@@ -755,6 +771,7 @@ function QuickBacktestTab() {
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem] items-start">
       <div className="space-y-5 min-w-0">
+        {data && run?.ok && <LiveResultBar cmp={cmp} isDefault={isDefault} stale={stale} auto={auto} changedCount={changedCount} />}
         <Section title="Configuração do Backtest" hint="1 ativo e 1 timeframe, roda no navegador e não grava nada no banco">
           {assetsError && assets.length === 0 && (
             <div className="rounded-md p-4" style={{ background: 'rgba(221,154,74,0.06)', border: '1px solid rgba(221,154,74,0.2)' }}>
@@ -822,7 +839,9 @@ function QuickBacktestTab() {
                       <span className="text-xs font-mono font-semibold tabular-nums" style={{ color: s.color }}>{params[s.key]}</span>
                     </div>
                     <Slider value={[params[s.key]]} min={s.min} max={s.max} step={s.step} aria-label={s.label}
-                      onValueChange={([v]) => setParam(s.key, v)} />
+                      onPointerDown={() => setInteracting(true)}
+                      onValueChange={([v]) => setParam(s.key, v)}
+                      onValueCommit={() => setInteracting(false)} />
                     <p className="text-11px text-muted-foreground mt-1.5">padrão {defaults[s.key]}</p>
                   </div>
                 );
@@ -934,8 +953,8 @@ function QuickBacktestTab() {
         )}
       </div>
 
-      <aside className="lg:sticky lg:top-4 min-w-0" aria-label="Histórico de testes">
-        <RunHistory ranked={ranked} best={best} currentKey={currentKey} sortBy={sortBy} onSort={setSortBy} overfit={overfit} saveFailed={saveFailed}
+      <aside className="lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto min-w-0" aria-label="Histórico de testes">
+        <RunHistory ranked={ranked} best={best} currentKey={currentKey} currentRun={currentRun} currentRank={currentRank} sortBy={sortBy} onSort={setSortBy} overfit={overfit} saveFailed={saveFailed}
           reevalCount={reevalTargets.length} onReeval={handleReeval} reevalMsg={reevalMsg} onUse={handleUse} onStar={(k) => setHistory(h => toggleStar(h, k))} onRemove={(k) => setHistory(h => removeRun(h, k))} onClear={() => setHistory([])} />
       </aside>
     </div>

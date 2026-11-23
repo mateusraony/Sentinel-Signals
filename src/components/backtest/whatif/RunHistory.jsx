@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import moment from 'moment';
-import { Star, Trash2, Undo2 } from 'lucide-react';
+import { Star, Trash2, Undo2, Info } from 'lucide-react';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
@@ -41,7 +41,7 @@ function Row({ run, rank, best, current, onUse, onStar, onRemove, showDataset = 
   );
 }
 
-export default function RunHistory({ ranked, best, currentKey, sortBy, onSort, overfit, saveFailed, reevalCount = 0, onReeval = () => {}, reevalMsg = null, onUse, onStar, onRemove, onClear }) {
+export default function RunHistory({ ranked, best, currentKey, currentRun = null, currentRank = -1, sortBy, onSort, overfit, saveFailed, reevalCount = 0, onReeval = () => {}, reevalMsg = null, onUse, onStar, onRemove, onClear }) {
   const [confirmClear, setConfirmClear] = useState(false);
   const total = ranked.same.length + ranked.others.length;
   return (
@@ -60,7 +60,20 @@ export default function RunHistory({ ranked, best, currentKey, sortBy, onSort, o
           </div>
         )}
       </div>
-      <p className="text-11px text-muted-foreground">Cada combinação que você deixa na tela por um instante é registrada sozinha, com o resultado. Fica salva neste navegador.</p>
+      <p className="text-11px text-muted-foreground">Cada combinação é registrada sozinha quando você <b className="font-medium text-foreground/80">solta o controle</b> (nada é gravado enquanto arrasta), com o resultado. Valores repetidos não duplicam: o teste é um só. Fica salvo neste navegador.</p>
+      {currentKey && (
+        <div className="rounded-md px-3 py-2 text-xs" role="status" aria-label="Este teste no histórico" style={{ background: 'rgba(141,180,226,0.08)', border: '1px solid rgba(141,180,226,0.25)' }}>
+          {currentRun ? (
+            <span className="text-foreground/85">
+              <span style={{ color: BLUE }}>Em tela agora:</span> {sortBy === 'expectancy' ? <>#{currentRank + 1} de {ranked.same.length} · </> : null}
+              <span className="font-mono tabular-nums" style={{ color: currentRun.summary.expectancyR === null ? undefined : currentRun.summary.expectancyR >= 0 ? GREEN : RED }}>{fmtR(currentRun.summary.expectancyR)}</span>
+              {best?.key === currentRun.key && <span style={{ color: GREEN }}> · o melhor até agora</span>}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">Em tela agora: ainda não registrado — solte o controle e espere um instante.</span>
+          )}
+        </div>
+      )}
       {reevalCount > 0 && (
         <div className="rounded-md px-3 py-2 space-y-1.5" style={{ background: 'rgba(141,180,226,0.06)', border: '1px solid rgba(141,180,226,0.2)' }}>
           <p className="text-11px text-foreground/80">Há {reevalCount} {reevalCount === 1 ? 'teste feito' : 'testes feitos'} em dados mais antigos deste mesmo ativo e período. Dá para rodar os mesmos parâmetros nos dados de agora e comparar de forma justa.</p>
@@ -71,12 +84,16 @@ export default function RunHistory({ ranked, best, currentKey, sortBy, onSort, o
       )}
       {reevalMsg && <p className="text-xs" style={{ color: GREEN }} role="status">{reevalMsg}</p>}
       {saveFailed && <p className="text-xs" style={{ color: AMBER }}>Não foi possível gravar neste navegador (armazenamento bloqueado ou cheio): o histórico some ao fechar a aba.</p>}
-      {overfit && <p className="text-xs" style={{ color: AMBER }}>{overfit}</p>}
+      {overfit && (
+        <p className="text-xs rounded-md px-3 py-2 flex items-start gap-2" role="note" style={{ color: AMBER, background: 'rgba(221,154,74,0.06)', border: '1px solid rgba(221,154,74,0.2)' }}>
+          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" /><span>{overfit}</span>
+        </p>
+      )}
 
       {ranked.same.length === 0 ? (
         <p className="text-xs text-muted-foreground">Escolha um ativo e mexa nos parâmetros: os testes aparecem aqui, do melhor ao pior.</p>
       ) : (
-        <ul className="space-y-2 max-h-[34rem] overflow-y-auto pr-1">
+        <ul className="space-y-2 max-h-[26rem] overflow-y-auto pr-1">
           {ranked.same.map((r, i) => (
             <Row key={r.key} run={r} rank={sortBy === 'expectancy' ? i + 1 : null} best={best?.key === r.key} current={r.key === currentKey}
               onUse={() => onUse(r)} onStar={() => onStar(r.key)} onRemove={() => onRemove(r.key)} />

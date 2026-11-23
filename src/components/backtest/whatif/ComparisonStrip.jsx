@@ -3,7 +3,7 @@ import { GREEN, RED, AMBER, fmtR, fmtPct } from './ui';
 
 // "O que mudou?": o resultado atual lado a lado com o do padrão (mesmos candles), com a seta e a cor da diferença. A expectância diz se a
 // diferença cabe na margem de erro (ver compareSummaries em src/lib/whatIf.js) — com poucas operações quase nada é "real".
-const CELLS = [
+export const CELLS = [
   { key: 'expectancyR', label: 'Expectância líquida', fmt: fmtR, good: 'up' },
   { key: 'winRate', label: 'Taxa de acerto', fmt: (v) => fmtPct(v), good: 'up' },
   { key: 'profitFactor', label: 'Profit Factor', fmt: (v) => (v === null || v === undefined ? '—' : v.toFixed(2)), good: 'up' },
@@ -11,7 +11,7 @@ const CELLS = [
   { key: 'counted', label: 'Operações', fmt: (v) => (v === null || v === undefined ? '—' : String(v)), good: 'neutral' },
 ];
 
-function Delta({ cell, m }) {
+export function Delta({ cell, m }) {
   if (m.delta === null) return <span className="text-11px text-muted-foreground">—</span>;
   const tiny = Math.abs(m.delta) < 1e-9;
   if (tiny) return <span className="text-11px text-muted-foreground">= igual ao padrão</span>;

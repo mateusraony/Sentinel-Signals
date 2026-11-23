@@ -11,10 +11,12 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // ---------- identidade de um teste ----------
 // Dois níveis de identidade (achado do Codex, PR #617): o PEDIDO (ativo + timeframe + nº de candles) e a JANELA REAL de dados (o pedido + o fechamento da última
-// vela). Quando uma vela nova fecha, o pedido é o mesmo mas a janela é outra: os resultados NÃO são comparáveis e não podem se sobrescrever nem se ranquear juntos.
+// vela). Quando uma vela nova fecha, o pedido é o mesmo mas a janela é outra: os resultados NÃO são comparáveis e não se ranqueiam juntos.
+// O TESTE, porém, é identificado só pelo pedido + os valores (pedido do usuário, 23/11: "o mesmo valor não pode duplicar, só valores únicos"): repetir os
+// mesmos valores numa janela mais nova ATUALIZA o registro (resultado e janela novos) em vez de criar um segundo igual. O ranking continua só dentro da janela atual.
 export const requestKey = (d) => `${d.assetId}|${d.timeframe}|${d.candleCount}`;
 export const datasetKey = (d) => `${requestKey(d)}|${d.windowEnd ?? 'x'}`;
-export const runKey = (d, params) => `${datasetKey(d)}|${PARAM_KEYS.map((k) => r2(params[k])).join('|')}`;
+export const runKey = (d, params) => `${requestKey(d)}|${PARAM_KEYS.map((k) => r2(params[k])).join('|')}`;
 export const sameParams = (a, b) => PARAM_KEYS.every((k) => r2(a?.[k]) === r2(b?.[k]));
 export const changedKeys = (params, defaults) => PARAM_KEYS.filter((k) => r2(params?.[k]) !== r2(defaults?.[k]));
 
@@ -111,7 +113,7 @@ export function bestRun(sameRuns) {
 /** Aviso de "melhor entre muitas tentativas" (múltiplas comparações): só a partir de 8 combinações na mesma janela. */
 export function overfitNote(count) {
   if (count < 8) return null;
-  return `Você já testou ${count} combinações nesta mesma janela. Quanto mais combinações, maior a chance de o "melhor resultado" ser sorte: confirme num período ou ativo diferente antes de confiar.`;
+  return `Aviso (não bloqueia nada, pode continuar testando): você já testou ${count} combinações nesta mesma janela. Quanto mais combinações, maior a chance de o "melhor resultado" ser sorte: confirme num período ou ativo diferente antes de confiar.`;
 }
 
 // ---------- comparação com o padrão ----------
@@ -236,20 +238,15 @@ export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags 
 
 // ---------- reavaliar o histórico na janela atual ----------
 /**
- * Testes de OUTRAS janelas do mesmo pedido (ativo + timeframe + candles) cujos parâmetros ainda não têm resultado na janela atual. Devolve os parâmetros
- * únicos a rodar de novo nos dados de agora (cada execução leva ~2 ms). Não mexe nos registros antigos: o resultado novo vira um registro novo na janela atual.
+ * Testes cujo resultado guardado é de OUTRA janela de dados (uma vela nova fechou desde então) no mesmo pedido (ativo + timeframe + candles). Devolve os parâmetros
+ * a rodar de novo nos dados de agora (cada execução leva ~2 ms). O resultado novo SUBSTITUI o antigo (mesma chave: o teste é um só, com o resultado mais novo).
  */
 export function reevaluationTargets(history, dataset) {
   if (!dataset || dataset.windowEnd == null) return [];
   const req = requestKey(dataset);
-  const have = new Set(history.filter((r) => datasetKey(r.dataset) === datasetKey(dataset)).map((r) => runKey(dataset, r.params)));
-  const seen = new Set();
   const out = [];
   for (const r of history) {
     if (requestKey(r.dataset) !== req || datasetKey(r.dataset) === datasetKey(dataset)) continue;
-    const k = runKey(dataset, r.params);
-    if (have.has(k) || seen.has(k)) continue;
-    seen.add(k);
     out.push({ params: r.params, starred: r.starred });
   }
   return out;
