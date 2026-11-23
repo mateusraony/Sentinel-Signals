@@ -9,7 +9,9 @@
 // alinhamento multi-TF, sem arbitragem entre cascatas, sem SMC. Aproximação
 // deliberada, não uma paridade de motor (ver .claude/rules/pine-parity.md).
 import { calculateRangeFilter } from './indicators/rangeFilter';
-import { calculateATRSeries } from './indicators/atr';
+import { calculateATRSeries, calculateTRSeries } from './indicators/atr';
+import { calculateADX } from './indicators/adx';
+import { classifyTier } from './indicators/tier';
 import { calculateRSI } from './indicators/rsi';
 import { calculateMACD } from './indicators/macd';
 import { calculateEMAs } from './indicators/movingAverages';
@@ -22,7 +24,31 @@ function simpleMovingAverage(values, i, period) {
   return sum / period;
 }
 
-function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, symbol, timeframe) {
+// Choppiness por barra — a MESMA fórmula de calculateChoppiness (indicators/choppiness.js), calculada de uma vez para a série inteira.
+// Barra i usa só as velas até i (sem olhar o futuro); o teste de paridade compara cada barra com calculateChoppiness(candles.slice(0, i + 1)).
+export function chopSeries(candles, length = 14) {
+  const tr = calculateTRSeries(candles);
+  return candles.map((_, i) => {
+    if (i + 1 < length) return 50;
+    let trSum = 0; let hi = -Infinity; let lo = Infinity;
+    for (let k = i - length + 1; k <= i; k++) { trSum += tr[k]; if (candles[k].high > hi) hi = candles[k].high; if (candles[k].low < lo) lo = candles[k].low; }
+    const range = hi - lo;
+    return range <= 0 ? 50 : (100 * Math.log10(trSum / range)) / Math.log10(length);
+  });
+}
+
+// ATR% suavizado por barra (SMA de 20 do ATR/close*100) — a mesma fórmula de calculateAtrPctSmooth (indicators/tier.js) para cada prefixo.
+export function atrPctSmoothSeries(candles, atrSeries, atrLen = 14, smoothLen = 20) {
+  return candles.map((_, i) => {
+    if (i < atrLen - 1) return 0;
+    const from = Math.max(atrLen - 1, i - smoothLen + 1);
+    let sum = 0;
+    for (let k = from; k <= i; k++) sum += (atrSeries[k] / candles[k].close) * 100;
+    return sum / (i - from + 1);
+  });
+}
+
+function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, symbol, timeframe, closedReason = null) {
   const { side, entryPrice, entryTime, initialStop, tp1, tp2, tp1Hit, score } = position;
   const dir = side === 'BUY' ? 1 : -1;
   const riskDist = Math.abs(entryPrice - initialStop);
@@ -49,6 +75,7 @@ function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, 
     partial_percent: tp1QtyPercent,
     exit_price: exitPrice,
     status,
+    ...(closedReason ? { closed_reason: closedReason } : {}),
     created_date: entryTime,
     closed_at: exitTime,
     score,
@@ -62,9 +89,13 @@ function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, 
  * Roda a simulação simplificada sobre uma série de candles JÁ FECHADOS de um
  * único símbolo/timeframe.
  * @param {Array} candles - candles normalizados, ordem ascendente, só fechados
- * @param {Object} config - { rfPeriod, rfMult, atrMult, tp1R, tp1QtyPercent, minScore, atrLen, emaFast, emaSlow }
+ * @param {Object} config - { rfPeriod, rfMult, atrMult, tp1R, tp1QtyPercent, minScore, atrLen, emaFast, emaSlow,
+ *   regimeFilter?: { useADX, useChop, adxLen, adxSmooth, chopLen } | null,   // filtro ADX/Choppiness por tier, SÓ barra entrada (como evaluateRegime do scanner)
+ *   timeStop?: { T1, T2, T3 } | null,                                        // fecha ANTES do TP1 após N candles (N por tier), no fechamento da vela
+ *   tierThresholds?: { tier2, tier3 } }                                      // limites de ATR% do tier (Pine: 0.8 / 1.5)
+ *   Sem regimeFilter/timeStop (o padrão) o comportamento é o de sempre.
  * @param {{symbol: string, timeframe: string}} meta
- * @returns {{ ops: Array, stillOpen: Object|null, stats: { signals: number, taken: number, rejectedByScore: number, skippedWhileOpen: number, startIndex: number, candlesTotal: number, firstTradableTime: number|null } }}
+ * @returns {{ ops: Array, stillOpen: Object|null, stats: { signals: number, taken: number, rejectedByScore: number, rejectedByRegime: number, skippedWhileOpen: number, startIndex: number, candlesTotal: number, firstTradableTime: number|null } }}
  *   `stats` conta o que aconteceu com cada sinal do Range Filter (aditivo: quem só usa ops/stillOpen não muda).
  */
 export function runQuickBacktest(candles, config, meta) {
@@ -75,6 +106,7 @@ export function runQuickBacktest(candles, config, meta) {
   // Médias do score: as MESMAS que o scanner usa (Pine: 20/50 — resolveIndicatorParams, known-risks item 27). Até 22/11/2026 este
   // simulador usava 9/21 fixas, o que muda a tendência EMA (20 pts do score) em ~15% das barras. Par inválido (rápida >= lenta) cai
   // inteiro nos valores do Pine, como no scanner (item 31).
+  const { regimeFilter = null, timeStop = null, tierThresholds = { tier2: 0.8, tier3: 1.5 } } = config;
   let { emaFast = 20, emaSlow = 50 } = config;
   if (!(Number.isInteger(emaFast) && Number.isInteger(emaSlow) && emaFast > 0 && emaFast < emaSlow)) { emaFast = 20; emaSlow = 50; }
   const { symbol, timeframe } = meta;
@@ -96,11 +128,24 @@ export function runQuickBacktest(candles, config, meta) {
   const { histogram } = macd.series;
   const { shortEMA, longEMA } = emas.series;
 
+  // Regime e time stop precisam do TIER (ATR% suavizado por barra, como o scanner) e, o regime, do ADX/Choppiness por barra.
+  const needTier = Boolean(regimeFilter || timeStop);
+  const atrPctSmooth = needTier ? atrPctSmoothSeries(candles, atrSeries, atrLen, 20) : null;
+  const tierAt = (i) => classifyTier(atrPctSmooth[i], tierThresholds, timeStop ? { T1: timeStop.T1, T2: timeStop.T2, T3: timeStop.T3 } : undefined);
+  // ADX por barra, como o scanner o vê: calculateADX devolve `adx: 0` (e NENHUMA série) quando o prefixo tem menos de adxLen + adxSmooth + 1 velas, e a
+  // produção então REJEITA a entrada (0 < mínimo do tier). Tratar "sem série" como "sem filtro" liberava entradas e fazia as primeiras operações
+  // dependerem do tamanho TOTAL da série (achado do Codex, PR #618): a regra é por barra, nunca pela série inteira.
+  const adxLen = regimeFilter?.adxLen ?? 14;
+  const adxSm = regimeFilter?.adxSmooth ?? 14;
+  const adxFull = regimeFilter ? calculateADX(candles, adxLen, adxSm).series?.adx ?? null : null;
+  const adxAt = (i) => (adxFull && i + 1 >= adxLen + adxSm + 1 ? adxFull[i] : 0);
+  const chopS = regimeFilter && regimeFilter.useChop !== false ? chopSeries(candles, regimeFilter.chopLen ?? 14) : null;
+
   const ops = [];
   let position = null;
   const startIdx = minRequired;
   // O que aconteceu com cada sinal do Range Filter a partir do início da simulação (para explicar "por que só N operações").
-  const stats = { signals: 0, taken: 0, rejectedByScore: 0, skippedWhileOpen: 0, startIndex: startIdx, candlesTotal: candles.length, firstTradableTime: candles[startIdx]?.closeTime ?? null };
+  const stats = { signals: 0, taken: 0, rejectedByScore: 0, rejectedByRegime: 0, skippedWhileOpen: 0, startIndex: startIdx, candlesTotal: candles.length, firstTradableTime: candles[startIdx]?.closeTime ?? null };
 
   for (let i = startIdx; i < candles.length; i++) {
     const candle = candles[i];
@@ -118,6 +163,10 @@ export function runQuickBacktest(candles, config, meta) {
         position = null;
       } else if (position.tp1Hit && hitTp2) {
         ops.push(closeSimulatedOp(position, tp2, candle.closeTime, 'TP2_HIT', tp1QtyPercent, symbol, timeframe));
+        position = null;
+      } else if (!position.tp1Hit && position.timeStopBars != null && i - position.entryIndex >= position.timeStopBars) {
+        // Time stop (como o scanner, que só o aplica ANTES do TP1): fecha no FECHAMENTO da vela, depois de o stop ter sido checado e ANTES de contar um TP1 desta vela.
+        ops.push(closeSimulatedOp(position, candle.close, candle.closeTime, 'CLOSED', tp1QtyPercent, symbol, timeframe, 'TIME_STOP'));
         position = null;
       } else if (hitTp1) {
         position.tp1Hit = true;
@@ -150,7 +199,19 @@ export function runQuickBacktest(candles, config, meta) {
       );
 
       if (!passed) stats.rejectedByScore += 1;
-      if (passed) {
+
+      // Filtro de regime (evaluateRegime do scanner): só barra ENTRADA; ADX >= mínimo do tier e Choppiness <= máximo do tier (cada um liga/desliga).
+      let tierHere = null;
+      let regimeOk = true;
+      if (passed && needTier) tierHere = tierAt(i);
+      if (passed && regimeFilter) {
+        const adxOk = regimeFilter.useADX === false || adxAt(i) >= tierHere.adxMinVal;
+        const chopOk = chopS === null || chopS[i] <= tierHere.chopMaxVal;
+        regimeOk = adxOk && chopOk;
+        if (!regimeOk) stats.rejectedByRegime += 1;
+      }
+
+      if (passed && regimeOk) {
         stats.taken += 1;
         const atr = atrSeries[i];
         const entryPrice = candle.close;
@@ -161,6 +222,7 @@ export function runQuickBacktest(candles, config, meta) {
         position = {
           side, entryTime: candle.closeTime, entryPrice,
           stop, initialStop: stop, tp1, tp2, tp1Hit: false, score,
+          entryIndex: i, timeStopBars: timeStop ? tierHere.timeStopBars : null,
         };
       }
     }

@@ -232,3 +232,80 @@ describe('What-If — erros', () => {
     expect(await screen.findByText(/Não foi possível simular: Candles insuficientes/)).toBeTruthy();
   });
 });
+
+describe('What-If — filtro de regime e time stop (padrão = produção)', () => {
+  it('os dois interruptores começam LIGADOS (como a produção); desligar o regime recalcula, marca "diferente do padrão" e vira outro teste no histórico', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    const regime = screen.getByRole('switch', { name: 'Filtro de regime (ADX/Choppiness)' });
+    const timeStop = screen.getByRole('switch', { name: 'Time stop' });
+    expect(regime.getAttribute('aria-checked')).toBe('true');
+    expect(timeStop.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('tudo no padrão')).toBeTruthy();
+    const hist = screen.getByRole('complementary', { name: 'Histórico de testes' });
+    await waitFor(() => expect(within(hist).getByText('1 nesta janela')).toBeTruthy(), { timeout: 4000 });
+    fireEvent.click(regime);
+    expect(await screen.findByText('1 diferente do padrão')).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Filtro de regime (ADX/Choppiness)' }).getAttribute('aria-checked')).toBe('false');
+    await waitFor(() => expect(within(hist).getByText('2 nesta janela')).toBeTruthy(), { timeout: 5000 });
+    expect(within(hist).getAllByText(/Regime (on|off)/).map(e => e.textContent).join(' ')).toMatch(/Regime off/);
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao padrão' }));
+    expect(await screen.findByText('tudo no padrão')).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Filtro de regime (ADX/Choppiness)' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('o funil mostra o destino "barrados pelo filtro de regime" e o painel "Posso confiar?" diz que regime e time stop agora são simulados', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    expect(screen.getByText(/barrados pelo filtro de regime/)).toBeTruthy();
+    const d = within(screen.getByText(/Posso confiar\?/).closest('details'));
+    expect(d.getByText(/Filtro de regime ADX\/Choppiness por tier — ligado neste teste/)).toBeTruthy();
+    expect(d.getByText(/Time stop por tier \(48 \/ 64 \/ 96 candles\) — ligado neste teste/)).toBeTruthy();
+    expect(d.getByText(/Trailing do stop antes do TP1/)).toBeTruthy(); // o que falta continua declarado
+  });
+});
+
+describe('What-If — reavaliar o histórico nos dados atuais', () => {
+  const seed = (runs) => localStorage.setItem('sentinel_whatif_history_v1', JSON.stringify({ v: 1, runs }));
+  const old = (over = {}) => ({
+    key: 'k-antiga', at: '2026-11-01T10:00:00.000Z', starred: false,
+    dataset: { assetId: 'a1', symbol: 'BTCUSDT', timeframe: '4h', candleCount: 500, windowEnd: 1 },
+    params: { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 60, regime: 1, timeStop: 1 },
+    summary: { expectancyR: 0.4, counted: 12, winRate: 50, profitFactor: 1.5, maxDrawdownPct: 4, conclusive: false },
+    ...over,
+  });
+
+  it('com testes de uma janela mais antiga do MESMO ativo/período, oferece reavaliar; ao clicar, cria o resultado na janela atual e a oferta some', async () => {
+    seed([old()]);
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    const hist = screen.getByRole('complementary', { name: 'Histórico de testes' });
+    const botao = await within(hist).findByRole('button', { name: /Reavaliar nos dados atuais \(1\)/ });
+    fireEvent.click(botao);
+    expect(await within(hist).findByText('1 teste reavaliado nos dados atuais.')).toBeTruthy();
+    await waitFor(() => expect(within(hist).queryByRole('button', { name: /Reavaliar nos dados atuais/ })).toBeNull());
+    // o teste antigo continua guardado (outra janela) e o novo está na janela atual
+    const saved = JSON.parse(localStorage.getItem('sentinel_whatif_history_v1')).runs;
+    expect(saved.some(r => r.dataset.windowEnd === 1)).toBe(true);
+    expect(saved.filter(r => r.dataset.windowEnd !== 1 && r.params.minScore === 60)).toHaveLength(1);
+  });
+
+  it('não oferece reavaliar para outro ativo nem quando não há nada antigo', async () => {
+    seed([old({ dataset: { assetId: 'a9', symbol: 'XUSDT', timeframe: '4h', candleCount: 500, windowEnd: 1 }, key: 'k-outro' })]);
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    expect(screen.queryByRole('button', { name: /Reavaliar nos dados atuais/ })).toBeNull();
+  });
+
+  it('teste gravado antes dos interruptores aparece como "Regime off · Time stop off" (valia sem esses filtros)', async () => {
+    const legacy = old({ key: 'k-legado' }); delete legacy.params.regime; delete legacy.params.timeStop;
+    seed([legacy]);
+    await openWhatIf();
+    expect(screen.getByText(/Testes em outras janelas de dados \(1\)/)).toBeTruthy();
+    expect(screen.getByText(/Regime off · Time stop off/)).toBeTruthy();
+  });
+});

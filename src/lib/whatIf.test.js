@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   PARAM_KEYS, datasetKey, requestKey, sweepValues, runKey, sameParams, changedKeys, summarizeRun, loadHistory, saveHistory, addRun, toggleStar, removeRun, rankRuns, bestRun, overfitNote,
-  compareSummaries, assessCandles, timeframeMs, detectTier, buildDefaults, fidelityRows, sensitivityValues, sweepParam, judgeSensitivity,
+  compareSummaries, assessCandles, timeframeMs, detectTier, buildDefaults, fidelityRows, reevaluationTargets, sensitivityValues, sweepParam, judgeSensitivity,
   buildTradeChart, rHistogram, exitBreakdown, sideBreakdown, HISTORY_CAP,
 } from './whatIf';
 
 const DS = { assetId: 'a1', symbol: 'BTCUSDT', timeframe: '4h', candleCount: 500 };
-const P = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75 };
+const P = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1 };
 const rec = (over = {}, at = '2026-11-22T10:00:00.000Z', exp = 0.1) => ({
   key: runKey(DS, { ...P, ...over }), at, dataset: DS, params: { ...P, ...over },
   summary: { expectancyR: exp, counted: 10, winRate: 50, profitFactor: 1.2, maxDrawdownPct: 5, ciHalfWidth: 0.2 }, starred: false,
@@ -166,15 +166,21 @@ describe('tier e padrões', () => {
   });
   it('buildDefaults: stop vem do tier (não do trailAtrMult); RF vem do ATIVO; resto do Pine', () => {
     const d = buildDefaults({ pineConfig: { trailAtrMult: 3, tp1R: 1.8, minScore: 80, rng_per: 20, rng_qty: 3.5 }, asset: { rf_period: 14, rf_multiplier: 3 }, tier: { atrStopMult: 2.5 } });
-    expect(d).toEqual({ atrMult: 2.5, tp1R: 1.8, rfPeriod: 14, rfMult: 3, minScore: 80 });
-    expect(buildDefaults({})).toEqual({ atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75 });
+    expect(d).toEqual({ atrMult: 2.5, tp1R: 1.8, rfPeriod: 14, rfMult: 3, minScore: 80, regime: 1, timeStop: 1 });
+    expect(buildDefaults({})).toEqual({ atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1 });
+    // os interruptores seguem a PRODUÇÃO: tudo desligado no Pine salvo => desligado aqui
+    expect(buildDefaults({ pineConfig: { useADX: false, useChop: false, useTimeStop: false } })).toMatchObject({ regime: 0, timeStop: 0 });
+    expect(buildDefaults({ pineConfig: { useADX: false, useChop: true } }).regime).toBe(1);
   });
-  it('fidelityRows: diz o que a produção tem ligado e o simulador não faz', () => {
-    const f = fidelityRows({ useADX: true, useChop: true, useTimeStop: true, preTp1TrailEnabled: true, minRR: 1.2 }, { emaFast: 20, emaSlow: 50 });
+  it('fidelityRows: regime e time stop passam a ser feitos pelo simulador; o que falta continua declarado', () => {
+    const f = fidelityRows({ useADX: true, useChop: true, useTimeStop: true, preTp1TrailEnabled: true, minRR: 1.2 }, { emaFast: 20, emaSlow: 50 }, { regime: 1, timeStop: 0 });
     expect(f.included.some((t) => /EMA 20\/50/.test(t))).toBe(true);
-    expect(f.notIncluded.find((n) => /ADX/.test(n.label)).production).toBe('ligado na produção');
+    expect(f.included.find((t) => /Filtro de regime/.test(t))).toMatch(/ligado neste teste.*produção: ligado/);
+    expect(f.included.find((t) => /Time stop/.test(t))).toMatch(/desligado neste teste.*produção: ligado/);
+    expect(f.notIncluded.some((n) => /ADX/.test(n.label))).toBe(false);
+    expect(f.notIncluded.find((n) => /Trailing do stop antes do TP1/.test(n.label)).production).toBe('ligado na produção');
     expect(f.notIncluded.find((n) => /minRR/.test(n.label)).production).toMatch(/1\.2R/);
-    expect(fidelityRows({ useADX: false, useChop: false }).notIncluded.find((n) => /ADX/.test(n.label)).production).toBe('desligado na produção');
+    expect(fidelityRows({ useADX: false, useChop: false, useTimeStop: false }).included.find((t) => /Filtro de regime/.test(t))).toMatch(/produção: desligado/);
   });
 });
 
@@ -227,8 +233,11 @@ describe('dados dos gráficos', () => {
   it('exitBreakdown separa TP2, TP1+breakeven e stop cheio, e as partes somam o total', () => {
     const ops = [op(), op(), op({ status: 'TP2_HIT', exit_price: 106, tp1_hit: true }), op({ tp1_hit: true, exit_price: 100 })];
     const b = exitBreakdown(ops);
-    expect(b.map((x) => x.count)).toEqual([1, 1, 2]);
+    expect(b.map((x) => x.count)).toEqual([1, 1, 2, 0]);
     expect(b.reduce((s, x) => s + x.count, 0)).toBe(4);
+    const withTs = exitBreakdown([...ops, op({ status: 'CLOSED', closed_reason: 'TIME_STOP', exit_price: 101, tp1_hit: false })]);
+    expect(withTs.find((x) => x.key === 'time_stop').count).toBe(1);
+    expect(withTs.reduce((s, x) => s + x.count, 0)).toBe(5);
     expect(b.find((x) => x.key === 'stop').avgR).toBeLessThan(0);
     expect(b.find((x) => x.key === 'tp2').avgR).toBeGreaterThan(0);
   });
@@ -242,5 +251,40 @@ describe('dados dos gráficos', () => {
     expect(ch.trades).toHaveLength(2);
     expect(ch.trades[0]).toMatchObject({ entryI: 0, exitI: 1, side: 'BUY' });
     expect(buildTradeChart(candles, [op({ created_date: 99999 })], 0).trades).toEqual([]); // op fora da série: ignorada
+  });
+});
+
+describe('migração e reavaliação do histórico', () => {
+  it('teste gravado ANTES dos interruptores vale como regime=0/timeStop=0 e a chave é recalculada (sem perder nem duplicar)', () => {
+    const st = mem();
+    const legacyParams = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75 };
+    const legacy = { key: 'chave-antiga', at: '2026-11-22T10:00:00.000Z', dataset: DS, params: legacyParams, summary: { expectancyR: 0.3, counted: 9 }, starred: true };
+    st.setItem('sentinel_whatif_history_v1', JSON.stringify({ v: 1, runs: [legacy] }));
+    const h = loadHistory(st);
+    expect(h).toHaveLength(1);
+    expect(h[0].params).toMatchObject({ regime: 0, timeStop: 0, minScore: 75 });
+    expect(h[0].key).toBe(runKey(DS, { ...legacyParams, regime: 0, timeStop: 0 }));
+    expect(h[0].starred).toBe(true);
+    // o mesmo teste, agora COM os filtros ligados, é OUTRO teste (chave diferente)
+    expect(runKey(DS, { ...legacyParams, regime: 1, timeStop: 1 })).not.toBe(h[0].key);
+    // registro sem os cinco números continua inválido
+    st.setItem('sentinel_whatif_history_v1', JSON.stringify({ v: 1, runs: [{ ...legacy, params: { atrMult: 2 } }] }));
+    expect(loadHistory(st)).toEqual([]);
+  });
+  it('reevaluationTargets: só parâmetros de OUTRAS janelas do mesmo pedido que ainda não têm resultado na janela atual (sem repetir)', () => {
+    const w1 = { ...DS, windowEnd: 1000 }; const w2 = { ...DS, windowEnd: 2000 };
+    const mk = (ds, over, at) => { const params = { ...P, ...over }; return { key: runKey(ds, params), at, dataset: ds, params, summary: { expectancyR: 0.1, counted: 5 }, starred: false }; };
+    const h = [
+      mk(w1, { minScore: 60 }, '2026-11-22T10:00:00.000Z'), mk(w1, { minScore: 70 }, '2026-11-22T10:01:00.000Z'), mk(w1, { minScore: 80 }, '2026-11-22T10:02:00.000Z'),
+      mk(w2, { minScore: 70 }, '2026-11-22T14:00:00.000Z'), // já tem resultado na janela atual
+      { ...mk({ ...DS, assetId: 'a2', windowEnd: 1000 }, { minScore: 99 }, '2026-11-22T10:03:00.000Z') }, // outro ativo: fora
+    ];
+    const t = reevaluationTargets(h, w2);
+    expect(t.map((x) => x.params.minScore).sort()).toEqual([60, 80]);
+    expect(reevaluationTargets(h, { ...DS })).toEqual([]); // sem janela (dados ainda não carregaram): nada a fazer
+    expect(reevaluationTargets(h, null)).toEqual([]);
+    // depois de reavaliar (criar os registros na janela atual) não sobra nada
+    const done = [...h, mk(w2, { minScore: 60 }, '2026-11-22T14:01:00.000Z'), mk(w2, { minScore: 80 }, '2026-11-22T14:02:00.000Z')];
+    expect(reevaluationTargets(done, w2)).toEqual([]);
   });
 });

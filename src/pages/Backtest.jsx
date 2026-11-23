@@ -18,9 +18,9 @@ import { analyzeOps } from '@/lib/backtestAnalysis';
 import { resolveIndicatorParams } from '@/lib/scanner';
 import {
   summarizeRun, requestKey, runKey, sameParams, changedKeys, loadHistory, saveHistory, addRun, toggleStar, removeRun, rankRuns, bestRun, overfitNote,
-  compareSummaries, assessCandles, detectTier, buildDefaults, fidelityRows, buildTradeChart, rHistogram, exitBreakdown, sideBreakdown,
+  compareSummaries, assessCandles, detectTier, buildDefaults, fidelityRows, reevaluationTargets, buildTradeChart, rHistogram, exitBreakdown, sideBreakdown,
 } from '@/lib/whatIf';
-import { QBT_TIMEFRAMES, QBT_CANDLE_OPTIONS, QBT_SLIDERS, clampDefaults } from '@/components/backtest/whatif/params';
+import { QBT_TIMEFRAMES, QBT_CANDLE_OPTIONS, QBT_SLIDERS, QBT_SWITCHES, clampDefaults } from '@/components/backtest/whatif/params';
 import { SectionTitle } from '@/components/backtest/whatif/ui';
 import ComparisonStrip from '@/components/backtest/whatif/ComparisonStrip';
 import TrustPanel, { DataBadge } from '@/components/backtest/whatif/TrustPanel';
@@ -556,7 +556,7 @@ function SimulatedTradesTable({ ops }) {
               // fora do escopo desta rodada.
               const [label, color] = outcome === 'BE'
                 ? ['🟡 BE', '#64748b']
-                : [STATUS_ICON_COLOR[op.status]?.[0] || op.status, outcomeColor(op.status, outcome)];
+                : [op.closed_reason === 'TIME_STOP' ? '⏱ Time stop' : (STATUS_ICON_COLOR[op.status]?.[0] || op.status), outcomeColor(op.status, outcome)];
               const isBuy = op.side === 'BUY';
               return (
                 <tr key={op.id} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
@@ -582,13 +582,16 @@ function SimulatedTradesTable({ ops }) {
 const WHATIF_AUTO_KEY = 'sentinel_whatif_auto_v1';
 const readAuto = () => { try { return localStorage.getItem(WHATIF_AUTO_KEY) !== '0'; } catch { return true; } };
 const safeStorage = () => { try { return localStorage; } catch { return null; } };
-const FALLBACK_DEFAULTS = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75 };
+const FALLBACK_DEFAULTS = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, regime: 1, timeStop: 1 };
 const NO_RUN = { expectancyR: null, counted: 0 };
 
 // Uma simulação completa: motor + relatório (mesmo summarizeOps das outras abas) + resumo numérico. Nunca lança: erro vira { ok: false, error }.
 function simulate(closed, params, extra, meta) {
   try {
-    const { ops, stillOpen, stats } = runQuickBacktest(closed, { ...params, ...extra }, meta);
+    // `regime` e `timeStop` são interruptores 0/1 nos parâmetros; o motor recebe os objetos de configuração (ou null).
+    const { regime, timeStop, ...nums } = params;
+    const { regimeCfg, timeStopCfg, ...rest } = extra;
+    const { ops, stillOpen, stats } = runQuickBacktest(closed, { ...nums, ...rest, regimeFilter: regime ? regimeCfg : null, timeStop: timeStop ? timeStopCfg : null }, meta);
     const allOps = stillOpen ? [...ops, { ...stillOpen, status: 'SIGNAL_CONFIRMED' }] : ops;
     const report = buildReportFromOps(allOps);
     return { ok: true, ops, stillOpen, stats, report, summary: summarizeRun(report.overall) };
@@ -681,7 +684,13 @@ function QuickBacktestTab() {
   const meta = useMemo(() => ({ symbol: assetSymbol, timeframe }), [assetSymbol, timeframe]);
   const extra = useMemo(() => {
     const ind = resolveIndicatorParams(asset ?? {}, pineConfig ?? {});
-    return { tp1QtyPercent: pineConfig?.tp1QtyPercent ?? 50, atrLen: ind.atrStopPeriod, emaFast: ind.emaFast, emaSlow: ind.emaSlow };
+    const pc = pineConfig ?? {};
+    return {
+      tp1QtyPercent: pc.tp1QtyPercent ?? 50, atrLen: ind.atrStopPeriod, emaFast: ind.emaFast, emaSlow: ind.emaSlow,
+      tierThresholds: { tier2: pc.tier2Threshold ?? 0.8, tier3: pc.tier3Threshold ?? 1.5 },
+      regimeCfg: { useADX: pc.useADX !== false, useChop: pc.useChop !== false, adxLen: pc.adxLen ?? 14, adxSmooth: pc.adxSmooth ?? 14, chopLen: pc.chopLen ?? 14 },
+      timeStopCfg: { T1: pc.timeStopT1 ?? 48, T2: pc.timeStopT2 ?? 64, T3: pc.timeStopT3 ?? 96 },
+    };
   }, [asset, pineConfig]);
 
   const run = useMemo(() => (data ? simulate(data.closed, applied, extra, meta) : null), [data, applied, extra, meta]);
@@ -694,7 +703,7 @@ function QuickBacktestTab() {
   const quality = useMemo(() => (data ? assessCandles({ raw: data.raw, closed: data.closed, requested: candleCount, timeframe, startIndex: run?.ok ? run.stats.startIndex : 0, now: data.fetchedAt }) : null),
     [data, candleCount, timeframe, run]);
   const cmp = useMemo(() => (run?.ok && baseline?.ok ? compareSummaries(run.summary, baseline.summary) : null), [run, baseline]);
-  const fidelity = useMemo(() => fidelityRows(pineConfig ?? {}, { emaFast: extra.emaFast, emaSlow: extra.emaSlow }), [pineConfig, extra]);
+  const fidelity = useMemo(() => fidelityRows(pineConfig ?? {}, { emaFast: extra.emaFast, emaSlow: extra.emaSlow }, { regime: applied.regime, timeStop: applied.timeStop }), [pineConfig, extra, applied]);
   const chart = useMemo(() => (run?.ok ? buildTradeChart(data.closed, run.ops, run.stats.startIndex) : null), [run, data]);
   const analysis = useMemo(() => (run?.ok ? analyzeOps(run.ops) : null), [run]);
   const isDefault = sameParams(applied, defaults);
@@ -714,6 +723,20 @@ function QuickBacktestTab() {
   const ranked = useMemo(() => (dataset ? rankRuns(history, dataset, sortBy) : { same: [], others: history }), [history, dataset, sortBy]);
   const best = useMemo(() => bestRun(ranked.same), [ranked]);
   const overfit = dataset ? overfitNote(ranked.same.length) : null;
+
+  // Reavaliar: roda de novo, nos dados de AGORA, os parâmetros de testes feitos em janelas anteriores (cada execução leva ~2 ms).
+  const [reevalMsg, setReevalMsg] = useState(null);
+  const reevalTargets = useMemo(() => (dataset && run?.ok ? reevaluationTargets(history, dataset) : []), [history, dataset, run]);
+  useEffect(() => { setReevalMsg(null); }, [windowEnd, assetId, timeframe, candleCount]);
+  const handleReeval = () => {
+    const now = new Date().toISOString();
+    const recs = reevalTargets.map(t => {
+      const r = simulate(data.closed, t.params, extra, meta);
+      return r.ok ? { key: runKey(dataset, t.params), at: now, dataset: { ...dataset }, params: t.params, summary: r.summary, starred: t.starred } : null;
+    }).filter(Boolean);
+    setHistory(h => recs.reduce((acc, rec) => addRun(acc, rec), h));
+    setReevalMsg(`${recs.length} ${recs.length === 1 ? 'teste reavaliado' : 'testes reavaliados'} nos dados atuais.`);
+  };
 
   const changedCount = changedKeys(params, defaults).length;
   const setParam = (key, v) => { touchedRef.current = true; setParams(prev => ({ ...prev, [key]: v })); };
@@ -801,6 +824,20 @@ function QuickBacktestTab() {
                     <Slider value={[params[s.key]]} min={s.min} max={s.max} step={s.step} aria-label={s.label}
                       onValueChange={([v]) => setParam(s.key, v)} />
                     <p className="text-11px text-muted-foreground mt-1.5">padrão {defaults[s.key]}</p>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+              {QBT_SWITCHES.map(sw => {
+                const differs = params[sw.key] !== defaults[sw.key];
+                return (
+                  <div key={sw.key} className="rounded-md px-3 py-2 flex items-center gap-3" title={sw.help} style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${differs ? 'rgba(221,154,74,0.3)' : 'rgba(255,255,255,0.05)'}` }}>
+                    <Switch checked={Boolean(params[sw.key])} onCheckedChange={(v) => setParam(sw.key, v ? 1 : 0)} aria-label={sw.label} />
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground">{sw.label}{differs && <span aria-label="diferente do padrão" style={{ color: '#dd9a4a' }}> ●</span>}</div>
+                      <p className="text-11px text-muted-foreground">padrão {defaults[sw.key] ? 'ligado' : 'desligado'} (como na produção)</p>
+                    </div>
                   </div>
                 );
               })}
@@ -899,7 +936,7 @@ function QuickBacktestTab() {
 
       <aside className="lg:sticky lg:top-4 min-w-0" aria-label="Histórico de testes">
         <RunHistory ranked={ranked} best={best} currentKey={currentKey} sortBy={sortBy} onSort={setSortBy} overfit={overfit} saveFailed={saveFailed}
-          onUse={handleUse} onStar={(k) => setHistory(h => toggleStar(h, k))} onRemove={(k) => setHistory(h => removeRun(h, k))} onClear={() => setHistory([])} />
+          reevalCount={reevalTargets.length} onReeval={handleReeval} reevalMsg={reevalMsg} onUse={handleUse} onStar={(k) => setHistory(h => toggleStar(h, k))} onRemove={(k) => setHistory(h => removeRun(h, k))} onClear={() => setHistory([])} />
       </aside>
     </div>
   );
