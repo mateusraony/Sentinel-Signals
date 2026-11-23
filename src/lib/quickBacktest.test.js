@@ -207,6 +207,53 @@ describe('runQuickBacktest — filtro de regime ADX/Choppiness', () => {
   });
 });
 
+describe('runQuickBacktest — regime com histórico de ADX insuficiente (achado do Codex, PR #618)', () => {
+  const BIG = { useADX: true, useChop: false, adxLen: 100, adxSmooth: 100, chopLen: 14 }; // precisa de 201 velas para o ADX existir
+
+  it('REGRESSÃO: ADX sem histórico conta como 0 e BARRA a entrada (como o scanner) — não libera o filtro inteiro', () => {
+    let barrados = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const c = synth(200, seed);
+      const semFiltro = runQuickBacktest(c, { ...CFG, minScore: 50 }, META);
+      const comFiltro = runQuickBacktest(c, { ...CFG, minScore: 50, regimeFilter: BIG }, META);
+      expect(comFiltro.ops.length + (comFiltro.stillOpen ? 1 : 0)).toBe(0); // nenhuma entrada com 200 velas: o ADX de 100/100 só existe a partir da vela 201
+      expect(comFiltro.stats.rejectedByRegime).toBeGreaterThanOrEqual(semFiltro.ops.length > 0 ? 1 : 0);
+      barrados += comFiltro.stats.rejectedByRegime;
+    }
+    expect(barrados).toBeGreaterThan(0); // não-vacuidade: havia sinais que passaram no score e foram barrados
+  });
+
+  it('SEM OLHAR O FUTURO com o filtro ligado: o que fechou até T é idêntico com a série inteira e cortada em T (inclusive com ADX de histórico longo)', () => {
+    let compared = 0;
+    let comparedShort = 0;
+    for (const reg of [REGIME, BIG, { ...REGIME, adxLen: 40, adxSmooth: 40 }]) {
+      for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+        const candles = synth(800, seed);
+        // cortes DENTRO e FORA da janela em que o ADX ainda não existe (BIG precisa de 201 velas: o caso do Codex é um corte de 200)
+        for (const cut of [200, 560]) {
+          const T = candles[cut - 1].closeTime;
+          const cfg = { ...CFG, minScore: 50, regimeFilter: reg };
+          const full = runQuickBacktest(candles, cfg, META).ops.filter((o) => o.closed_at <= T);
+          const part = runQuickBacktest(candles.slice(0, cut), cfg, META).ops;
+          expect(part.map((o) => [o.created_date, o.closed_at, o.exit_price]), `corte ${cut}`).toEqual(full.map((o) => [o.created_date, o.closed_at, o.exit_price]));
+          if (cut === 200) comparedShort += full.length; else compared += full.length;
+        }
+      }
+    }
+    expect(compared).toBeGreaterThan(10);
+    expect(comparedShort).toBeGreaterThan(0); // não-vacuidade do corte curto: havia operações fechadas antes de T com o corte de 200
+  });
+
+  it('nenhuma entrada acontece antes de o ADX existir (vela adxLen + adxSmooth + 1)', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const candles = synth(800, seed);
+      const idx = new Map(candles.map((c, i) => [c.closeTime, i]));
+      const { ops } = runQuickBacktest(candles, { ...CFG, minScore: 50, regimeFilter: BIG }, META);
+      for (const op of ops) expect(idx.get(op.created_date) + 1).toBeGreaterThanOrEqual(201);
+    }
+  });
+});
+
 describe('runQuickBacktest — time stop (só antes do TP1, no fechamento da vela)', () => {
   const seeds = Array.from({ length: 40 }, (_, i) => i + 1);
   const TS = { T1: 5, T2: 5, T3: 5 }; // curto de propósito, para disparar com frequência

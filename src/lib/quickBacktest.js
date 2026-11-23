@@ -132,7 +132,13 @@ export function runQuickBacktest(candles, config, meta) {
   const needTier = Boolean(regimeFilter || timeStop);
   const atrPctSmooth = needTier ? atrPctSmoothSeries(candles, atrSeries, atrLen, 20) : null;
   const tierAt = (i) => classifyTier(atrPctSmooth[i], tierThresholds, timeStop ? { T1: timeStop.T1, T2: timeStop.T2, T3: timeStop.T3 } : undefined);
-  const adxSeries = regimeFilter ? calculateADX(candles, regimeFilter.adxLen ?? 14, regimeFilter.adxSmooth ?? 14).series?.adx ?? null : null;
+  // ADX por barra, como o scanner o vê: calculateADX devolve `adx: 0` (e NENHUMA série) quando o prefixo tem menos de adxLen + adxSmooth + 1 velas, e a
+  // produção então REJEITA a entrada (0 < mínimo do tier). Tratar "sem série" como "sem filtro" liberava entradas e fazia as primeiras operações
+  // dependerem do tamanho TOTAL da série (achado do Codex, PR #618): a regra é por barra, nunca pela série inteira.
+  const adxLen = regimeFilter?.adxLen ?? 14;
+  const adxSm = regimeFilter?.adxSmooth ?? 14;
+  const adxFull = regimeFilter ? calculateADX(candles, adxLen, adxSm).series?.adx ?? null : null;
+  const adxAt = (i) => (adxFull && i + 1 >= adxLen + adxSm + 1 ? adxFull[i] : 0);
   const chopS = regimeFilter && regimeFilter.useChop !== false ? chopSeries(candles, regimeFilter.chopLen ?? 14) : null;
 
   const ops = [];
@@ -198,8 +204,8 @@ export function runQuickBacktest(candles, config, meta) {
       let tierHere = null;
       let regimeOk = true;
       if (passed && needTier) tierHere = tierAt(i);
-      if (passed && regimeFilter && adxSeries) {
-        const adxOk = regimeFilter.useADX === false || adxSeries[i] >= tierHere.adxMinVal;
+      if (passed && regimeFilter) {
+        const adxOk = regimeFilter.useADX === false || adxAt(i) >= tierHere.adxMinVal;
         const chopOk = chopS === null || chopS[i] <= tierHere.chopMaxVal;
         regimeOk = adxOk && chopOk;
         if (!regimeOk) stats.rejectedByRegime += 1;
