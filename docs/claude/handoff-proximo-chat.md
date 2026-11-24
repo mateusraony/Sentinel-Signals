@@ -84,7 +84,7 @@ Depois responda com um resumo curto do que entendeu e **espere o meu "pode segui
 9. **Contexto, Fase 6 (opcionais):** on-chain, notícias por RSS, horário silencioso. Só se eu pedir.
 10. **Modo de observação O3** (motor completo em memória): só com dado de uma queda real do banco.
 11. **Teste de restauração do backup** (`restore-postgres.yml`): nunca rodou (precisa de um Supabase meu).
-12. **Paridade Pine "padrão-ouro"** (CSV oficial do TradingView): exige plano pago meu — fora do escopo gratuito.
+12. **Paridade Pine "padrão-ouro" (Premium desde 24/11/2026):** **passo 1 FEITO** (CSV real de BTCUSDT 4h/1h commitado, item 307: indicadores batem). **Decisão minha pendente:** subir `DEFAULT_CANDLE_LIMIT` de 150 para 300 candles (com 150 o scanner erra a 4ª–5ª casa de EMA/MACD/RF e ~0,1–0,3% das comparações viram o lado). **Passo 2 (o mais valioso):** o usuário exporta a lista de operações do Strategy Tester do Pine v13.2 (+ comissão, slippage, tamanho) e o comparador contra o backtest do Sentinel é construído. Nada disso muda a produção sozinho.
 
 **D. Travado de propósito (não mexer sem pedido):** Bloco 1 (flags dormentes) e o eixo "estratégia/amostra" — a entrada não
 tem vantagem comprovada (itens 264/265); Futures/funding (451 de datacenter US); execução real; Strategy Reviewer pausado.
