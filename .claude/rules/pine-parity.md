@@ -53,7 +53,7 @@ Definido por pesquisa de comunidade (fontes no PR que o introduziu):
   pago; scraping viola ToS — rejeitado). Fixture de candles reais opcional via
   `scripts/fetch-golden-fixture.mjs` (rodar na máquina do usuário — a rede das
   sessões bloqueia a Binance).
-- **EXECUTADO (24/11/2026, item 307):** `tv-export-btcusdt-4h.csv`/`-1h.csv` (Premium) estão em `__fixtures__/golden/` e o bloco passa. Citar sempre qualificado: "indicadores batem com o TradingView em BTC 4h/1h" (um ativo, só a matemática dos indicadores), nunca "paridade da estratégia confirmada". Achado: o scanner usa só 150 candles por timeframe (`DEFAULT_CANDLE_LIMIT`) e nessa janela EMA/MACD/RF erram na 4ª–5ª casa decimal (com 300, não).
+- **EXECUTADO (24/11/2026, item 307):** `tv-export-btcusdt-4h.csv`/`-1h.csv` (Premium) estão em `__fixtures__/golden/` e o bloco passa. Citar sempre qualificado: "indicadores batem com o TradingView em BTC 4h/1h" (um ativo, só a matemática dos indicadores), nunca "paridade da estratégia confirmada". Achado e correção: o scanner usava só 150 candles por timeframe e nessa janela EMA/MACD/RF erravam na 4ª–5ª casa decimal; **subido para 300 em 24/11/2026** (`DEFAULT_CANDLE_LIMIT`), guarda em `src/lib/candleWindowParity.test.js`.
 - **Âncora com valores reais do TV** (`tvSpotCheck.test.js`): 4 barras spot
   4h (BTC/ETH/PENDLE/FET) transcritas de prints da Data Window do usuário
   (2026-07-18) — 31/32 valores na precisão exibida; exceção documentada
