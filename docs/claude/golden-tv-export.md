@@ -1,5 +1,11 @@
 # Padrão-ouro real: exportar o CSV do TradingView para os golden tests
 
+> **Atualização 24/11/2026:** o usuário passou a assinar o **Premium**, então o export do gráfico está disponível. O fluxo abaixo (passo 4 em
+> diante) já traz o script completo, com o `RF_FILT`. Os arquivos exportados ficam no repositório, então o teste continua valendo mesmo
+> que o plano seja cancelado depois. **Verificado em 24/11:** o leitor do teste foi ensaiado com um CSV sintético no formato do
+> TradingView (cabeçalhos entre aspas, hora em ISO, coluna extra de volume e células vazias no aquecimento): o bloco ativa sozinho
+> e passa; e uma alteração de 5% em UMA barra de ADX faz o teste falhar apontando a barra. O arquivo sintético foi apagado.
+
 Os golden tests (`src/lib/indicators/goldenParity.test.js`) já validam a
 matemática dos indicadores com referências de convenção Pine. O **padrão-ouro
 real** — comparar contra o que o SEU gráfico calculou de fato — ativa sozinho
@@ -36,12 +42,31 @@ Premium** (Essential/free não exportam; scraping viola os ToS e foi rejeitado).
    para casar com a fonte do cron `data-api.binance.vision`).
 2. Timezone do gráfico: **UTC** (rodapé do gráfico → fuso).
 3. Timeframe: **4h** (repita depois para **1h**).
-4. Adicione um indicador Pine simples que plote as séries com ESTES títulos
-   exatos (o teste casa por nome de coluna; plote só as que quiser comparar):
+4. No Pine Editor do TradingView, **cole o script abaixo inteiro** e clique em "Adicionar ao gráfico". Ele plota todas as séries com os
+   títulos exatos que o teste procura, **inclusive o filtro do Range Filter (`RF_FILT`)**, com as MESMAS fórmulas do seu Pine v13.2
+   (`rng_size`/`rng_filt`, fonte = fechamento, período 20, multiplicador 3,5). Não precisa mexer na sua estratégia.
 
    ```pinescript
    //@version=6
    indicator("Sentinel Golden", overlay=false)
+
+   // --- Range Filter: cópia das funções do Pine v13.2 (PineScript.jsx) ---
+   rng_size(float x, float qty, int n) =>
+       int   wper  = n * 2 - 1
+       float avrng = ta.ema(math.abs(x - x[1]), n)
+       float ac    = ta.ema(avrng, wper) * qty
+       ac
+   rng_filt(float x, float r) =>
+       var float rf = na
+       float prev   = nz(rf[1], x)
+       rf := x - r > prev ? x - r : x + r < prev ? x + r : prev
+       float hi_band = rf + r
+       float lo_band = rf - r
+       [hi_band, lo_band, rf]
+   [_hb, _lb, filt] = rng_filt(close, rng_size(close, 3.5, 20))
+   plot(filt,                     title="RF_FILT")
+
+   // --- Demais indicadores ---
    plot(ta.rsi(close, 14),        title="RSI")
    plot(ta.atr(14),               title="ATR")
    plot(ta.ema(close, 20),        title="EMA_FAST")
@@ -56,13 +81,11 @@ Premium** (Essential/free não exportam; scraping viola os ToS e foi rejeitado).
    plot(chop,                     title="CHOP")
    ```
 
-   Para o Range Filter (`RF_FILT`), plote a variável de filtro do SEU Pine
-   v13.2 (a linha central do Range Filter) com `title="RF_FILT"` — os
-   parâmetros do painel são `rng_per=20`, `rng_qty=3.5`.
+   Se o editor reclamar de algum nome (o Pine muda entre versões), copie a mensagem de erro e me mande: o ajuste é no script, não no teste.
 
 5. Menu do gráfico (⋯ no topo) → **"Export chart data…"** → marque incluir os
    dados do indicador → **UTC** → baixe o CSV.
-6. Carregue **pelo menos ~400 barras** no gráfico antes de exportar (role o
+6. Carregue **de 1.500 a 2.000 barras** (quanto mais histórico, mais convincente a comparação; o mínimo do teste é ~400)  no gráfico antes de exportar (role o
    histórico para trás) — o teste descarta as 210 primeiras como warm-up.
 7. Renomeie para `tv-export-btcusdt-4h.csv` (e `...-1h.csv`) e coloque em:
 

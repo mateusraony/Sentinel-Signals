@@ -84,7 +84,7 @@ Depois responda com um resumo curto do que entendeu e **espere o meu "pode segui
 9. **Contexto, Fase 6 (opcionais):** on-chain, notícias por RSS, horário silencioso. Só se eu pedir.
 10. **Modo de observação O3** (motor completo em memória): só com dado de uma queda real do banco.
 11. **Teste de restauração do backup** (`restore-postgres.yml`): nunca rodou (precisa de um Supabase meu).
-12. **Paridade Pine "padrão-ouro"** (CSV oficial do TradingView): exige plano pago meu — fora do escopo gratuito.
+12. **Paridade Pine "padrão-ouro"** (CSV oficial do TradingView): **o usuário assinou o Premium em 24/11/2026.** Passo 1 PRONTO do lado do código (script completo com `RF_FILT` + leitor ensaiado, `docs/claude/golden-tv-export.md`); **falta o usuário exportar os CSV** de BTCUSDT 4h e 1h (1.500–2.000 barras) para `src/lib/indicators/__fixtures__/golden/tv-export-btcusdt-4h.csv` e `-1h.csv` (ou me mandar). Passo 2 (a parte mais valiosa): exportar a **lista de operações do Strategy Tester** do Pine v13.2 (+ propriedades da estratégia: comissão, slippage, tamanho) e eu construo o comparador contra o backtest do Sentinel (entradas/saídas, com `skip15mConfirmationEnabled` e `rfExitCloseOnlyEnabled`). Nada disso muda a produção sozinho.
 
 **D. Travado de propósito (não mexer sem pedido):** Bloco 1 (flags dormentes) e o eixo "estratégia/amostra" — a entrada não
 tem vantagem comprovada (itens 264/265); Futures/funding (451 de datacenter US); execução real; Strategy Reviewer pausado.
