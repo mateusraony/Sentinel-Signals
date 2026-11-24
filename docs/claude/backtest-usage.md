@@ -810,3 +810,13 @@ Depois do replay, `report.dataIntegrity` diz se o resultado é confiável:
   consomem `summarizeOps` leem do Firestore real; reusá-los aqui exigiria
   poluir produção com dado de replay ou construir um segundo caminho
   local-só-pra-isso. Fica como pedido futuro separado se for necessário.
+
+## Comparar com a lista de negociações do TradingView (item 308)
+
+Com o Premium: no gráfico BINANCE:BTCUSDT 4h, estratégia "NE RF v13.2", aba "Strategy Tester" → "Lista de negociações" → baixar o CSV.
+1. Candles do próprio gráfico (a rede das sessões não alcança a Binance): `node scripts/tv-csv-to-backtest-data.mjs --symbol BTCUSDT --out DIR --csv-4h grafico4h.csv --csv-1h grafico1h.csv` (os CSV do "Export chart data", `docs/claude/golden-tv-export.md`).
+2. Replay em **modo Pine** (arquivo `pine.json`): `{"skip15mConfirmationEnabled":true,"rfExitCloseOnlyEnabled":true,"preTp1TrailEnabled":false,"preTp1StopProtectionEnabled":false,"useChopExit":false,"useInvalidation":false,"useTimeStop":true,"disableTp2CapEnabled":true,"arbInvalidateOnOppositeSameTf":true}` e
+   `npm run backtest -- --symbols BTCUSDT --from 2025-02-01T00:00:00Z --to AAAA-MM-DDT12:00:00Z --data-dir DIR --pine-config pine.json --step-ms 3600000 --allow-late-start --trial-label paridade-tv --out relatorio.json`.
+3. `node scripts/compare-tv-trades.mjs --tv lista.csv --report relatorio.json --from "2025-02-03 00:00"`.
+Se as chaves da estratégia no gráfico forem outras (Chop Exit, Invalidação, Time Stop), ajuste o `pine.json` para casar com a aba "Entradas" do gráfico.
+

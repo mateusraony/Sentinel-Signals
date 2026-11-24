@@ -131,8 +131,12 @@ const RF_1H_UNCOND_CASCADE = 'rf1h_uncond_15m';
 // breaks it — 150 bars leaves so little room for that combination that
 // BOS/CHoCH on 1h almost never fires (measured: docs/known-risks.md item 34,
 // smcStructure.test.js). Only the 1h fetch (the one feeding the SMC bias)
-// gets the larger window; 4h/1d/15m/5m are unaffected.
-const DEFAULT_CANDLE_LIMIT = 150;
+// gets the larger window; 15m/5m are unaffected (4h/1d use DEFAULT_CANDLE_LIMIT, raised to 300 on 2026-11-24 — item 307).
+// 2026-11-24 (docs/known-risks.md item 307, pedido do usuário): 150 -> 300 candles.
+// Medido contra o CSV REAL do TradingView (BTCUSDT 4h/1h, últimas 2.000 barras): com 150 candles EMA/MACD/Range Filter erram na 4ª–5ª casa decimal
+// e algumas comparações (close>RF, EMA20>EMA50) viram o lado nas barras quase empatadas; com 300, nenhuma. Vale para 4h e 1d (o 1h já usa 500).
+// Custo: o dobro de candles por busca (a Binance cobra o mesmo peso de 101 a 500). Guarda: src/lib/candleWindowParity.test.js.
+const DEFAULT_CANDLE_LIMIT = 300;
 const SMC_1H_STRUCTURE_CANDLE_LIMIT = 500;
 // docs/known-risks.md item 102 — mesma janela ampliada do
 // SMC_1H_STRUCTURE_CANDLE_LIMIT acima, mesmo motivo (item 34:

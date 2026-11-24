@@ -676,12 +676,12 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
   // fetchCandles.mock.calls acumula entre os testes deste arquivo (sem
   // mockClear global) — sempre a chamada 4h mais recente que importa aqui.
   describe('scanAsset — rfStructuralStopEnabled amplia a busca de candles 4h', () => {
-    it('flag desligada (default): busca 4h com o limite padrão (150)', async () => {
+    it('flag desligada (default): busca 4h com o limite padrão (300, item 307)', async () => {
       getPineConfig.mockResolvedValue(basePineConfig());
       fetchCandles.mockImplementation(async () => build4hCandles().slice(0, 103));
       await scanAsset(makeAsset());
       const call4h = fetchCandles.mock.calls.filter(c => c[1] === '4h').at(-1);
-      expect(call4h[2]).toBe(150);
+      expect(call4h[2]).toBe(300);
     });
 
     it('flag ligada: busca 4h com o limite ampliado (500)', async () => {
