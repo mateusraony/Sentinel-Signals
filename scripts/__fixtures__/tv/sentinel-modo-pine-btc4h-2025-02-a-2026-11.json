@@ -1,0 +1,541 @@
+{
+ "trialLabel": "paridade-pine-tv-btc4h-modo-pine-completo",
+ "range": {
+  "fromMs": 1738368000000,
+  "toMs": 1795521600000,
+  "from": "2025-02-01T00:00:00.000Z",
+  "to": "2026-11-24T12:00:00.000Z"
+ },
+ "overall": {
+  "curve": [
+   {
+    "op": {
+     "candle_open_time": "2025-02-03T16:00:00.000Z",
+     "side": "BUY",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": false,
+     "exit_price": 95983,
+     "closed_at": "2025-02-06T20:00:00.000Z",
+     "closed_at_real_time": null,
+     "stop_hit_real_time": null,
+     "entry_price": 101880
+    },
+    "pnlPct": -5.994709265802905,
+    "r": -0.9026708697216272
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-02-06T16:00:00.000Z",
+     "side": "SELL",
+     "status": "CLOSED",
+     "closed_reason": "TIME_STOP",
+     "tp1_hit": false,
+     "exit_price": 96639.99,
+     "closed_at": "2025-02-22T20:00:00.000Z",
+     "closed_at_real_time": "2025-02-22T19:59:59.999Z",
+     "stop_hit_real_time": null,
+     "entry_price": 95983
+    },
+    "pnlPct": -1.284896485836039,
+    "r": -0.2285415781660114
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-03-03T16:00:00.000Z",
+     "side": "SELL",
+     "status": "CLOSED",
+     "closed_reason": "TIME_STOP",
+     "tp1_hit": false,
+     "exit_price": 85433.38,
+     "closed_at": "2025-03-19T20:00:00.000Z",
+     "closed_at_real_time": "2025-03-19T19:59:59.999Z",
+     "stop_hit_real_time": null,
+     "entry_price": 85606
+    },
+    "pnlPct": -0.39823426862603634,
+    "r": -0.044965120876293174
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-04-01T12:00:00.000Z",
+     "side": "BUY",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": false,
+     "exit_price": 82516.29,
+     "closed_at": "2025-04-03T00:00:00.000Z",
+     "closed_at_real_time": null,
+     "stop_hit_real_time": null,
+     "entry_price": 85280.87
+    },
+    "pnlPct": -3.409790180376914,
+    "r": -1.0253631759764048
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-04-02T20:00:00.000Z",
+     "side": "SELL",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": true,
+     "exit_price": 78281.47301139453,
+     "closed_at": "2025-04-07T16:00:00.000Z",
+     "closed_at_real_time": "2025-04-07T15:59:59.999Z",
+     "stop_hit_real_time": "2025-04-07T15:59:59.999Z",
+     "entry_price": 82516.29
+    },
+    "pnlPct": 5.803243603108256,
+    "r": 1.2440655491773465
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-04-09T16:00:00.000Z",
+     "side": "BUY",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": true,
+     "exit_price": 92203.55,
+     "closed_at": "2025-04-24T08:00:00.000Z",
+     "closed_at_real_time": "2025-04-24T07:59:59.999Z",
+     "stop_hit_real_time": null,
+     "entry_price": 82332.08
+    },
+    "pnlPct": 11.623362339838108,
+    "r": 1.4115721351819053
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-05-07T04:00:00.000Z",
+     "side": "BUY",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": true,
+     "exit_price": 102531.54512391261,
+     "closed_at": "2025-05-12T16:00:00.000Z",
+     "closed_at_real_time": "2025-05-12T15:59:59.999Z",
+     "stop_hit_real_time": "2025-05-12T15:59:59.999Z",
+     "entry_price": 96994.82
+    },
+    "pnlPct": 4.582988811858331,
+    "r": 1.7521357449667414
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-06-23T16:00:00.000Z",
+     "side": "BUY",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": true,
+     "exit_price": 107870.89355445633,
+     "closed_at": "2025-07-04T16:00:00.000Z",
+     "closed_at_real_time": "2025-07-04T15:59:59.999Z",
+     "stop_hit_real_time": "2025-07-04T15:59:59.999Z",
+     "entry_price": 103161.29
+    },
+    "pnlPct": 4.668421731740606,
+    "r": 1.2465365101330081
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-07-15T00:00:00.000Z",
+     "side": "SELL",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 120703.79312563747,
+     "closed_at": "2025-07-18T00:00:00.000Z",
+     "closed_at_real_time": "2025-07-17T23:59:59.999Z",
+     "stop_hit_real_time": "2025-07-17T23:59:59.999Z",
+     "entry_price": 117148.47
+    },
+    "pnlPct": -3.246707452955086,
+    "r": -1.0697953384563013
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-08-14T12:00:00.000Z",
+     "side": "SELL",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": true,
+     "exit_price": 116370.75,
+     "closed_at": "2025-08-22T16:00:00.000Z",
+     "closed_at_real_time": null,
+     "stop_hit_real_time": null,
+     "entry_price": 118257.25
+    },
+    "pnlPct": 2.8039926673963294,
+    "r": 0.9008376163115246
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-08-22T12:00:00.000Z",
+     "side": "BUY",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": false,
+     "exit_price": 112600,
+     "closed_at": "2025-08-24T20:00:00.000Z",
+     "closed_at_real_time": null,
+     "stop_hit_real_time": null,
+     "entry_price": 116370.75
+    },
+    "pnlPct": -3.4283460190812556,
+    "r": -1.1790379822799135
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-08-24T16:00:00.000Z",
+     "side": "SELL",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": true,
+     "exit_price": 109605.92786231666,
+     "closed_at": "2025-09-01T12:00:00.000Z",
+     "closed_at_real_time": "2025-09-01T11:59:59.999Z",
+     "stop_hit_real_time": "2025-09-01T11:59:59.999Z",
+     "entry_price": 112600
+    },
+    "pnlPct": 2.9954624809616153,
+    "r": 1.1381147163389325
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-09-28T20:00:00.000Z",
+     "side": "BUY",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": true,
+     "exit_price": 122803.17,
+     "closed_at": "2025-10-05T16:00:00.000Z",
+     "closed_at_real_time": "2025-10-05T15:59:59.999Z",
+     "stop_hit_real_time": null,
+     "entry_price": 112163.95
+    },
+    "pnlPct": 5.786797369797326,
+    "r": 3.3061836317499607
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-10-21T12:00:00.000Z",
+     "side": "BUY",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 109156.3282489451,
+     "closed_at": "2025-10-22T00:00:00.000Z",
+     "closed_at_real_time": "2025-10-21T23:59:59.999Z",
+     "stop_hit_real_time": "2025-10-21T23:59:59.999Z",
+     "entry_price": 113422.61
+    },
+    "pnlPct": -3.899146418870341,
+    "r": -1.036620151707218
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-10-22T08:00:00.000Z",
+     "side": "SELL",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 111986.7593044191,
+     "closed_at": "2025-10-24T16:00:00.000Z",
+     "closed_at_real_time": "2025-10-24T15:59:59.999Z",
+     "stop_hit_real_time": "2025-10-24T15:59:59.999Z",
+     "entry_price": 107555.05
+    },
+    "pnlPct": -4.312882495988565,
+    "r": -1.0467119132512204
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-10-29T16:00:00.000Z",
+     "side": "SELL",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": true,
+     "exit_price": 103728.3,
+     "closed_at": "2025-11-05T16:00:00.000Z",
+     "closed_at_real_time": "2025-11-05T15:59:59.999Z",
+     "stop_hit_real_time": null,
+     "entry_price": 110640
+    },
+    "pnlPct": 5.097125064704102,
+    "r": 1.6837902494145356
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-11-26T16:00:00.000Z",
+     "side": "BUY",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 85175.30126570699,
+     "closed_at": "2025-12-01T16:00:00.000Z",
+     "closed_at_real_time": "2025-12-01T15:59:59.999Z",
+     "stop_hit_real_time": "2025-12-01T15:59:59.999Z",
+     "entry_price": 89957.36
+    },
+    "pnlPct": -5.582727606782183,
+    "r": -1.0501908592293585
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-12-02T12:00:00.000Z",
+     "side": "BUY",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": false,
+     "exit_price": 89149.18,
+     "closed_at": "2025-12-07T12:00:00.000Z",
+     "closed_at_real_time": null,
+     "stop_hit_real_time": null,
+     "entry_price": 90850.01
+    },
+    "pnlPct": -2.1410064005496556,
+    "r": -0.5274875328782865
+   },
+   {
+    "op": {
+     "candle_open_time": "2025-12-07T08:00:00.000Z",
+     "side": "SELL",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 91704.05547110818,
+     "closed_at": "2025-12-07T20:00:00.000Z",
+     "closed_at_real_time": "2025-12-07T19:59:59.999Z",
+     "stop_hit_real_time": "2025-12-07T19:59:59.999Z",
+     "entry_price": 89149.18
+    },
+    "pnlPct": -2.99756243455167,
+    "r": -1.045961871962288
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-01-07T12:00:00.000Z",
+     "side": "SELL",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 94022.45996940945,
+     "closed_at": "2026-01-13T20:00:00.000Z",
+     "closed_at_real_time": "2026-01-13T19:59:59.999Z",
+     "stop_hit_real_time": "2026-01-13T19:59:59.999Z",
+     "entry_price": 91349.96
+    },
+    "pnlPct": -3.2373176139224253,
+    "r": -1.1065625366665868
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-01-29T12:00:00.000Z",
+     "side": "SELL",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": true,
+     "exit_price": 78850.06,
+     "closed_at": "2026-02-02T16:00:00.000Z",
+     "closed_at_real_time": "2026-02-02T15:59:59.999Z",
+     "stop_hit_real_time": null,
+     "entry_price": 84934.02
+    },
+    "pnlPct": 6.059052607822775,
+    "r": 1.6870019540507333
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-02-25T12:00:00.000Z",
+     "side": "BUY",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": false,
+     "exit_price": 63826,
+     "closed_at": "2026-02-28T08:00:00.000Z",
+     "closed_at_real_time": null,
+     "stop_hit_real_time": null,
+     "entry_price": 67412.33
+    },
+    "pnlPct": -5.526799170122145,
+    "r": -1.060072306410902
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-02-28T04:00:00.000Z",
+     "side": "SELL",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 67551.73909524038,
+     "closed_at": "2026-03-01T00:00:00.000Z",
+     "closed_at_real_time": "2026-02-28T23:59:59.999Z",
+     "stop_hit_real_time": "2026-02-28T23:59:59.999Z",
+     "entry_price": 63826
+    },
+    "pnlPct": -5.990840000466149,
+    "r": -1.0262966463707313
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-03-06T12:00:00.000Z",
+     "side": "SELL",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": false,
+     "exit_price": 70406.01,
+     "closed_at": "2026-03-10T08:00:00.000Z",
+     "closed_at_real_time": null,
+     "stop_hit_real_time": null,
+     "entry_price": 68504.71
+    },
+    "pnlPct": -3.017094859608906,
+    "r": -0.4675882462113029
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-03-10T04:00:00.000Z",
+     "side": "BUY",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": true,
+     "exit_price": 72952.85,
+     "closed_at": "2026-03-18T12:00:00.000Z",
+     "closed_at_real_time": "2026-03-18T11:59:59.999Z",
+     "stop_hit_real_time": null,
+     "entry_price": 70406.01
+    },
+    "pnlPct": 5.400268828431771,
+    "r": 1.0266566055835964
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-03-18T12:00:00.000Z",
+     "side": "SELL",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": true,
+     "exit_price": 67745.9081672319,
+     "closed_at": "2026-03-30T08:00:00.000Z",
+     "closed_at_real_time": "2026-03-30T07:59:59.999Z",
+     "stop_hit_real_time": "2026-03-30T07:59:59.999Z",
+     "entry_price": 71467.82
+    },
+    "pnlPct": 5.231982778815324,
+    "r": 1.2824840348584445
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-04-13T20:00:00.000Z",
+     "side": "BUY",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": true,
+     "exit_price": 76039.05,
+     "closed_at": "2026-04-18T12:00:00.000Z",
+     "closed_at_real_time": "2026-04-18T11:59:59.999Z",
+     "stop_hit_real_time": null,
+     "entry_price": 74417.99
+    },
+    "pnlPct": 3.286788962993942,
+    "r": 1.0062610766101314
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-09-03T12:00:00.000Z",
+     "side": "BUY",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 78767.29943573216,
+     "closed_at": "2026-09-04T16:00:00.000Z",
+     "closed_at_real_time": "2026-09-04T15:59:59.999Z",
+     "stop_hit_real_time": "2026-09-04T15:59:59.999Z",
+     "entry_price": 81348
+    },
+    "pnlPct": -3.330516968984217,
+    "r": -1.0498346772353755
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-10-02T04:00:00.000Z",
+     "side": "BUY",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 83735.04594171808,
+     "closed_at": "2026-10-07T04:00:00.000Z",
+     "closed_at_real_time": "2026-10-07T03:59:59.999Z",
+     "stop_hit_real_time": "2026-10-07T03:59:59.999Z",
+     "entry_price": 86089.65
+    },
+    "pnlPct": -3.0034195177317398,
+    "r": -1.0981181068436647
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-10-15T00:00:00.000Z",
+     "side": "SELL",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 83222.4432162502,
+     "closed_at": "2026-10-20T16:00:00.000Z",
+     "closed_at_real_time": "2026-10-20T15:59:59.999Z",
+     "stop_hit_real_time": "2026-10-20T15:59:59.999Z",
+     "entry_price": 80928
+    },
+    "pnlPct": -3.1268671932828633,
+    "r": -1.102886776302773
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-10-21T12:00:00.000Z",
+     "side": "BUY",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": false,
+     "exit_price": 82490.76976323889,
+     "closed_at": "2026-10-22T08:00:00.000Z",
+     "closed_at_real_time": "2026-10-22T07:59:59.999Z",
+     "stop_hit_real_time": "2026-10-22T07:59:59.999Z",
+     "entry_price": 84540.01
+    },
+    "pnlPct": -2.5725342445772723,
+    "r": -1.0612814781816053
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-10-22T08:00:00.000Z",
+     "side": "SELL",
+     "status": "INVALIDATED",
+     "closed_reason": "INVALIDATION",
+     "tp1_hit": true,
+     "exit_price": 78634.01,
+     "closed_at": "2026-11-02T04:00:00.000Z",
+     "closed_at_real_time": "2026-11-02T03:59:59.999Z",
+     "stop_hit_real_time": null,
+     "entry_price": 81750.01
+    },
+    "pnlPct": 3.4777957417887055,
+    "r": 1.3276304470357134
+   },
+   {
+    "op": {
+     "candle_open_time": "2026-11-05T12:00:00.000Z",
+     "side": "SELL",
+     "status": "STOP_HIT",
+     "closed_reason": null,
+     "tp1_hit": true,
+     "exit_price": 59504.42764385759,
+     "closed_at": "2026-11-21T16:00:00.000Z",
+     "closed_at_real_time": "2026-11-21T15:59:59.999Z",
+     "stop_hit_real_time": "2026-11-21T15:59:59.999Z",
+     "entry_price": 76029.79
+    },
+    "pnlPct": 13.347251753955424,
+    "r": 3.397660155623414
+   }
+  ]
+ }
+}
