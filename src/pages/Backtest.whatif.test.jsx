@@ -464,8 +464,31 @@ describe('What-If — runner depois do TP1 e piso R:R (padrão = produção)', (
     expect(d.getByText(/Trailing do stop do RUNNER depois do TP1 — ligado neste teste/)).toBeTruthy();
     expect(d.getByText(/Saída do runner pelo Range Filter — ligado neste teste/)).toBeTruthy();
     expect(d.getByText(/Piso de risco\/retorno do TP1/)).toBeTruthy();
-    expect(d.getByText(/Chop Exit e invalidação do Range Filter ANTES do TP1/)).toBeTruthy();
+    expect(d.getByText(/Chop Exit ANTES do TP1 — desligado neste teste/)).toBeTruthy();
+    expect(d.getByText(/Invalidação pelo Range Filter ANTES do TP1 — desligado neste teste/)).toBeTruthy();
   });
+});
+
+describe('What-If — Chop Exit e invalidação pelo Range Filter antes do TP1 (padrão = produção: desligados)', () => {
+  it('vêm DESLIGADOS como o scanner; a distância da invalidação só liga com ela; ligar conta como diferente do padrão e volta com "padrão"', async () => {
+    await openWhatIf();
+    await pickAsset();
+    await screen.findByRole('status', { name: 'O que este resultado diz' });
+    const chop = screen.getByRole('switch', { name: 'Chop Exit antes do TP1' });
+    const inv = screen.getByRole('switch', { name: 'Invalidação pelo Range Filter antes do TP1' });
+    expect(chop.getAttribute('aria-checked')).toBe('false');
+    expect(inv.getAttribute('aria-checked')).toBe('false');
+    // sem a invalidação ligada, o ajuste das velas está travado
+    const barsThumb = screen.getAllByRole('slider')[9];
+    expect(barsThumb.hasAttribute('data-disabled')).toBe(true);
+    fireEvent.click(inv);
+    expect(await screen.findByText('1 diferente do padrão')).toBeTruthy();
+    expect(screen.getAllByRole('slider')[9].hasAttribute('data-disabled')).toBe(false);
+    fireEvent.click(chop);
+    expect(await screen.findByText('2 diferentes do padrão')).toBeTruthy();
+    fireEvent.click(chop); fireEvent.click(inv);
+    await screen.findByText('tudo no padrão');
+  }, 15000);
 });
 
 describe('What-If — aplicar ao scanner AO VIVO: o USUÁRIO escolhe, parâmetro por parâmetro', () => {

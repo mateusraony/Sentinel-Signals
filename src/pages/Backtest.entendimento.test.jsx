@@ -139,7 +139,7 @@ describe('Backtest — Ajuste Fino (What-If): "padrão X" em cada controle', () 
     renderPage(<Backtest />);
     fireEvent.click(await screen.findByRole('tab', { name: /Ajuste Fino \(What-If\)/ }));
     expect(await screen.findByText('tudo no padrão')).toBeTruthy();
-    expect(screen.getAllByText(/^padrão /)).toHaveLength(14); // 9 controles (6 + os 3 de distância do trailing) + os 5 interruptores (regime, trailing, time stop, trailing do runner e saída RF)
+    expect(screen.getAllByText(/^padrão /)).toHaveLength(17); // 10 controles (6 + 3 de distância do trailing + velas da invalidação) + os 7 interruptores (regime, trailing, time stop, trailing do runner, saída RF, Chop Exit e invalidação)
     expect(screen.getAllByText('padrão ligado (como na produção)')).toHaveLength(5);
     expect(screen.getByText('Escolha um ativo para executar.')).toBeTruthy();
     expect(screen.getByText(/aparece aqui assim que você escolher um ativo/)).toBeTruthy();

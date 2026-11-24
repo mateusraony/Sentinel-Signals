@@ -15,6 +15,7 @@ export const QBT_SLIDERS = [
   { key: 'trailStart', label: 'Trailing: começa em (× ATR)', min: 0.2, max: 3, step: 0.1, color: '#e3b45a', onlyWhen: 'trail', help: 'O trailing só começa a subir o stop depois que o preço andou a favor este tanto (em múltiplos do ATR) a partir da entrada. Produção: 1,0×.' },
   { key: 'runnerTrailDist', label: 'Runner: distância do trailing (× ATR)', min: 0.5, max: 5, step: 0.1, color: '#5db586', onlyWhen: 'runnerTrail', help: 'Depois do TP1, o stop do runner sobe para o fechamento menos esta distância em ATR (só sobe). Produção: 2,0×.' },
   { key: 'trailDist', label: 'Trailing: distância (× ATR)', min: 0.5, max: 5, step: 0.1, color: '#e06a5b', onlyWhen: 'trail', help: 'Distância do stop até o melhor preço atingido, em ATR. Menor = stop mais perto do preço (protege mais, corta mais cedo). Produção: 2,0×.' },
+  { key: 'invalidBars', label: 'Invalidação: velas seguidas', min: 1, max: 6, step: 1, color: '#e06a5b', onlyWhen: 'invalidation', help: 'Quantas velas SEGUIDAS com o Range Filter virado contra a posição fecham a operação antes do TP1. Produção (desligada por padrão): 2.' },
 ];
 
 /** Interruptores (0/1): o padrão de cada um é o da produção. */
@@ -23,6 +24,8 @@ export const QBT_SWITCHES = [
   { key: 'trail', label: 'Trailing do stop antes do TP1', help: 'O stop sobe junto com o preço antes do primeiro alvo (só sobe, nunca passa do fechamento). Padrão: o que a produção tem ligado.' },
   { key: 'runnerTrail', label: 'Trailing do runner depois do TP1', help: 'Depois do TP1 o stop sobe com o preço (fechamento menos N× ATR), em vez de ficar parado na entrada. Padrão: o que a produção faz.' },
   { key: 'runnerRf', label: 'Saída do runner pelo Range Filter', help: 'Depois do TP1, fecha no fechamento da vela quando o Range Filter vira contra a posição e o preço cruza o filtro. Padrão: o que a produção faz.' },
+  { key: 'chopExit', label: 'Chop Exit antes do TP1', help: 'Fecha a operação antes do TP1 quando o Choppiness da vela passa do máximo do tier. No scanner vem DESLIGADO por padrão (useChopExit).' },
+  { key: 'invalidation', label: 'Invalidação pelo Range Filter antes do TP1', help: 'Fecha a operação antes do TP1 depois de N velas seguidas com o Range Filter virado contra ela. No scanner vem DESLIGADA por padrão (useInvalidation).' },
   { key: 'timeStop', label: 'Time stop', help: 'Fecha a operação que não bateu o TP1 depois de N candles (48 / 64 / 96 por tier). Padrão: o que a produção tem ligado.' },
 ];
 
@@ -33,7 +36,7 @@ export const clampToSlider = (key, v) => {
 };
 
 /** "Stop 2.5× · TP1 1.5R · RF 20/3.5 · Score 75" */
-export const formatParams = (p) => `Stop ${p.atrMult}× · TP1 ${p.tp1R}R · RF ${p.rfPeriod}/${p.rfMult} · Score ${p.minScore} · Regime ${p.regime ? 'on' : 'off'} · Time stop ${p.timeStop ? 'on' : 'off'} · Trailing ${p.trail ? `${p.trailStart}/${p.trailDist}×ATR` : 'off'} · RR≥${p.minRR || '—'} · Runner ${p.runnerTrail ? `ATR ${p.runnerTrailDist}×` : 'BE'}${p.runnerRf ? ' + RF' : ''}`;
+export const formatParams = (p) => `Stop ${p.atrMult}× · TP1 ${p.tp1R}R · RF ${p.rfPeriod}/${p.rfMult} · Score ${p.minScore} · Regime ${p.regime ? 'on' : 'off'} · Time stop ${p.timeStop ? 'on' : 'off'} · Trailing ${p.trail ? `${p.trailStart}/${p.trailDist}×ATR` : 'off'} · RR≥${p.minRR || '—'} · Runner ${p.runnerTrail ? `ATR ${p.runnerTrailDist}×` : 'BE'}${p.runnerRf ? ' + RF' : ''}${p.chopExit ? ' · Chop exit' : ''}${p.invalidation ? ` · Invalidação ${p.invalidBars}` : ''}`;
 
 /** Os padrões (como vêm de buildDefaults) dentro da faixa de cada slider, com as 5 chaves explícitas. */
 export const clampDefaults = (d) => ({
@@ -51,4 +54,7 @@ export const clampDefaults = (d) => ({
   runnerTrail: d.runnerTrail ? 1 : 0,
   runnerTrailDist: clampToSlider('runnerTrailDist', d.runnerTrailDist ?? 2),
   runnerRf: d.runnerRf ? 1 : 0,
+  chopExit: d.chopExit ? 1 : 0,
+  invalidation: d.invalidation ? 1 : 0,
+  invalidBars: clampToSlider('invalidBars', d.invalidBars ?? 2),
 });

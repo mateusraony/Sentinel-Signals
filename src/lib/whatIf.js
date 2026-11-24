@@ -7,7 +7,7 @@ import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 // regime e timeStop são interruptores (0/1) guardados junto dos números: entram na identidade, no histórico e na comparação como qualquer parâmetro.
 // trail (0/1) liga o trailing do stop antes do TP1; trailStart/trailDist (em × ATR) só valem com ele ligado.
 // runnerTrail (0/1) liga o trailing do stop do runner depois do TP1 (runnerTrailDist em × ATR); runnerRf (0/1) liga a saída do runner pelo Range Filter; minRR é o piso de risco/retorno do TP1.
-export const PARAM_KEYS = ['atrMult', 'tp1R', 'rfPeriod', 'rfMult', 'minScore', 'minRR', 'regime', 'timeStop', 'trail', 'trailStart', 'trailDist', 'runnerTrail', 'runnerTrailDist', 'runnerRf'];
+export const PARAM_KEYS = ['atrMult', 'tp1R', 'rfPeriod', 'rfMult', 'minScore', 'minRR', 'regime', 'timeStop', 'trail', 'trailStart', 'trailDist', 'runnerTrail', 'runnerTrailDist', 'runnerRf', 'chopExit', 'invalidation', 'invalidBars'];
 const r2 = (n) => Math.round(Number(n) * 100) / 100;
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -19,7 +19,7 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 export const requestKey = (d) => `${d.assetId}|${d.timeframe}|${d.candleCount}`;
 export const datasetKey = (d) => `${requestKey(d)}|${d.windowEnd ?? 'x'}`;
 // Valores que não fazem diferença não contam como "outro teste": com o trailing desligado, começo e distância dele não existem (viram 0 na comparação).
-const effective = (p, k) => (((k === 'trailStart' || k === 'trailDist') && !p?.trail) || (k === 'runnerTrailDist' && !p?.runnerTrail) ? 0 : r2(p?.[k]));
+const effective = (p, k) => (((k === 'trailStart' || k === 'trailDist') && !p?.trail) || (k === 'runnerTrailDist' && !p?.runnerTrail) || (k === 'invalidBars' && !p?.invalidation) ? 0 : r2(p?.[k]));
 export const runKey = (d, params) => `${requestKey(d)}|${PARAM_KEYS.map((k) => effective(params, k)).join('|')}`;
 export const sameParams = (a, b) => PARAM_KEYS.every((k) => effective(a, k) === effective(b, k));
 // Ligar/desligar o trailing é UMA mudança: quando o interruptor difere do padrão, começo e distância não contam à parte.
@@ -27,6 +27,7 @@ export const changedKeys = (params, defaults) => {
   let keys = PARAM_KEYS.filter((k) => effective(params, k) !== effective(defaults, k));
   if (keys.includes('trail')) keys = keys.filter((k) => k !== 'trailStart' && k !== 'trailDist');
   if (keys.includes('runnerTrail')) keys = keys.filter((k) => k !== 'runnerTrailDist');
+  if (keys.includes('invalidation')) keys = keys.filter((k) => k !== 'invalidBars');
   return keys;
 };
 
@@ -53,7 +54,7 @@ export const HISTORY_CAP = 60;
 // Testes gravados ANTES dos interruptores de regime/time stop não tinham esses filtros: valem como regime=0, timeStop=0 (e a chave é recalculada).
 // (mesma regra para o trailing do stop antes do TP1, que também não existia: trail=0, com começo/distância de produção só para ter valor.)
 // minRR=0: o piso não existia (nenhuma entrada era barrada por ele); runnerTrail/runnerRf=0: o runner só saía no TP2 ou no breakeven.
-const LEGACY_FLAGS = { regime: 0, timeStop: 0, trail: 0, trailStart: 1, trailDist: 2, runnerTrail: 0, runnerTrailDist: 2, runnerRf: 0, minRR: 0 };
+const LEGACY_FLAGS = { regime: 0, timeStop: 0, trail: 0, trailStart: 1, trailDist: 2, runnerTrail: 0, runnerTrailDist: 2, runnerRf: 0, minRR: 0, chopExit: 0, invalidation: 0, invalidBars: 2 };
 function normalizeRun(r) {
   const params = { ...LEGACY_FLAGS, ...r.params };
   return { ...r, params, key: runKey(r.dataset, params), starred: Boolean(r.starred) };
@@ -224,6 +225,10 @@ export function buildDefaults({ pineConfig = {}, asset = null, tier = null }) {
     runnerTrailDist: pineConfig.trailAtrMult ?? 2,
     runnerRf: 1,
     minRR: pineConfig.minRR ?? 1.2,
+    // Saídas inteligentes ANTES do TP1: desligadas por padrão no scanner (useChopExit/useInvalidation); o padrão da tela é o que a configuração ao vivo tem.
+    chopExit: pineConfig.useChopExit === true ? 1 : 0,
+    invalidation: pineConfig.useInvalidation === true ? 1 : 0,
+    invalidBars: pineConfig.invalidRFBars ?? 2,
     atrMult: tier?.atrStopMult ?? 2,
     tp1R: pineConfig.tp1R ?? 1.5,
     rfPeriod: asset?.rf_period ?? pineConfig.rng_per ?? 20,
@@ -244,7 +249,7 @@ export function entryTimingRows(pc = {}) {
 }
 
 // ---------- fidelidade: o que o simulador faz e não faz ----------
-export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags = { regime: 0, timeStop: 0, trail: 0, runnerTrail: 0, runnerRf: 0 }) {
+export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags = { regime: 0, timeStop: 0, trail: 0, runnerTrail: 0, runnerRf: 0, chopExit: 0, invalidation: 0 }) {
   const state = (on) => (on ? 'ligado neste teste' : 'desligado neste teste');
   const prod = (on) => (on ? 'ligado na produção' : 'desligado na produção');
   const included = [
@@ -256,6 +261,8 @@ export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags 
     `Time stop por tier (48 / 64 / 96 candles) — ${state(flags.timeStop)} (produção: ${pc.useTimeStop !== false ? 'ligado' : 'desligado'}); só antes do TP1, no fechamento da vela`,
     'Stop a N× ATR e alvos TP1/TP2 em múltiplos de R (TP2 = 2× o TP1)',
     `Trailing do stop ANTES do TP1 — ${state(flags.trail)} (produção: ${pc.preTp1StopProtectionEnabled !== false && pc.preTp1TrailEnabled !== false ? 'ligado' : 'desligado'}); o stop segue o melhor preço a uma distância em ATR, só sobe, nunca passa do fechamento e só protege a vela seguinte`,
+    `Chop Exit ANTES do TP1 — ${state(flags.chopExit)} (produção: ${pc.useChopExit === true ? 'ligado' : 'desligado'}); fecha no fechamento da vela quando o Choppiness dela passa do máximo do tier da vela`,
+    `Invalidação pelo Range Filter ANTES do TP1 — ${state(flags.invalidation)} (produção: ${pc.useInvalidation === true ? 'ligada' : 'desligada'}); fecha no fechamento depois de N velas SEGUIDAS com o filtro virado contra a posição (a invalidação por score contrário, que o scanner também tem, NÃO é replicada aqui)`,
     'Stop sobe para a entrada (breakeven) depois do TP1 (e nunca piora um stop que o trailing já subiu)',
     `Trailing do stop do RUNNER depois do TP1 — ${state(flags.runnerTrail)} (produção: ligado, ${pc.trailAtrMult ?? 2}× ATR); o stop sobe para fechamento − N× ATR, só sobe e só protege a vela seguinte`,
     `Saída do runner pelo Range Filter — ${state(flags.runnerRf)} (produção: ligada): fecha no fechamento da vela quando o filtro virou contra a posição e o preço cruzou o filtro`,
@@ -266,7 +273,6 @@ export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags 
   ];
   const notIncluded = [
     ...entryTimingRows(pc),
-    { label: 'Chop Exit e invalidação do Range Filter ANTES do TP1', production: 'desligados por padrão na produção', why: 'O scanner tem os dois, mas vêm desligados (useChopExit / useInvalidation); o simulador também não os faz.' },
   ];
   return { included, notIncluded };
 }
@@ -361,12 +367,16 @@ export function exitBreakdown(ops) {
     tp2: { key: 'tp2', label: 'Alvo final (TP2)', ops: [] },
     tp1_be: { key: 'tp1_be', label: 'TP1 e depois stop do runner (breakeven ou trailing)', ops: [] },
     rf_exit: { key: 'rf_exit', label: 'TP1 e depois saída pelo Range Filter', ops: [] },
+    invalidation: { key: 'invalidation', label: 'Invalidada pelo Range Filter (antes do TP1)', ops: [] },
+    chop_exit: { key: 'chop_exit', label: 'Chop Exit (antes do TP1)', ops: [] },
     stop_trail: { key: 'stop_trail', label: 'Stop do trailing (antes do TP1)', ops: [] },
     stop: { key: 'stop', label: 'Stop cheio (perda)', ops: [] },
     time_stop: { key: 'time_stop', label: 'Time stop (fechada por tempo)', ops: [] },
   };
   for (const op of ops) {
     if (op.closed_reason === 'TIME_STOP') groups.time_stop.ops.push(op);
+    else if (op.closed_reason === 'CHOP_EXIT') groups.chop_exit.ops.push(op);
+    else if (op.status === 'INVALIDATED' && !op.tp1_hit) groups.invalidation.ops.push(op);
     else if (op.status === 'TP2_HIT') groups.tp2.ops.push(op);
     else if (op.status === 'INVALIDATED' && op.tp1_hit) groups.rf_exit.ops.push(op);
     else if (op.status === 'STOP_HIT' && op.tp1_hit) groups.tp1_be.ops.push(op);
