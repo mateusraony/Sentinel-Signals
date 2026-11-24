@@ -232,6 +232,17 @@ export function buildDefaults({ pineConfig = {}, asset = null, tier = null }) {
   };
 }
 
+// Entrada: o simulador entra no FECHAMENTO da vela do sinal. O que o scanner faz depende de uma chave que o usuário controla (skip15mConfirmationEnabled, ligada em produção desde o item 121 por
+// fidelidade ao Pine real): ligada = entrada no fechamento (igual ao simulador); desligada = espera o Range Filter de 15 min alinhar (o simulador não faz). O texto lê o valor REAL da configuração.
+export function entryTimingRows(pc = {}) {
+  const rows = [];
+  if (pc.skip15mConfirmationEnabled !== true) {
+    rows.push({ label: 'Confirmação de 15 min antes de entrar', production: 'ligada na configuração atual do scanner', why: 'O scanner espera o Range Filter de 15 min alinhar com o sinal e entra no fechamento daquela vela de 15 min, repetindo a cada passada até o sinal expirar. O simulador entra no fechamento da vela do sinal.' });
+  }
+  rows.push({ label: 'Filtro de tendência do 4h para sinais de 1h', production: 'só existe no backtest (rf1hCondEnabled/rf1hUncondEnabled); não faz parte da produção', why: 'O simulador olha um timeframe só. Em gráfico de 4h o sinal já é o do 4h, então não há o que filtrar.' });
+  return rows;
+}
+
 // ---------- fidelidade: o que o simulador faz e não faz ----------
 export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags = { regime: 0, timeStop: 0, trail: 0, runnerTrail: 0, runnerRf: 0 }) {
   const state = (on) => (on ? 'ligado neste teste' : 'desligado neste teste');
@@ -239,6 +250,7 @@ export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags 
   const included = [
     'Sinal do Range Filter (período e multiplicador que você escolher)',
     'Score de 0 a 100 (Range Filter + MACD + EMA + RSI + volume), com o mínimo escolhido',
+    ...(pc.skip15mConfirmationEnabled === true ? ['Entrada no fechamento da vela do sinal — igual ao seu scanner, que está com a confirmação de 15 min DESLIGADA (skip15mConfirmationEnabled)'] : []),
     `Médias EMA ${ema.emaFast}/${ema.emaSlow} no score (as mesmas do scanner)`,
     `Filtro de regime ADX/Choppiness por tier — ${state(flags.regime)} (produção: ${pc.useADX !== false || pc.useChop !== false ? 'ligado' : 'desligado'}); só barra entradas, como o scanner`,
     `Time stop por tier (48 / 64 / 96 candles) — ${state(flags.timeStop)} (produção: ${pc.useTimeStop !== false ? 'ligado' : 'desligado'}); só antes do TP1, no fechamento da vela`,
@@ -253,7 +265,7 @@ export function fidelityRows(pc = {}, ema = { emaFast: 20, emaSlow: 50 }, flags 
     'Uma operação por vez',
   ];
   const notIncluded = [
-    { label: 'Filtro de tendência do 4h e confirmação de 15 min', production: 'ligado na produção', why: 'O simulador olha um timeframe só.' },
+    ...entryTimingRows(pc),
     { label: 'Chop Exit e invalidação do Range Filter ANTES do TP1', production: 'desligados por padrão na produção', why: 'O scanner tem os dois, mas vêm desligados (useChopExit / useInvalidation); o simulador também não os faz.' },
   ];
   return { included, notIncluded };
