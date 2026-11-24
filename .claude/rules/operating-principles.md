@@ -71,6 +71,12 @@ global do usuário (ver `docs/claude/global-CLAUDE.md.example`).
   pendente"/"0 alertas" sem ter o dado). **Contagem nunca afirma "0" enquanto
   carrega ou quando a carga falhou: mostre "—".** O usuário cobrou isso de novo
   em 22/11/2026 ("nunca esqueça de ver abas ocultas das páginas").
+- **Todo teste/medição é registrado no repositório, no MESMO PR (pedido explícito do usuário, 2026-11-24: "cada teste registrado e
+  identificado com todos os dados, para não ficar de fora").** Vale para backtest, comparação, medição e análise: uma linha em
+  `docs/registro-de-testes.md` (ID `T-AAAA-NNN`, pergunta, configuração exata, janela, ativos, fonte dos dados, commit, resultado com N e IC,
+  conclusão, ponteiros), o backtest em `docs/backtest-trial-registry.json` (`scripts/backtest-trial-registry.mjs`, cada rodada conta como tentativa),
+  o resultado compacto em `docs/experiments/runs/` e o texto completo no `docs/known-risks.md`. Teste que decide algo importante é pré-registrado
+  ANTES em `docs/experiments/*-prereg.json`. Teste que ainda não rodou fica PENDENTE, dizendo o que falta e de quem. Sem o registro, o teste não está concluído.
 - **Fato × hipótese × recomendação.** Sempre separe o que você observou no
   código do que é plausível e do que é opinião. Sem "parece bom" — traga
   evidência (`arquivo:linha`).
