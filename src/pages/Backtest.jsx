@@ -559,7 +559,7 @@ function SimulatedTradesTable({ ops }) {
               // fora do escopo desta rodada.
               const [label, color] = outcome === 'BE'
                 ? ['🟡 BE', '#64748b']
-                : [op.closed_reason === 'TIME_STOP' ? '⏱ Time stop' : (op.pre_tp1_trailed && op.status === 'STOP_HIT' && !op.tp1_hit ? 'Stop (trailing)' : op.status === 'INVALIDATED' && op.tp1_hit ? 'Saída RF (runner)' : op.runner_trailed && op.status === 'STOP_HIT' && op.tp1_hit ? 'Stop (trailing do runner)' : (STATUS_ICON_COLOR[op.status]?.[0] || op.status)), outcomeColor(op.status, outcome)];
+                : [op.closed_reason === 'TIME_STOP' ? '⏱ Time stop' : (op.pre_tp1_trailed && op.status === 'STOP_HIT' && !op.tp1_hit ? 'Stop (trailing)' : op.closed_reason === 'CHOP_EXIT' ? 'Chop exit' : op.status === 'INVALIDATED' && !op.tp1_hit ? 'Invalidada (RF)' : op.status === 'INVALIDATED' && op.tp1_hit ? 'Saída RF (runner)' : op.runner_trailed && op.status === 'STOP_HIT' && op.tp1_hit ? 'Stop (trailing do runner)' : (STATUS_ICON_COLOR[op.status]?.[0] || op.status)), outcomeColor(op.status, outcome)];
               const isBuy = op.side === 'BUY';
               return (
                 <tr key={op.id} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
@@ -585,14 +585,14 @@ function SimulatedTradesTable({ ops }) {
 const WHATIF_AUTO_KEY = 'sentinel_whatif_auto_v1';
 const readAuto = () => { try { return localStorage.getItem(WHATIF_AUTO_KEY) !== '0'; } catch { return true; } };
 const safeStorage = () => { try { return localStorage; } catch { return null; } };
-const FALLBACK_DEFAULTS = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, minRR: 1.2, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2, runnerTrail: 1, runnerTrailDist: 2, runnerRf: 1 };
+const FALLBACK_DEFAULTS = { atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75, minRR: 1.2, regime: 1, timeStop: 1, trail: 1, trailStart: 1, trailDist: 2, runnerTrail: 1, runnerTrailDist: 2, runnerRf: 1, chopExit: 0, invalidation: 0, invalidBars: 2 };
 const NO_RUN = { expectancyR: null, counted: 0 };
 
 // Uma simulação completa: motor + relatório (mesmo summarizeOps das outras abas) + resumo numérico. Nunca lança: erro vira { ok: false, error }.
 function simulate(closed, params, extra, meta) {
   try {
     // `regime`, `timeStop` e `trail` são interruptores 0/1 nos parâmetros; o motor recebe os objetos de configuração (ou null).
-    const { regime, timeStop, trail, trailStart, trailDist, runnerTrail, runnerTrailDist, runnerRf, minRR, ...nums } = params;
+    const { regime, timeStop, trail, trailStart, trailDist, runnerTrail, runnerTrailDist, runnerRf, minRR, chopExit, invalidation, invalidBars, ...nums } = params;
     const { regimeCfg, timeStopCfg, ...rest } = extra;
     const { ops, stillOpen, stats } = runQuickBacktest(closed, {
       ...nums, ...rest, regimeFilter: regime ? regimeCfg : null, timeStop: timeStop ? timeStopCfg : null,
@@ -600,6 +600,7 @@ function simulate(closed, params, extra, meta) {
       runnerTrail: runnerTrail ? { trailAtrMult: runnerTrailDist } : null, runnerRfExit: Boolean(runnerRf),
       // minRR 0 = teste antigo (o piso não existia): sem piso.
       minRR: minRR > 0 ? minRR : null,
+      chopExit: chopExit ? { chopLen: regimeCfg.chopLen } : null, invalidation: invalidation ? { bars: invalidBars } : null,
     }, meta);
     const allOps = stillOpen ? [...ops, { ...stillOpen, status: 'SIGNAL_CONFIRMED' }] : ops;
     const report = buildReportFromOps(allOps);
@@ -722,7 +723,7 @@ function QuickBacktestTab() {
   const quality = useMemo(() => (data ? assessCandles({ raw: data.raw, closed: data.closed, requested: candleCount, timeframe, startIndex: run?.ok ? run.stats.startIndex : 0, now: data.fetchedAt }) : null),
     [data, candleCount, timeframe, run]);
   const cmp = useMemo(() => (run?.ok && baseline?.ok ? compareSummaries(run.summary, baseline.summary) : null), [run, baseline]);
-  const fidelity = useMemo(() => fidelityRows(pineConfig ?? {}, { emaFast: extra.emaFast, emaSlow: extra.emaSlow }, { regime: applied.regime, timeStop: applied.timeStop, trail: applied.trail, runnerTrail: applied.runnerTrail, runnerRf: applied.runnerRf }), [pineConfig, extra, applied]);
+  const fidelity = useMemo(() => fidelityRows(pineConfig ?? {}, { emaFast: extra.emaFast, emaSlow: extra.emaSlow }, { regime: applied.regime, timeStop: applied.timeStop, trail: applied.trail, runnerTrail: applied.runnerTrail, runnerRf: applied.runnerRf, chopExit: applied.chopExit, invalidation: applied.invalidation }), [pineConfig, extra, applied]);
   const chart = useMemo(() => (run?.ok ? buildTradeChart(data.closed, run.ops, run.stats.startIndex) : null), [run, data]);
   const analysis = useMemo(() => (run?.ok ? analyzeOps(run.ops) : null), [run]);
   const isDefault = sameParams(applied, defaults);

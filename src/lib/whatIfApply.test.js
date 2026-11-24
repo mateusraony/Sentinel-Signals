@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildScannerPlan, appliable, scannerPayload, assetPayload, applyWarnings } from './whatIfApply.js';
 import { buildDefaults } from './whatIf.js';
 
-const LIVE = { tp1R: 1.5, minScore: 75, minRR: 1.2, useADX: true, useChop: true, useTimeStop: true, preTp1StopProtectionEnabled: true, preTp1TrailEnabled: true, preTp1TrailStartAtrMult: 1, preTp1TrailAtrMult: 2, trailAtrMult: 2 };
+const LIVE = { tp1R: 1.5, minScore: 75, minRR: 1.2, useADX: true, useChop: true, useTimeStop: true, preTp1StopProtectionEnabled: true, preTp1TrailEnabled: true, preTp1TrailStartAtrMult: 1, preTp1TrailAtrMult: 2, trailAtrMult: 2, useChopExit: false, useInvalidation: false, invalidRFBars: 2 };
 const D = buildDefaults({ pineConfig: LIVE, asset: { rf_period: 20, rf_multiplier: 3.5 }, tier: { atrStopMult: 3 } });
 const ASSET = { symbol: 'BTCUSDT', rf_period: 20, rf_multiplier: 3.5 };
 const plan = (over, live = LIVE, asset = ASSET) => buildScannerPlan({ params: { ...D, ...over }, defaults: D, live, asset });
@@ -12,7 +12,7 @@ const diffs = (p) => appliable(p).map((i) => [i.key, i.from, i.to]);
 describe('buildScannerPlan — TODOS os parâmetros aplicáveis, para o usuário escolher', () => {
   it('sem mexer em nada: lista tudo com o valor atual do scanner, mas nada difere (não há o que aplicar) e nada é bloqueado', () => {
     const p = plan({});
-    expect(p.items.map((i) => i.key)).toEqual(['tp1R', 'minScore', 'minRR', 'useADX', 'useChop', 'useTimeStop', 'preTp1TrailEnabled', 'preTp1TrailStartAtrMult', 'preTp1TrailAtrMult', 'trailAtrMult', 'rf_period', 'rf_multiplier']);
+    expect(p.items.map((i) => i.key)).toEqual(['tp1R', 'minScore', 'minRR', 'useADX', 'useChop', 'useTimeStop', 'useChopExit', 'useInvalidation', 'preTp1TrailEnabled', 'preTp1TrailStartAtrMult', 'preTp1TrailAtrMult', 'trailAtrMult', 'rf_period', 'rf_multiplier']);
     expect(appliable(p)).toEqual([]);
     expect(p.blocked).toEqual([]);
   });
@@ -23,6 +23,13 @@ describe('buildScannerPlan — TODOS os parâmetros aplicáveis, para o usuário
 
   it('regime e time stop viram as chaves reais (useADX+useChop; useTimeStop)', () => {
     expect(diffs(plan({ regime: 0, timeStop: 0 }))).toEqual([['useADX', true, false], ['useChop', true, false], ['useTimeStop', true, false]]);
+  });
+
+  it('Chop Exit e invalidação viram as chaves reais; as velas da invalidação só entram com ela ligada', () => {
+    expect(diffs(plan({ chopExit: 1 }))).toEqual([['useChopExit', false, true]]);
+    expect(diffs(plan({ invalidation: 1, invalidBars: 3 }))).toEqual([['useInvalidation', false, true], ['invalidRFBars', 2, 3]]);
+    expect(plan({ invalidBars: 4 }).items.some((i) => i.key === 'invalidRFBars')).toBe(false); // invalidação desligada: nº de velas não é aplicável
+    expect(diffs(plan({ chopExit: 1 }, { ...LIVE, useChopExit: true }))).toEqual([]); // já igual ao scanner
   });
 
   it('trailing pré-TP1: distância mexida aparece sozinha; desligado, começo e distância nem entram na lista', () => {

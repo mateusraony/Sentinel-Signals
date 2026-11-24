@@ -556,3 +556,126 @@ describe('runQuickBacktest — piso de risco/retorno minRR (passesRiskReward)', 
     }
   });
 });
+
+// ---- Chop Exit e invalidação pelo Range Filter ANTES do TP1 (useChopExit / useInvalidation do scanner, desligados por padrão): conferidos de forma independente. ----
+describe('runQuickBacktest — invalidação pelo Range Filter antes do TP1 (useInvalidation)', () => {
+  const seeds = Array.from({ length: 40 }, (_, i) => i + 1);
+  const idx = (candles) => new Map(candles.map((c, i) => [c.closeTime, i]));
+  // Velas SEGUIDAS com o RF virado contra a posição até a vela k, recalculado com o RF do PREFIXO (sem futuro).
+  const reversedAt = (candles, k, buy, rf = { period: 20, mult: 3.5 }) => {
+    const d = calculateRangeFilter(candles.slice(0, k + 1), rf.period, rf.mult).direction;
+    return buy ? d === -1 : d === 1;
+  };
+
+  it('toda invalidação pré-TP1 acontece no FECHAMENTO, na PRIMEIRA vela em que o filtro completou N velas seguidas virado contra a posição (RF recalculado no prefixo) — também com um Range Filter nervoso, que oscila e exige o reinício do contador', () => {
+    let exits = 0; let flickers = 0;
+    for (const rf of [{ period: 20, mult: 3.5 }, { period: 6, mult: 0.8 }]) {
+      for (const bars of [1, 2, 3]) {
+        for (const seed of seeds) {
+          const candles = synth(800, seed); const m = idx(candles);
+          const { ops } = runQuickBacktest(candles, { ...CFG, rfPeriod: rf.period, rfMult: rf.mult, invalidation: { bars } }, META);
+          for (const op of ops) {
+            if (op.status !== 'INVALIDATED' || op.tp1_hit) continue;
+            const buy = op.side === 'BUY'; const e = m.get(op.created_date); const k = m.get(op.closed_at);
+            expect(op.closed_reason).toBe('INVALIDATION');
+            expect(op.exit_price).toBe(candles[k].close);
+            // N velas seguidas terminando em k...
+            for (let j = k - bars + 1; j <= k; j++) { expect(j).toBeGreaterThan(e); expect(reversedAt(candles, j, buy, rf)).toBe(true); }
+            // ...e nenhuma vela anterior já tinha completado N seguidas (a operação teria saído antes); conta as oscilações (virou e voltou) para provar que o caso foi exercitado
+            let run = 0; let prev = false;
+            for (let j = e + 1; j < k; j++) { const r = reversedAt(candles, j, buy, rf); if (prev && !r) flickers += 1; run = r ? run + 1 : 0; prev = r; expect(run).toBeLessThan(bars); }
+            exits += 1;
+          }
+        }
+      }
+    }
+    expect(exits).toBeGreaterThan(15); // não-vacuidade
+    expect(flickers).toBeGreaterThan(0); // o contador foi reiniciado ao menos uma vez antes de uma saída
+  });
+
+  it('exigir mais velas seguidas nunca invalida ANTES: a 1ª operação sai no mesmo lugar ou depois com mais barras (mesma entrada)', () => {
+    let compared = 0;
+    for (const seed of seeds) {
+      const candles = synth(800, seed);
+      const one = runQuickBacktest(candles, { ...CFG, invalidation: { bars: 1 } }, META).ops[0];
+      const three = runQuickBacktest(candles, { ...CFG, invalidation: { bars: 3 } }, META).ops[0];
+      if (!one || !three || one.created_date !== three.created_date) continue;
+      if (one.status === 'INVALIDATED' && !one.tp1_hit && three.status === 'INVALIDATED' && !three.tp1_hit) { expect(three.closed_at).toBeGreaterThanOrEqual(one.closed_at); compared += 1; }
+    }
+    expect(compared).toBeGreaterThan(0);
+  });
+
+  it('desligada, nunca aparece invalidação pré-TP1; com tudo desligado o resultado é IDÊNTICO ao de antes', () => {
+    for (const seed of seeds.slice(0, 12)) {
+      const candles = synth(800, seed);
+      const a = runQuickBacktest(candles, CFG, META);
+      expect(a.ops.some((o) => o.status === 'INVALIDATED' && !o.tp1_hit)).toBe(false);
+      const b = runQuickBacktest(candles, { ...CFG, invalidation: null, chopExit: null }, META);
+      expect(b.ops).toEqual(a.ops);
+      expect(b.stats).toEqual(a.stats);
+    }
+  });
+});
+
+describe('runQuickBacktest — Chop Exit antes do TP1 (useChopExit)', () => {
+  const seeds = Array.from({ length: 40 }, (_, i) => i + 1);
+  const idx = (candles) => new Map(candles.map((c, i) => [c.closeTime, i]));
+  // O gate da vela k, com as funções de PRODUÇÃO sobre o prefixo: Choppiness > máximo do tier (ATR% suavizado da própria vela).
+  const chopGate = (candles, k) => {
+    const prefix = candles.slice(0, k + 1);
+    const tier = classifyTier(calculateAtrPctSmooth(prefix, 14, 20), { tier2: 0.8, tier3: 1.5 });
+    return calculateChoppiness(prefix, 14) > tier.chopMaxVal;
+  };
+
+  it('todo Chop Exit acontece no FECHAMENTO, na PRIMEIRA vela depois da entrada em que o Choppiness passa do máximo do tier daquela vela (recalculado no prefixo)', () => {
+    let exits = 0;
+    for (const seed of seeds) {
+      const candles = synth(800, seed); const m = idx(candles);
+      const { ops } = runQuickBacktest(candles, { ...CFG, chopExit: { chopLen: 14 } }, META);
+      for (const op of ops) {
+        if (op.closed_reason !== 'CHOP_EXIT') continue;
+        const e = m.get(op.created_date); const k = m.get(op.closed_at);
+        expect(op.status).toBe('CLOSED');
+        expect(op.tp1_hit).toBe(false);
+        expect(op.exit_price).toBe(candles[k].close);
+        expect(chopGate(candles, k)).toBe(true);
+        for (let j = e + 1; j < k; j++) expect(chopGate(candles, j)).toBe(false);
+        exits += 1;
+      }
+    }
+    expect(exits).toBeGreaterThan(5);
+  });
+
+  it('só vale ANTES do TP1: nenhuma operação que bateu o TP1 termina em Chop Exit', () => {
+    for (const seed of seeds.slice(0, 20)) {
+      const { ops } = runQuickBacktest(synth(800, seed), { ...CFG, chopExit: { chopLen: 14 } }, META);
+      expect(ops.some((o) => o.closed_reason === 'CHOP_EXIT' && o.tp1_hit)).toBe(false);
+    }
+  });
+
+  it('SEM OLHAR O FUTURO com Chop Exit e invalidação ligados', () => {
+    let compared = 0;
+    for (const seed of seeds.slice(0, 20)) {
+      const candles = synth(800, seed);
+      const cut = 560; const T = candles[cut - 1].closeTime;
+      const cfg = { ...CFG, chopExit: { chopLen: 14 }, invalidation: { bars: 2 } };
+      const full = runQuickBacktest(candles, cfg, META).ops.filter((o) => o.closed_at <= T);
+      const part = runQuickBacktest(candles.slice(0, cut), cfg, META).ops;
+      expect(part.map((o) => [o.created_date, o.closed_at, o.side, o.exit_price, o.status])).toEqual(full.map((o) => [o.created_date, o.closed_at, o.side, o.exit_price, o.status]));
+      compared += full.length;
+    }
+    expect(compared).toBeGreaterThan(20);
+  });
+
+  it('o stop vence: nenhuma saída por Chop Exit/invalidação acontece numa vela em que o stop foi tocado', () => {
+    for (const seed of seeds.slice(0, 20)) {
+      const candles = synth(800, seed); const m = idx(candles);
+      const { ops } = runQuickBacktest(candles, { ...CFG, chopExit: { chopLen: 14 }, invalidation: { bars: 1 } }, META);
+      for (const op of ops) {
+        if (op.closed_reason !== 'CHOP_EXIT' && op.closed_reason !== 'INVALIDATION') continue;
+        const c = candles[m.get(op.closed_at)];
+        expect(op.side === 'BUY' ? c.low > op.initial_stop : c.high < op.initial_stop).toBe(true);
+      }
+    }
+  });
+});

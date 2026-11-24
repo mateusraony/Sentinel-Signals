@@ -20,6 +20,8 @@ function globalItems(params) {
     { configKey: 'useADX', label: 'Filtro de regime — ADX', to: Boolean(params.regime) },
     { configKey: 'useChop', label: 'Filtro de regime — Choppiness', to: Boolean(params.regime) },
     { configKey: 'useTimeStop', label: 'Time stop', to: Boolean(params.timeStop) },
+    { configKey: 'useChopExit', label: 'Chop Exit antes do TP1', to: Boolean(params.chopExit) },
+    { configKey: 'useInvalidation', label: 'Invalidação pelo Range Filter antes do TP1', to: Boolean(params.invalidation) },
     { configKey: 'preTp1TrailEnabled', label: 'Trailing do stop antes do TP1', to: Boolean(params.trail) },
   );
   if (params.trail) {
@@ -28,6 +30,7 @@ function globalItems(params) {
       { configKey: 'preTp1TrailAtrMult', label: 'Trailing pré-TP1: distância (× ATR)', to: params.trailDist },
     );
   }
+  if (params.invalidation) items.push({ configKey: 'invalidRFBars', label: 'Invalidação: velas seguidas', to: params.invalidBars });
   if (params.runnerTrail) items.push({ configKey: 'trailAtrMult', label: 'Trailing do runner: distância (× ATR)', to: params.runnerTrailDist });
   return items;
 }

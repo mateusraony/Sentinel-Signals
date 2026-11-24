@@ -100,7 +100,9 @@ function closeSimulatedOp(position, exitPrice, exitTime, status, tp1QtyPercent, 
  *   preTp1Trail?: { startAtrMult, trailAtrMult } | null,                     // trailing do stop ANTES do TP1 (advancePreTp1Trailing do scanner); null = stop parado até o TP1
  *   runnerTrail?: { trailAtrMult } | null,                                   // trailing do stop do RUNNER depois do TP1 (advanceTrailingStop do scanner); null = stop fica no breakeven
  *   runnerRfExit?: boolean,                                                  // runner sai no fechamento quando o Range Filter vira contra e o preço cruza o filtro (invalidação direta do scanner)
- *   minRR?: number | null }                                                  // piso de risco/retorno do TP1 (passesRiskReward): entrada só abre se |TP1-entrada| / |entrada-stop| >= minRR
+ *   minRR?: number | null,                                                  // piso de risco/retorno do TP1 (passesRiskReward): entrada só abre se |TP1-entrada| / |entrada-stop| >= minRR
+ *   chopExit?: { chopLen } | null,                                           // Chop Exit ANTES do TP1: fecha no fechamento quando o Choppiness da vela passa do máximo do TIER da vela (useChopExit do scanner)
+ *   invalidation?: { bars } | null }                                         // invalidação pelo Range Filter ANTES do TP1: fecha no fechamento depois de N velas SEGUIDAS com o filtro virado contra a posição (useInvalidation)
  *   Sem regimeFilter/timeStop (o padrão) o comportamento é o de sempre.
  * @param {{symbol: string, timeframe: string}} meta
  * @returns {{ ops: Array, stillOpen: Object|null, stats: { signals: number, taken: number, rejectedByScore: number, rejectedByRegime: number, rejectedByRR: number, skippedWhileOpen: number, startIndex: number, candlesTotal: number, firstTradableTime: number|null } }}
@@ -114,7 +116,7 @@ export function runQuickBacktest(candles, config, meta) {
   // Médias do score: as MESMAS que o scanner usa (Pine: 20/50 — resolveIndicatorParams, known-risks item 27). Até 22/11/2026 este
   // simulador usava 9/21 fixas, o que muda a tendência EMA (20 pts do score) em ~15% das barras. Par inválido (rápida >= lenta) cai
   // inteiro nos valores do Pine, como no scanner (item 31).
-  const { regimeFilter = null, timeStop = null, preTp1Trail = null, runnerTrail = null, runnerRfExit = false, minRR = null, tierThresholds = { tier2: 0.8, tier3: 1.5 } } = config;
+  const { regimeFilter = null, timeStop = null, preTp1Trail = null, runnerTrail = null, runnerRfExit = false, minRR = null, chopExit = null, invalidation = null, tierThresholds = { tier2: 0.8, tier3: 1.5 } } = config;
   let { emaFast = 20, emaSlow = 50 } = config;
   if (!(Number.isInteger(emaFast) && Number.isInteger(emaSlow) && emaFast > 0 && emaFast < emaSlow)) { emaFast = 20; emaSlow = 50; }
   const { symbol, timeframe } = meta;
@@ -137,7 +139,7 @@ export function runQuickBacktest(candles, config, meta) {
   const { shortEMA, longEMA } = emas.series;
 
   // Regime e time stop precisam do TIER (ATR% suavizado por barra, como o scanner) e, o regime, do ADX/Choppiness por barra.
-  const needTier = Boolean(regimeFilter || timeStop);
+  const needTier = Boolean(regimeFilter || timeStop || chopExit);
   const atrPctSmooth = needTier ? atrPctSmoothSeries(candles, atrSeries, atrLen, 20) : null;
   const tierAt = (i) => classifyTier(atrPctSmooth[i], tierThresholds, timeStop ? { T1: timeStop.T1, T2: timeStop.T2, T3: timeStop.T3 } : undefined);
   // ADX por barra, como o scanner o vê: calculateADX devolve `adx: 0` (e NENHUMA série) quando o prefixo tem menos de adxLen + adxSmooth + 1 velas, e a
@@ -148,6 +150,8 @@ export function runQuickBacktest(candles, config, meta) {
   const adxFull = regimeFilter ? calculateADX(candles, adxLen, adxSm).series?.adx ?? null : null;
   const adxAt = (i) => (adxFull && i + 1 >= adxLen + adxSm + 1 ? adxFull[i] : 0);
   const chopS = regimeFilter && regimeFilter.useChop !== false ? chopSeries(candles, regimeFilter.chopLen ?? 14) : null;
+  // Chop Exit usa o Choppiness da vela (mesma fórmula, comprimento próprio): calculado à parte para funcionar com o filtro de regime desligado.
+  const chopExitS = chopExit ? chopSeries(candles, chopExit.chopLen ?? 14) : null;
 
   const ops = [];
   let position = null;
@@ -160,6 +164,10 @@ export function runQuickBacktest(candles, config, meta) {
 
     if (position) {
       const { side, stop, tp1, tp2, tp1Hit } = position;
+      // Contador de velas SEGUIDAS com o Range Filter virado contra a posição (nextRfReverseCount do scanner, por vela): zera quando o filtro volta a favor.
+      if (invalidation && !tp1Hit) {
+        position.rfReverseBars = (side === 'BUY' ? rfDirection[i] === -1 : rfDirection[i] === 1) ? position.rfReverseBars + 1 : 0;
+      }
       const hitStop = side === 'BUY' ? candle.low <= stop : candle.high >= stop;
       const hitTp1 = !tp1Hit && (side === 'BUY' ? candle.high >= tp1 : candle.low <= tp1);
       const hitTp2 = side === 'BUY' ? candle.high >= tp2 : candle.low <= tp2;
@@ -176,6 +184,15 @@ export function runQuickBacktest(candles, config, meta) {
         // Saída do runner pelo Range Filter (scanner: invalidação direta no ramo RUNNER_ACTIVE, exit_mode HYBRID_RF_ATR): o filtro VIROU contra a posição E o
         // fechamento cruzou o filtro. Decidida no FECHAMENTO da vela, depois do stop e do TP2 (mesma ordem do scanner).
         ops.push(closeSimulatedOp(position, candle.close, candle.closeTime, 'INVALIDATED', tp1QtyPercent, symbol, timeframe, 'INVALIDATION'));
+        position = null;
+      } else if (!position.tp1Hit && invalidation && position.rfReverseBars >= invalidation.bars) {
+        // Invalidação pelo Range Filter ANTES do TP1 (scanner: useInvalidation): N velas SEGUIDAS com o filtro virado contra a posição (contador reiniciado quando o filtro volta
+        // a favor; contado por VELA, não por passada). Decidida no FECHAMENTO, depois do stop (o stop vence) e antes do Chop Exit/time stop/TP1, na ordem do scanner.
+        ops.push(closeSimulatedOp(position, candle.close, candle.closeTime, 'INVALIDATED', tp1QtyPercent, symbol, timeframe, 'INVALIDATION'));
+        position = null;
+      } else if (!position.tp1Hit && chopExit && chopExitS[i] > tierAt(i).chopMaxVal) {
+        // Chop Exit ANTES do TP1 (scanner: useChopExit): o Choppiness desta vela passou do máximo do tier DESTA vela (não o da entrada). Fecha no fechamento.
+        ops.push(closeSimulatedOp(position, candle.close, candle.closeTime, 'CLOSED', tp1QtyPercent, symbol, timeframe, 'CHOP_EXIT'));
         position = null;
       } else if (!position.tp1Hit && position.timeStopBars != null && i - position.entryIndex >= position.timeStopBars) {
         // Time stop (como o scanner, que só o aplica ANTES do TP1): fecha no FECHAMENTO da vela, depois de o stop ter sido checado e ANTES de contar um TP1 desta vela.
@@ -256,7 +273,7 @@ export function runQuickBacktest(candles, config, meta) {
           side, entryTime: candle.closeTime, entryPrice,
           stop, initialStop: stop, tp1, tp2, tp1Hit: false, score,
           entryIndex: i, timeStopBars: timeStop ? tierHere.timeStopBars : null,
-          extreme: entryPrice, trailed: false, runnerTrailed: false,
+          extreme: entryPrice, trailed: false, runnerTrailed: false, rfReverseBars: 0,
         };
       }
     }
