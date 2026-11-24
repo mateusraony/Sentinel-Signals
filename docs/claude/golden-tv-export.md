@@ -5,6 +5,10 @@
 > que o plano seja cancelado depois. **Verificado em 24/11:** o leitor do teste foi ensaiado com um CSV sintético no formato do
 > TradingView (cabeçalhos entre aspas, hora em ISO, coluna extra de volume e células vazias no aquecimento): o bloco ativa sozinho
 > e passa; e uma alteração de 5% em UMA barra de ADX faz o teste falhar apontando a barra. O arquivo sintético foi apagado.
+>
+> **EXECUTADO em 24/11/2026:** CSV real de BTCUSDT 4h e 1h exportado pelo usuário (Premium). RSI, ATR, ADX e Choppiness batem exatamente; EMAs, MACD e Range Filter
+> batem até a semente da média móvel (erro ≤ 6e-5 relativo, decaindo). Resultado completo e o achado da janela de 150 candles do scanner: `docs/known-risks.md` item 307.
+> Os CSV commitados foram cortados nas últimas 5.000 barras e só nas colunas usadas (valores copiados sem alteração).
 
 Os golden tests (`src/lib/indicators/goldenParity.test.js`) já validam a
 matemática dos indicadores com referências de convenção Pine. O **padrão-ouro
