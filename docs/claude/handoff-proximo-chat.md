@@ -70,7 +70,7 @@ Depois responda com um resumo curto do que entendeu e **espere o meu "pode segui
    números mostrarem necessidade.
 7. **Investigar os `warn` ruidosos do `system_logs`** (item 298): confirmar os números nos logs antes de citar.
 
-**URGENTE (25/11/2026):** o servidor da API no Render está SUSPENSO por limite de horas grátis (739,37/750 h, item 309): painel sem dados até o próximo período de cobrança; o scan/Telegram seguem. Já feito: `keep-warm` com janela do dia (08h–00h de Brasília) e aviso no Telegram de queda/volta. Falta o usuário checar se há OUTRO Web Service grátis gastando horas no workspace (739 h não cabe em 1 serviço em 24 dias).
+**URGENTE (25/11/2026):** o servidor da API no Render está SUSPENSO por limite de horas grátis (739,37/750 h, item 309): painel sem dados até o próximo período de cobrança; o scan/Telegram seguem. Já feito: `keep-warm` com janela do dia (08h–00h de Brasília) e aviso no Telegram de queda/volta. Falta o usuário checar se há OUTRO Web Service grátis gastando horas no workspace (739 h não cabe em 1 serviço em 24 dias; o pool de 750 h é do workspace inteiro). **Orçamento de todos os limites grátis: `docs/limites-gratis.md`** (roteiro mensal de 5 min; regra "conta antes de criar").
 
 **C. Depende de decisão minha (pergunte-me antes; não faça por conta própria):**
 0. **Visual do painel (roadmap, linha 9):** direção APROVADA em 21/11. Entregue em 2 PRs: **PR 1 (visual global: cores, painéis planos, fonte IBM Plex)** e **PR 2 (estrutura: régua no cartão, Resumo, alertas em cartões, Desempenho reorganizado)**.
