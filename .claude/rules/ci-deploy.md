@@ -87,6 +87,8 @@ paths:
   Reversível — descomentar o `schedule:` nos dois arquivos religa; nenhuma
   coleção nem código foi apagado.
 - `keep-warm.yml` — ping `/health` (Render free não hibernar). Dispara por `schedule` a cada 10 min E no fim de cada "Scheduled scan" (`workflow_run`, filtro de origem; item 6 addendum de 06/11/2026: o `schedule` sozinho chegou com 4 a 8 h de intervalo e o servidor hibernava). Travado por `scripts/keepWarmTripwire.test.js`.
+  **Janela do dia (item 309, 25/11/2026):** o ping só vale das **11:00 às 03:00 UTC** (08h às 00h de Brasília, ~480 h/mês); fora dela o passo é pulado e o servidor pode dormir (o disparo manual pinga sempre). Motivo: o Render suspendeu o serviço ao esgotar as 750 h grátis do mês (739 h usadas).
+  **`api-health-alert.yml`:** avisa no Telegram, **uma vez**, quando o servidor da API CAI (3ª falha seguida do ping) e quando VOLTA (1º sucesso depois de ≥3 falhas); ping pulado não conta. Lê só as execuções do keep-warm (`actions: read`); o `keep-warm.yml` segue sem segredo. Lógica pura em `scripts/apiHealthStreak.mjs`; travado por `scripts/apiHealthAlertTripwire.test.js`.
 - `backup.yml` — backup diário das coleções de negócio → branch `backups`. Como os outros dois que leem o secret
   `BACKUP_DEPLOY_KEY` (`backup-postgres.yml`, `restore-postgres.yml`), grava a chave por
   `scripts/write-backup-deploy-key.sh`, que confere com `ssh-keygen -y` ANTES de qualquer fetch/push e para com

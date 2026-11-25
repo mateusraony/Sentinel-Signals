@@ -10,6 +10,7 @@
 #   ALERT_TITLE                            primeira linha ("Backup diário do Postgres FALHOU")
 #   ALERT_RUN_URL                          link da execução que falhou
 #   ALERT_HINT                             o que fazer (texto fixo do workflow)
+#   ALERT_ICON                             (opcional) emoji da 1ª linha; padrão ⚠️ (o aviso de "voltou" usa 🟢)
 #
 # MELHOR ESFORÇO: este script SEMPRE termina com código 0. Se o Telegram estiver fora do ar ou sem
 # segredos, vira um aviso (::warning::) no log — o job de backup já está vermelho, não precisa de um
@@ -26,7 +27,7 @@ fi
 
 titulo="${ALERT_TITLE:-Um workflow agendado FALHOU}"
 quando="$(date -u '+%d/%m/%Y %H:%M') UTC"
-texto="⚠️ ${titulo}
+texto="${ALERT_ICON:-⚠️} ${titulo}
 
 Quando: ${quando}
 Veja o motivo: ${ALERT_RUN_URL:-(link indisponível)}"
