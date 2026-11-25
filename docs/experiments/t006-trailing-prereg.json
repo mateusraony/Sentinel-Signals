@@ -1,0 +1,71 @@
+{
+  "name": "t006-so-o-trailing",
+  "id": "T-2026-006",
+  "item": "docs/known-risks.md item 308 (addendum 4) · docs/registro-de-testes.md",
+  "registeredAt": "2026-11-25",
+  "status": "PRONTO PARA RODAR — o usuário só precisa clicar em \"Run workflow\" (workflow t006-so-o-trailing.yml, sem campos). Pré-registrado ANTES de qualquer rodada.",
+  "note": "Pré-registro congelado ANTES de rodar. Não mude nenhum campo depois de ver o resultado; se precisar mudar, registre um NOVO teste (T-2026-00N) explicando o porquê.",
+  "question": "Desligar SÓ a proteção do stop antes do TP1 (o trailing de produção, que roda sobre o interruptor mestre preTp1StopProtectionEnabled) melhora o R por operação? Mesmas moedas, mesmas janelas, mesmas datas; só essa proteção muda.",
+  "why": "O T-2026-004 (modo Pine × produção) deu inconclusivo: A−B = +0,006 (W1) e +0,233 (W2, IC [−0,010; +0,476]). O braço A mudou 5 coisas de uma vez; o trailing antes do TP1 era o suspeito principal (no BTC pesou −0,32 R/op) mas não foi isolado nas 7 moedas. Este teste isola essa única mudança, que na produção é uma chave só (e reversível).",
+  "contrast": "Dois contrastes, os dois com o MESMO resto: (1) PRIMÁRIO, no contexto da produção: B_sem_protecao − B_producao; (2) ESPELHO, no contexto do modo Pine: A_modo_pine − A_com_protecao. Se os dois concordam, o efeito é do trailing e não do contexto.",
+  "arms": {
+    "B_producao": {
+      "pine_config": { "skip15mConfirmationEnabled": true }
+    },
+    "B_sem_protecao": {
+      "pine_config": { "skip15mConfirmationEnabled": true, "preTp1TrailEnabled": false, "preTp1StopProtectionEnabled": false }
+    },
+    "A_modo_pine": {
+      "pine_config": {
+        "skip15mConfirmationEnabled": true,
+        "rfExitCloseOnlyEnabled": true,
+        "preTp1TrailEnabled": false,
+        "preTp1StopProtectionEnabled": false,
+        "useChopExit": false,
+        "useInvalidation": false,
+        "useTimeStop": true,
+        "disableTp2CapEnabled": true,
+        "arbInvalidateOnOppositeSameTf": true
+      }
+    },
+    "A_com_protecao": {
+      "pine_config": {
+        "skip15mConfirmationEnabled": true,
+        "rfExitCloseOnlyEnabled": true,
+        "preTp1TrailEnabled": true,
+        "preTp1StopProtectionEnabled": true,
+        "useChopExit": false,
+        "useInvalidation": false,
+        "useTimeStop": true,
+        "disableTp2CapEnabled": true,
+        "arbInvalidateOnOppositeSameTf": true
+      }
+    }
+  },
+  "windows": [
+    { "label": "W1", "from": "2025-11-24", "to": "2026-11-24" },
+    { "label": "W2", "from": "2024-11-24", "to": "2025-11-24" }
+  ],
+  "symbols": ["BTCUSDT", "ETHUSDT", "FETUSDT", "PENDLEUSDT", "ZROUSDT", "DYDXUSDT", "PAXGUSDT"],
+  "timeframes": "15m,1h,4h,1d",
+  "runs": 8,
+  "primary_metric": "diferença de expectância líquida em R por operação, PRIMÁRIO = B_sem_protecao − B_producao, por janela, com erro-padrão robusto por mês de entrada (cluster)",
+  "secondary_metrics": ["ESPELHO A_modo_pine − A_com_protecao", "desvio-padrão de R por operação (o risco que o item 132 dizia que o trailing reduz)", "profit factor", "nº de operações", "pares com a MESMA entrada"],
+  "decision_rule": {
+    "desligar_a_protecao_recomendado": "se o PRIMÁRIO > +0,05 R/op nas DUAS janelas E o IC95 excluir zero (limite inferior > 0) em ambas",
+    "manter_a_protecao_recomendado": "se o PRIMÁRIO <= 0 em QUALQUER janela",
+    "inconclusivo": "qualquer outro caso: então a escolha é de PRODUTO (fidelidade ao TradingView × menos oscilação do item 132), do usuário, e o relatório diz que a estatística não decidiu",
+    "observacao": "Quem muda a produção é sempre o usuário (painel Ajustes / 'Aplicar ao scanner'); operações já abertas guardam o modo em que nasceram (pre_tp1_stop_mode)."
+  },
+  "reproducao_esperada_do_t004": {
+    "nota": "Os braços A_modo_pine e B_producao são os MESMOS do T-2026-004: com os mesmos candles devem reproduzir exatamente (N e R/op). Se não reproduzirem, o resumo avisa (algo mudou no motor ou nos dados) e o resultado deve ser lido com cuidado.",
+    "W1": { "A_modo_pine": { "n": 123, "expectancia_R": -0.0724 }, "B_producao": { "n": 129, "expectancia_R": -0.078 } },
+    "W2": { "A_modo_pine": { "n": 125, "expectancia_R": 0.281 }, "B_producao": { "n": 131, "expectancia_R": 0.048 } }
+  },
+  "how_to_run_for_the_user": {
+    "onde": "GitHub → aba Actions → à esquerda \"Teste T-2026-006 — só o trailing (7 ativos)\" → botão \"Run workflow\" → \"Run workflow\" (verde). NÃO há campos para preencher.",
+    "o_que_acontece": "8 rodadas em paralelo (cada uma ~30-60 min). Cada rodada confere sozinha que usou as chaves do braço (senão fica vermelha). No fim, o job \"resumo\" publica a tabela e o veredito pela regra deste pré-registro no resumo da execução.",
+    "depois": "Avise o Claude; ele lê o resultado nos logs, registra o teste (registro-de-testes, backtest-trial-registry, runs/) e explica em português simples."
+  },
+  "after_the_runs": "Registrar cada rodada com scripts/backtest-trial-registry.mjs (família 't006-so-o-trailing'; --seed com os números do resumo se o relatório não puder ser baixado), salvar o resultado compacto em docs/experiments/runs/ e atualizar docs/registro-de-testes.md no MESMO PR."
+}

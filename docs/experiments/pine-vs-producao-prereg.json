@@ -3,7 +3,7 @@
   "id": "T-2026-004",
   "item": "docs/known-risks.md item 308 (achado do trailing pré-TP1) · docs/registro-de-testes.md",
   "registeredAt": "2026-11-24",
-  "status": "PRONTO PARA RODAR — o usuário só precisa clicar em \"Run workflow\" (workflow t004-pine-vs-producao.yml, sem campos). 0 de 4 rodadas válidas até agora: a de 25/11 (pelo \"Backtest histórico\") saiu com o campo de overrides vazio e virou o T-2026-005.",
+  "status": "RODADO em 25/11/2026 (4 rodadas válidas): veredito INCONCLUSIVO pela regra congelada (W1: A−B=+0,006; W2: A−B=+0,233 com IC95 [−0,010; +0,476]). A escolha é de PRODUTO, do usuário. Resultado: docs/experiments/runs/2026-11-25-t004-resultado.json",
   "note": "Pré-registro escrito ANTES de qualquer rodada de 7 ativos. Não mude nenhum campo depois de ver resultado; se precisar mudar, registre um NOVO teste (T-2026-00N) explicando o porquê. Só a leitura é comparação PAREADA: mesmas moedas, mesmas janelas, mesmas datas; só muda a configuração.",
   "question": "Nas mesmas 7 moedas e janelas, o 'modo Pine' (sem trailing antes do TP1, sem teto de TP2, saída do runner pelo RF como no Pine, virada de sinal) rende mais R por operação do que a configuração padrão da produção?",
   "why": "Em BTC 4h, 21 meses, ~35 operações, ligar o trailing pré-TP1 sobre as mesmas entradas deu -0,160 R contra +0,160 R sem ele (item 308; inconclusivo: IC corrigido [-0,457; 0,137]). O item 132 (7 ativos, 12 meses) mediu o trailing como indistinguível. As duas medidas discordam: este teste decide com mais moedas e mais tempo.",
