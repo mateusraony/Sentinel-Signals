@@ -1,0 +1,55 @@
+{
+  "name": "pine-vs-producao-t004",
+  "id": "T-2026-004",
+  "item": "docs/known-risks.md item 308 (achado do trailing pré-TP1) · docs/registro-de-testes.md",
+  "registeredAt": "2026-11-24",
+  "status": "PENDENTE — aguardando o usuário disparar as 4 rodadas no GitHub (Actions → \"Backtest histórico (Sentinel Signals)\")",
+  "note": "Pré-registro escrito ANTES de qualquer rodada de 7 ativos. Não mude nenhum campo depois de ver resultado; se precisar mudar, registre um NOVO teste (T-2026-00N) explicando o porquê. Só a leitura é comparação PAREADA: mesmas moedas, mesmas janelas, mesmas datas; só muda a configuração.",
+  "question": "Nas mesmas 7 moedas e janelas, o 'modo Pine' (sem trailing antes do TP1, sem teto de TP2, saída do runner pelo RF como no Pine, virada de sinal) rende mais R por operação do que a configuração padrão da produção?",
+  "why": "Em BTC 4h, 21 meses, ~35 operações, ligar o trailing pré-TP1 sobre as mesmas entradas deu -0,160 R contra +0,160 R sem ele (item 308; inconclusivo: IC corrigido [-0,457; 0,137]). O item 132 (7 ativos, 12 meses) mediu o trailing como indistinguível. As duas medidas discordam: este teste decide com mais moedas e mais tempo.",
+  "arms": {
+    "A_modo_pine": {
+      "pine_config": {
+        "skip15mConfirmationEnabled": true,
+        "rfExitCloseOnlyEnabled": true,
+        "preTp1TrailEnabled": false,
+        "preTp1StopProtectionEnabled": false,
+        "useChopExit": false,
+        "useInvalidation": false,
+        "useTimeStop": true,
+        "disableTp2CapEnabled": true,
+        "arbInvalidateOnOppositeSameTf": true
+      }
+    },
+    "B_producao": {
+      "pine_config": { "skip15mConfirmationEnabled": true },
+      "confirmar_antes_de_rodar": "O usuário confere no painel Ajustes se a confirmação de 15 min está desligada (bypass ligado) e se alguma chave da estratégia está diferente do padrão do código; se estiver, as chaves diferentes entram neste braço e o pré-registro é atualizado ANTES de rodar."
+    }
+  },
+  "windows": [
+    { "label": "W1", "from": "2025-11-24", "to": "2026-11-24" },
+    { "label": "W2", "from": "2024-11-24", "to": "2025-11-24" }
+  ],
+  "symbols": ["BTCUSDT", "ETHUSDT", "FETUSDT", "PENDLEUSDT", "ZROUSDT", "DYDXUSDT", "PAXGUSDT"],
+  "timeframes": "15m,1h,4h,1d",
+  "runs": 4,
+  "primary_metric": "diferença de expectância líquida em R por operação (A - B), por janela, com a correção por mês de entrada (cluster); relatório de cada braço pelo próprio 'Backtest histórico'",
+  "secondary_metrics": ["profit factor", "drawdown máximo", "nº de operações", "R das operações com a MESMA entrada nos dois braços (par por moeda + vela de entrada + lado)"],
+  "decision_rule": {
+    "adotar_modo_pine_como_padrao_recomendado": "se A - B > +0,05 R/op nas DUAS janelas E o IC95 (por cluster) da diferença excluir zero em ambas",
+    "manter_producao_recomendado": "se A - B <= 0 em qualquer janela",
+    "inconclusivo": "qualquer outro caso: então a escolha é de PRODUTO (fidelidade ao que o usuário vê no TradingView × controle de risco do item 132), decidida pelo usuário, e o relatório diz que a estatística não decidiu",
+    "observacao": "Quem muda a produção é sempre o usuário (botão 'Aplicar ao scanner' ou painel Ajustes); operações abertas guardam o modo de proteção de quando nasceram."
+  },
+  "how_to_run_for_the_user": {
+    "onde": "GitHub → aba Actions → 'Backtest histórico (Sentinel Signals)' → Run workflow",
+    "campos_visiveis": {
+      "Símbolos": "deixar o que já vem preenchido (os 7)",
+      "Início / Fim": "as datas da janela (W1 e depois W2)",
+      "Timeframes a baixar": "15m,1h,4h,1d",
+      "Overrides do pineConfig em JSON": "o JSON do braço (A ou B)",
+      "Rótulo desta tentativa": "t004-W1-A-modo-pine, t004-W1-B-producao, t004-W2-A-modo-pine, t004-W2-B-producao"
+    }
+  },
+  "after_the_runs": "Registrar cada rodada com scripts/backtest-trial-registry.mjs (família 'pine-vs-producao-t004'), salvar o resultado compacto em docs/experiments/runs/ e atualizar docs/registro-de-testes.md no MESMO PR."
+}

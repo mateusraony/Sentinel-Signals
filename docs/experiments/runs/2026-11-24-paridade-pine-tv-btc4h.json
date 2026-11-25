@@ -1,0 +1,2869 @@
+{
+ "id": "T-2026-003",
+ "titulo": "Paridade de operações: Pine v13.2 (lista do TradingView) × backtest do Sentinel, BTCUSDT 4h",
+ "registrado": "2026-11-24",
+ "item": "docs/known-risks.md item 308",
+ "dados": {
+  "fonte": "candles do próprio gráfico do TradingView (BINANCE:BTCUSDT spot, UTC): CSV \"Export chart data\" 4h (desde 2022-01-01) e 1h (desde 2025-01-01); 1d agregado do 4h (6 barras por dia)",
+  "conversao": "scripts/tv-csv-to-backtest-data.mjs",
+  "ultima_barra_descartada": true
+ },
+ "comando": "npm run backtest -- --symbols BTCUSDT --from 2025-02-01T00:00:00Z --to 2026-11-24T12:00:00Z --data-dir DIR --pine-config CFG.json --step-ms 3600000 --allow-late-start --trial-label LABEL --out RELATORIO.json",
+ "lista_tradingview": "scripts/__fixtures__/tv/tv-trades-ne-rf-v13.2-btcusdt-4h-2026-11-24.csv (311 negociações = 183 posições; 33 desde 2025-02-03)",
+ "comparador": "node scripts/compare-tv-trades.mjs --tv LISTA.csv --report RELATORIO.json --from \"2025-02-03 00:00\"",
+ "rodadas": [
+  {
+   "rotulo": "paridade-pine-tv-btc4h",
+   "descricao": "modo Pine parcial (sem trailing pré-TP1, sem virada de sinal, com TP2)",
+   "overrides_pine_config": {
+    "skip15mConfirmationEnabled": true,
+    "rfExitCloseOnlyEnabled": true,
+    "preTp1TrailEnabled": false,
+    "preTp1StopProtectionEnabled": false,
+    "useChopExit": false,
+    "useInvalidation": false,
+    "useTimeStop": true
+   },
+   "commit": "58ac92cb19192e6676ad9c53a2a4a10c2fcd908a",
+   "janela": {
+    "fromMs": 1738368000000,
+    "toMs": 1795521600000,
+    "from": "2025-02-01T00:00:00.000Z",
+    "to": "2026-11-24T12:00:00.000Z"
+   },
+   "operacoes": 30,
+   "expectancia_liquida_R": 0.1486,
+   "ic95_R": [
+    -0.33,
+    0.627
+   ],
+   "conclusivo": false,
+   "profit_factor": 1.116255589584458,
+   "max_drawdown_pct": 25.350165516521336,
+   "curva": [
+    {
+     "entrada": "2025-02-03T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 95114.06791460607,
+     "saida": "2025-02-10T00:00:00.000Z",
+     "r": -1.046,
+     "pnlPct": -6.947
+    },
+    {
+     "entrada": "2025-03-03T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 85433.38,
+     "saida": "2025-03-19T20:00:00.000Z",
+     "r": -0.045,
+     "pnlPct": -0.398
+    },
+    {
+     "entrada": "2025-04-01T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82444.90046342,
+     "saida": "2025-04-03T00:00:00.000Z",
+     "r": -1.051,
+     "pnlPct": -3.493
+    },
+    {
+     "entrada": "2025-04-02T20:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 78281.47301139453,
+     "saida": "2025-04-07T16:00:00.000Z",
+     "r": 1.244,
+     "pnlPct": 5.803
+    },
+    {
+     "entrada": "2025-04-09T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 92203.55,
+     "saida": "2025-04-24T08:00:00.000Z",
+     "r": 1.412,
+     "pnlPct": 11.623
+    },
+    {
+     "entrada": "2025-05-07T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 104605.97985696618,
+     "saida": "2025-05-11T00:00:00.000Z",
+     "r": 2.17,
+     "pnlPct": 5.677
+    },
+    {
+     "entrada": "2025-06-23T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 107870.89355445633,
+     "saida": "2025-07-04T16:00:00.000Z",
+     "r": 1.247,
+     "pnlPct": 4.668
+    },
+    {
+     "entrada": "2025-07-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 120703.79312563747,
+     "saida": "2025-07-18T00:00:00.000Z",
+     "r": -1.07,
+     "pnlPct": -3.247
+    },
+    {
+     "entrada": "2025-08-14T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 114291.20347505402,
+     "saida": "2025-08-22T16:00:00.000Z",
+     "r": 1.183,
+     "pnlPct": 3.684
+    },
+    {
+     "entrada": "2025-08-22T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 112986.98116900331,
+     "saida": "2025-08-24T20:00:00.000Z",
+     "r": -1.065,
+     "pnlPct": -3.096
+    },
+    {
+     "entrada": "2025-08-24T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 109605.92786231666,
+     "saida": "2025-09-01T12:00:00.000Z",
+     "r": 1.138,
+     "pnlPct": 2.995
+    },
+    {
+     "entrada": "2025-09-28T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 118053.55072828011,
+     "saida": "2025-10-01T20:00:00.000Z",
+     "r": 2.132,
+     "pnlPct": 3.731
+    },
+    {
+     "entrada": "2025-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 109156.3282489451,
+     "saida": "2025-10-22T00:00:00.000Z",
+     "r": -1.037,
+     "pnlPct": -3.899
+    },
+    {
+     "entrada": "2025-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111986.7593044191,
+     "saida": "2025-10-24T16:00:00.000Z",
+     "r": -1.047,
+     "pnlPct": -4.313
+    },
+    {
+     "entrada": "2025-10-29T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 100592.2060300275,
+     "saida": "2025-11-04T20:00:00.000Z",
+     "r": 2.157,
+     "pnlPct": 6.53
+    },
+    {
+     "entrada": "2025-11-26T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 85175.30126570699,
+     "saida": "2025-12-01T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -5.583
+    },
+    {
+     "entrada": "2025-12-02T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 90329.97,
+     "saida": "2025-12-13T08:00:00.000Z",
+     "r": -0.252,
+     "pnlPct": -1.022
+    },
+    {
+     "entrada": "2026-01-07T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 94022.45996940945,
+     "saida": "2026-01-13T20:00:00.000Z",
+     "r": -1.107,
+     "pnlPct": -3.237
+    },
+    {
+     "entrada": "2026-01-29T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 75782.52445837014,
+     "saida": "2026-01-31T21:00:00.000Z",
+     "r": 2.198,
+     "pnlPct": 7.896
+    },
+    {
+     "entrada": "2026-02-25T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 63897.71682458908,
+     "saida": "2026-02-28T08:00:00.000Z",
+     "r": -1.04,
+     "pnlPct": -5.42
+    },
+    {
+     "entrada": "2026-02-28T04:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67551.73909524038,
+     "saida": "2026-03-01T00:00:00.000Z",
+     "r": -1.026,
+     "pnlPct": -5.991
+    },
+    {
+     "entrada": "2026-03-06T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 72924.9496034266,
+     "saida": "2026-03-13T16:00:00.000Z",
+     "r": -1.053,
+     "pnlPct": -6.796
+    },
+    {
+     "entrada": "2026-03-18T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 67745.9081672319,
+     "saida": "2026-03-30T08:00:00.000Z",
+     "r": 1.282,
+     "pnlPct": 5.232
+    },
+    {
+     "entrada": "2026-04-13T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 76039.05,
+     "saida": "2026-04-18T12:00:00.000Z",
+     "r": 1.006,
+     "pnlPct": 3.287
+    },
+    {
+     "entrada": "2026-09-03T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 78767.29943573216,
+     "saida": "2026-09-04T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -3.331
+    },
+    {
+     "entrada": "2026-10-02T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83735.04594171808,
+     "saida": "2026-10-07T04:00:00.000Z",
+     "r": -1.098,
+     "pnlPct": -3.003
+    },
+    {
+     "entrada": "2026-10-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83222.4432162502,
+     "saida": "2026-10-20T16:00:00.000Z",
+     "r": -1.103,
+     "pnlPct": -3.127
+    },
+    {
+     "entrada": "2026-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82490.76976323889,
+     "saida": "2026-10-22T08:00:00.000Z",
+     "r": -1.061,
+     "pnlPct": -2.573
+    },
+    {
+     "entrada": "2026-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 78634.01,
+     "saida": "2026-11-02T04:00:00.000Z",
+     "r": 1.328,
+     "pnlPct": 3.478
+    },
+    {
+     "entrada": "2026-11-05T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 67069.60533069925,
+     "saida": "2026-11-14T04:00:00.000Z",
+     "r": 2.16,
+     "pnlPct": 8.484
+    }
+   ]
+  },
+  {
+   "rotulo": "paridade-pine-tv-btc4h-sem-tp2",
+   "descricao": "modo Pine + sem teto de TP2",
+   "overrides_pine_config": {
+    "skip15mConfirmationEnabled": true,
+    "rfExitCloseOnlyEnabled": true,
+    "preTp1TrailEnabled": false,
+    "preTp1StopProtectionEnabled": false,
+    "useChopExit": false,
+    "useInvalidation": false,
+    "useTimeStop": true,
+    "disableTp2CapEnabled": true
+   },
+   "commit": "58ac92cb19192e6676ad9c53a2a4a10c2fcd908a",
+   "janela": {
+    "fromMs": 1738368000000,
+    "toMs": 1795521600000,
+    "from": "2025-02-01T00:00:00.000Z",
+    "to": "2026-11-24T12:00:00.000Z"
+   },
+   "operacoes": 30,
+   "expectancia_liquida_R": 0.1823,
+   "ic95_R": [
+    -0.33,
+    0.694
+   ],
+   "conclusivo": false,
+   "profit_factor": 1.1552831063416584,
+   "max_drawdown_pct": 28.620185224559123,
+   "curva": [
+    {
+     "entrada": "2025-02-03T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 95114.06791460607,
+     "saida": "2025-02-10T00:00:00.000Z",
+     "r": -1.046,
+     "pnlPct": -6.947
+    },
+    {
+     "entrada": "2025-03-03T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 85433.38,
+     "saida": "2025-03-19T20:00:00.000Z",
+     "r": -0.045,
+     "pnlPct": -0.398
+    },
+    {
+     "entrada": "2025-04-01T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82444.90046342,
+     "saida": "2025-04-03T00:00:00.000Z",
+     "r": -1.051,
+     "pnlPct": -3.493
+    },
+    {
+     "entrada": "2025-04-02T20:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 78281.47301139453,
+     "saida": "2025-04-07T16:00:00.000Z",
+     "r": 1.244,
+     "pnlPct": 5.803
+    },
+    {
+     "entrada": "2025-04-09T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 92203.55,
+     "saida": "2025-04-24T08:00:00.000Z",
+     "r": 1.412,
+     "pnlPct": 11.623
+    },
+    {
+     "entrada": "2025-05-07T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 102531.54512391261,
+     "saida": "2025-05-12T16:00:00.000Z",
+     "r": 1.752,
+     "pnlPct": 4.583
+    },
+    {
+     "entrada": "2025-06-23T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 107870.89355445633,
+     "saida": "2025-07-04T16:00:00.000Z",
+     "r": 1.247,
+     "pnlPct": 4.668
+    },
+    {
+     "entrada": "2025-07-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 120703.79312563747,
+     "saida": "2025-07-18T00:00:00.000Z",
+     "r": -1.07,
+     "pnlPct": -3.247
+    },
+    {
+     "entrada": "2025-08-14T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 114291.20347505402,
+     "saida": "2025-08-22T16:00:00.000Z",
+     "r": 1.183,
+     "pnlPct": 3.684
+    },
+    {
+     "entrada": "2025-08-22T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 112986.98116900331,
+     "saida": "2025-08-24T20:00:00.000Z",
+     "r": -1.065,
+     "pnlPct": -3.096
+    },
+    {
+     "entrada": "2025-08-24T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 109605.92786231666,
+     "saida": "2025-09-01T12:00:00.000Z",
+     "r": 1.138,
+     "pnlPct": 2.995
+    },
+    {
+     "entrada": "2025-09-28T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 122803.17,
+     "saida": "2025-10-05T16:00:00.000Z",
+     "r": 3.306,
+     "pnlPct": 5.787
+    },
+    {
+     "entrada": "2025-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 109156.3282489451,
+     "saida": "2025-10-22T00:00:00.000Z",
+     "r": -1.037,
+     "pnlPct": -3.899
+    },
+    {
+     "entrada": "2025-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111986.7593044191,
+     "saida": "2025-10-24T16:00:00.000Z",
+     "r": -1.047,
+     "pnlPct": -4.313
+    },
+    {
+     "entrada": "2025-10-29T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 103728.3,
+     "saida": "2025-11-05T16:00:00.000Z",
+     "r": 1.684,
+     "pnlPct": 5.097
+    },
+    {
+     "entrada": "2025-11-26T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 85175.30126570699,
+     "saida": "2025-12-01T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -5.583
+    },
+    {
+     "entrada": "2025-12-02T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 90329.97,
+     "saida": "2025-12-13T08:00:00.000Z",
+     "r": -0.252,
+     "pnlPct": -1.022
+    },
+    {
+     "entrada": "2026-01-07T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 94022.45996940945,
+     "saida": "2026-01-13T20:00:00.000Z",
+     "r": -1.107,
+     "pnlPct": -3.237
+    },
+    {
+     "entrada": "2026-01-29T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 78850.06,
+     "saida": "2026-02-02T16:00:00.000Z",
+     "r": 1.687,
+     "pnlPct": 6.059
+    },
+    {
+     "entrada": "2026-02-25T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 63897.71682458908,
+     "saida": "2026-02-28T08:00:00.000Z",
+     "r": -1.04,
+     "pnlPct": -5.42
+    },
+    {
+     "entrada": "2026-02-28T04:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67551.73909524038,
+     "saida": "2026-03-01T00:00:00.000Z",
+     "r": -1.026,
+     "pnlPct": -5.991
+    },
+    {
+     "entrada": "2026-03-06T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 72924.9496034266,
+     "saida": "2026-03-13T16:00:00.000Z",
+     "r": -1.053,
+     "pnlPct": -6.796
+    },
+    {
+     "entrada": "2026-03-18T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 67745.9081672319,
+     "saida": "2026-03-30T08:00:00.000Z",
+     "r": 1.282,
+     "pnlPct": 5.232
+    },
+    {
+     "entrada": "2026-04-13T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 76039.05,
+     "saida": "2026-04-18T12:00:00.000Z",
+     "r": 1.006,
+     "pnlPct": 3.287
+    },
+    {
+     "entrada": "2026-09-03T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 78767.29943573216,
+     "saida": "2026-09-04T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -3.331
+    },
+    {
+     "entrada": "2026-10-02T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83735.04594171808,
+     "saida": "2026-10-07T04:00:00.000Z",
+     "r": -1.098,
+     "pnlPct": -3.003
+    },
+    {
+     "entrada": "2026-10-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83222.4432162502,
+     "saida": "2026-10-20T16:00:00.000Z",
+     "r": -1.103,
+     "pnlPct": -3.127
+    },
+    {
+     "entrada": "2026-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82490.76976323889,
+     "saida": "2026-10-22T08:00:00.000Z",
+     "r": -1.061,
+     "pnlPct": -2.573
+    },
+    {
+     "entrada": "2026-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 78634.01,
+     "saida": "2026-11-02T04:00:00.000Z",
+     "r": 1.328,
+     "pnlPct": 3.478
+    },
+    {
+     "entrada": "2026-11-05T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 59504.42764385759,
+     "saida": "2026-11-21T16:00:00.000Z",
+     "r": 3.398,
+     "pnlPct": 13.347
+    }
+   ]
+  },
+  {
+   "rotulo": "paridade-pine-tv-btc4h-modo-pine-completo",
+   "descricao": "modo Pine completo (6 interruptores)",
+   "overrides_pine_config": {
+    "skip15mConfirmationEnabled": true,
+    "rfExitCloseOnlyEnabled": true,
+    "preTp1TrailEnabled": false,
+    "preTp1StopProtectionEnabled": false,
+    "useChopExit": false,
+    "useInvalidation": false,
+    "useTimeStop": true,
+    "disableTp2CapEnabled": true,
+    "arbInvalidateOnOppositeSameTf": true
+   },
+   "commit": "58ac92cb19192e6676ad9c53a2a4a10c2fcd908a",
+   "janela": {
+    "fromMs": 1738368000000,
+    "toMs": 1795521600000,
+    "from": "2025-02-01T00:00:00.000Z",
+    "to": "2026-11-24T12:00:00.000Z"
+   },
+   "operacoes": 33,
+   "expectancia_liquida_R": 0.16,
+   "ic95_R": [
+    -0.309,
+    0.629
+   ],
+   "conclusivo": false,
+   "profit_factor": 1.2054563728451155,
+   "max_drawdown_pct": 25.549199328335163,
+   "curva": [
+    {
+     "entrada": "2025-02-03T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 95983,
+     "saida": "2025-02-06T20:00:00.000Z",
+     "r": -0.903,
+     "pnlPct": -5.995
+    },
+    {
+     "entrada": "2025-02-06T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 96639.99,
+     "saida": "2025-02-22T20:00:00.000Z",
+     "r": -0.229,
+     "pnlPct": -1.285
+    },
+    {
+     "entrada": "2025-03-03T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 85433.38,
+     "saida": "2025-03-19T20:00:00.000Z",
+     "r": -0.045,
+     "pnlPct": -0.398
+    },
+    {
+     "entrada": "2025-04-01T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 82516.29,
+     "saida": "2025-04-03T00:00:00.000Z",
+     "r": -1.025,
+     "pnlPct": -3.41
+    },
+    {
+     "entrada": "2025-04-02T20:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 78281.47301139453,
+     "saida": "2025-04-07T16:00:00.000Z",
+     "r": 1.244,
+     "pnlPct": 5.803
+    },
+    {
+     "entrada": "2025-04-09T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 92203.55,
+     "saida": "2025-04-24T08:00:00.000Z",
+     "r": 1.412,
+     "pnlPct": 11.623
+    },
+    {
+     "entrada": "2025-05-07T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 102531.54512391261,
+     "saida": "2025-05-12T16:00:00.000Z",
+     "r": 1.752,
+     "pnlPct": 4.583
+    },
+    {
+     "entrada": "2025-06-23T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 107870.89355445633,
+     "saida": "2025-07-04T16:00:00.000Z",
+     "r": 1.247,
+     "pnlPct": 4.668
+    },
+    {
+     "entrada": "2025-07-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 120703.79312563747,
+     "saida": "2025-07-18T00:00:00.000Z",
+     "r": -1.07,
+     "pnlPct": -3.247
+    },
+    {
+     "entrada": "2025-08-14T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 116370.75,
+     "saida": "2025-08-22T16:00:00.000Z",
+     "r": 0.901,
+     "pnlPct": 2.804
+    },
+    {
+     "entrada": "2025-08-22T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 112600,
+     "saida": "2025-08-24T20:00:00.000Z",
+     "r": -1.179,
+     "pnlPct": -3.428
+    },
+    {
+     "entrada": "2025-08-24T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 109605.92786231666,
+     "saida": "2025-09-01T12:00:00.000Z",
+     "r": 1.138,
+     "pnlPct": 2.995
+    },
+    {
+     "entrada": "2025-09-28T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 122803.17,
+     "saida": "2025-10-05T16:00:00.000Z",
+     "r": 3.306,
+     "pnlPct": 5.787
+    },
+    {
+     "entrada": "2025-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 109156.3282489451,
+     "saida": "2025-10-22T00:00:00.000Z",
+     "r": -1.037,
+     "pnlPct": -3.899
+    },
+    {
+     "entrada": "2025-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111986.7593044191,
+     "saida": "2025-10-24T16:00:00.000Z",
+     "r": -1.047,
+     "pnlPct": -4.313
+    },
+    {
+     "entrada": "2025-10-29T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 103728.3,
+     "saida": "2025-11-05T16:00:00.000Z",
+     "r": 1.684,
+     "pnlPct": 5.097
+    },
+    {
+     "entrada": "2025-11-26T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 85175.30126570699,
+     "saida": "2025-12-01T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -5.583
+    },
+    {
+     "entrada": "2025-12-02T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 89149.18,
+     "saida": "2025-12-07T12:00:00.000Z",
+     "r": -0.527,
+     "pnlPct": -2.141
+    },
+    {
+     "entrada": "2025-12-07T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 91704.05547110818,
+     "saida": "2025-12-07T20:00:00.000Z",
+     "r": -1.046,
+     "pnlPct": -2.998
+    },
+    {
+     "entrada": "2026-01-07T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 94022.45996940945,
+     "saida": "2026-01-13T20:00:00.000Z",
+     "r": -1.107,
+     "pnlPct": -3.237
+    },
+    {
+     "entrada": "2026-01-29T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 78850.06,
+     "saida": "2026-02-02T16:00:00.000Z",
+     "r": 1.687,
+     "pnlPct": 6.059
+    },
+    {
+     "entrada": "2026-02-25T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 63826,
+     "saida": "2026-02-28T08:00:00.000Z",
+     "r": -1.06,
+     "pnlPct": -5.527
+    },
+    {
+     "entrada": "2026-02-28T04:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67551.73909524038,
+     "saida": "2026-03-01T00:00:00.000Z",
+     "r": -1.026,
+     "pnlPct": -5.991
+    },
+    {
+     "entrada": "2026-03-06T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 70406.01,
+     "saida": "2026-03-10T08:00:00.000Z",
+     "r": -0.468,
+     "pnlPct": -3.017
+    },
+    {
+     "entrada": "2026-03-10T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 72952.85,
+     "saida": "2026-03-18T12:00:00.000Z",
+     "r": 1.027,
+     "pnlPct": 5.4
+    },
+    {
+     "entrada": "2026-03-18T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 67745.9081672319,
+     "saida": "2026-03-30T08:00:00.000Z",
+     "r": 1.282,
+     "pnlPct": 5.232
+    },
+    {
+     "entrada": "2026-04-13T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 76039.05,
+     "saida": "2026-04-18T12:00:00.000Z",
+     "r": 1.006,
+     "pnlPct": 3.287
+    },
+    {
+     "entrada": "2026-09-03T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 78767.29943573216,
+     "saida": "2026-09-04T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -3.331
+    },
+    {
+     "entrada": "2026-10-02T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83735.04594171808,
+     "saida": "2026-10-07T04:00:00.000Z",
+     "r": -1.098,
+     "pnlPct": -3.003
+    },
+    {
+     "entrada": "2026-10-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83222.4432162502,
+     "saida": "2026-10-20T16:00:00.000Z",
+     "r": -1.103,
+     "pnlPct": -3.127
+    },
+    {
+     "entrada": "2026-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82490.76976323889,
+     "saida": "2026-10-22T08:00:00.000Z",
+     "r": -1.061,
+     "pnlPct": -2.573
+    },
+    {
+     "entrada": "2026-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 78634.01,
+     "saida": "2026-11-02T04:00:00.000Z",
+     "r": 1.328,
+     "pnlPct": 3.478
+    },
+    {
+     "entrada": "2026-11-05T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 59504.42764385759,
+     "saida": "2026-11-21T16:00:00.000Z",
+     "r": 3.398,
+     "pnlPct": 13.347
+    }
+   ]
+  },
+  {
+   "rotulo": "paridade-pine-tv-btc4h-producao-igual",
+   "descricao": "só skip15m ligado (≈ padrões do código)",
+   "overrides_pine_config": {
+    "skip15mConfirmationEnabled": true
+   },
+   "commit": "58ac92cb19192e6676ad9c53a2a4a10c2fcd908a",
+   "janela": {
+    "fromMs": 1738368000000,
+    "toMs": 1795521600000,
+    "from": "2025-02-01T00:00:00.000Z",
+    "to": "2026-11-24T12:00:00.000Z"
+   },
+   "operacoes": 35,
+   "expectancia_liquida_R": -0.1253,
+   "ic95_R": [
+    -0.352,
+    0.102
+   ],
+   "conclusivo": false,
+   "profit_factor": 0.4780940665818946,
+   "max_drawdown_pct": 25.078109577599964,
+   "curva": [
+    {
+     "entrada": "2025-02-03T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 95114.06791460607,
+     "saida": "2025-02-10T00:00:00.000Z",
+     "r": -1.046,
+     "pnlPct": -6.947
+    },
+    {
+     "entrada": "2025-03-03T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 86541.52436909436,
+     "saida": "2025-03-04T20:00:00.000Z",
+     "r": -0.14,
+     "pnlPct": -1.243
+    },
+    {
+     "entrada": "2025-03-09T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83782.5019817025,
+     "saida": "2025-03-10T12:00:00.000Z",
+     "r": -0.152,
+     "pnlPct": -0.996
+    },
+    {
+     "entrada": "2025-04-01T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 84967.5601704815,
+     "saida": "2025-04-03T00:00:00.000Z",
+     "r": -0.162,
+     "pnlPct": -0.537
+    },
+    {
+     "entrada": "2025-04-02T20:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83713.05619440743,
+     "saida": "2025-04-06T04:00:00.000Z",
+     "r": -0.358,
+     "pnlPct": -1.671
+    },
+    {
+     "entrada": "2025-04-09T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83182.16263628223,
+     "saida": "2025-04-13T20:00:00.000Z",
+     "r": 0.096,
+     "pnlPct": 0.792
+    },
+    {
+     "entrada": "2025-05-07T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 104605.97985696618,
+     "saida": "2025-05-11T00:00:00.000Z",
+     "r": 2.17,
+     "pnlPct": 5.677
+    },
+    {
+     "entrada": "2025-06-23T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 107286.25432326815,
+     "saida": "2025-06-30T16:00:00.000Z",
+     "r": 0.979,
+     "pnlPct": 3.666
+    },
+    {
+     "entrada": "2025-07-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 120703.79312563747,
+     "saida": "2025-07-18T00:00:00.000Z",
+     "r": -1.07,
+     "pnlPct": -3.247
+    },
+    {
+     "entrada": "2025-08-14T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 116593.88901447275,
+     "saida": "2025-08-18T20:00:00.000Z",
+     "r": 0.372,
+     "pnlPct": 1.157
+    },
+    {
+     "entrada": "2025-08-22T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 114888.19,
+     "saida": "2025-08-24T12:00:00.000Z",
+     "r": -0.5,
+     "pnlPct": -1.453
+    },
+    {
+     "entrada": "2025-08-24T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111356.9841545416,
+     "saida": "2025-08-27T00:00:00.000Z",
+     "r": 0.347,
+     "pnlPct": 0.915
+    },
+    {
+     "entrada": "2025-09-28T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 113161.45524391258,
+     "saida": "2025-09-30T12:00:00.000Z",
+     "r": 0.411,
+     "pnlPct": 0.719
+    },
+    {
+     "entrada": "2025-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 109156.3282489451,
+     "saida": "2025-10-22T00:00:00.000Z",
+     "r": -1.037,
+     "pnlPct": -3.899
+    },
+    {
+     "entrada": "2025-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111986.7593044191,
+     "saida": "2025-10-24T16:00:00.000Z",
+     "r": -1.047,
+     "pnlPct": -4.313
+    },
+    {
+     "entrada": "2025-10-29T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111366.72,
+     "saida": "2025-10-30T12:00:00.000Z",
+     "r": -0.263,
+     "pnlPct": -0.797
+    },
+    {
+     "entrada": "2025-11-03T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 103884.93517721302,
+     "saida": "2025-11-05T20:00:00.000Z",
+     "r": 0.975,
+     "pnlPct": 3.058
+    },
+    {
+     "entrada": "2025-11-26T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 90525.80259628683,
+     "saida": "2025-11-28T20:00:00.000Z",
+     "r": 0.085,
+     "pnlPct": 0.452
+    },
+    {
+     "entrada": "2025-12-02T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 91323.06771909706,
+     "saida": "2025-12-04T20:00:00.000Z",
+     "r": 0.081,
+     "pnlPct": 0.33
+    },
+    {
+     "entrada": "2025-12-07T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 89901.22463573677,
+     "saida": "2025-12-07T20:00:00.000Z",
+     "r": -0.34,
+     "pnlPct": -0.974
+    },
+    {
+     "entrada": "2026-01-07T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 91527.72016015253,
+     "saida": "2026-01-09T04:00:00.000Z",
+     "r": -0.125,
+     "pnlPct": -0.365
+    },
+    {
+     "entrada": "2026-01-29T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83926.54745078282,
+     "saida": "2026-01-30T20:00:00.000Z",
+     "r": 0.286,
+     "pnlPct": 1.027
+    },
+    {
+     "entrada": "2026-02-25T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67479.12403371106,
+     "saida": "2026-02-26T16:00:00.000Z",
+     "r": -0.012,
+     "pnlPct": -0.061
+    },
+    {
+     "entrada": "2026-02-28T04:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67551.73909524038,
+     "saida": "2026-03-01T00:00:00.000Z",
+     "r": -1.026,
+     "pnlPct": -5.991
+    },
+    {
+     "entrada": "2026-03-06T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67810.23881025788,
+     "saida": "2026-03-09T08:00:00.000Z",
+     "r": 0.125,
+     "pnlPct": 0.804
+    },
+    {
+     "entrada": "2026-03-10T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 69278.70740104091,
+     "saida": "2026-03-11T12:00:00.000Z",
+     "r": -0.335,
+     "pnlPct": -1.76
+    },
+    {
+     "entrada": "2026-03-18T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 71023.96276264478,
+     "saida": "2026-03-20T12:00:00.000Z",
+     "r": 0.108,
+     "pnlPct": 0.441
+    },
+    {
+     "entrada": "2026-03-27T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 66734.97816723191,
+     "saida": "2026-03-30T04:00:00.000Z",
+     "r": -0.049,
+     "pnlPct": -0.248
+    },
+    {
+     "entrada": "2026-04-13T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 74094.00193393657,
+     "saida": "2026-04-14T20:00:00.000Z",
+     "r": -0.179,
+     "pnlPct": -0.585
+    },
+    {
+     "entrada": "2026-09-03T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 78767.29943573216,
+     "saida": "2026-09-04T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -3.331
+    },
+    {
+     "entrada": "2026-10-02T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 85225.21505779357,
+     "saida": "2026-10-02T20:00:00.000Z",
+     "r": -0.418,
+     "pnlPct": -1.144
+    },
+    {
+     "entrada": "2026-10-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82418,
+     "saida": "2026-10-15T20:00:00.000Z",
+     "r": -0.699,
+     "pnlPct": -1.982
+    },
+    {
+     "entrada": "2026-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82490.76976323889,
+     "saida": "2026-10-22T08:00:00.000Z",
+     "r": -1.061,
+     "pnlPct": -2.573
+    },
+    {
+     "entrada": "2026-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 80782.55960555481,
+     "saida": "2026-10-25T00:00:00.000Z",
+     "r": 0.376,
+     "pnlPct": 0.984
+    },
+    {
+     "entrada": "2026-11-05T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 75042.61189553472,
+     "saida": "2026-11-09T04:00:00.000Z",
+     "r": 0.272,
+     "pnlPct": 1.069
+    }
+   ]
+  },
+  {
+   "rotulo": "dec-A_trail",
+   "descricao": "modo Pine completo + trailing pré-TP1 LIGADO",
+   "overrides_pine_config": {
+    "skip15mConfirmationEnabled": true,
+    "rfExitCloseOnlyEnabled": true,
+    "preTp1TrailEnabled": true,
+    "preTp1StopProtectionEnabled": true,
+    "useChopExit": false,
+    "useInvalidation": false,
+    "useTimeStop": true,
+    "disableTp2CapEnabled": true,
+    "arbInvalidateOnOppositeSameTf": true
+   },
+   "commit": "58ac92cb19192e6676ad9c53a2a4a10c2fcd908a",
+   "janela": {
+    "fromMs": 1738368000000,
+    "toMs": 1795521600000,
+    "from": "2025-02-01T00:00:00.000Z",
+    "to": "2026-11-24T12:00:00.000Z"
+   },
+   "operacoes": 36,
+   "expectancia_liquida_R": -0.1601,
+   "ic95_R": [
+    -0.373,
+    0.053
+   ],
+   "conclusivo": false,
+   "profit_factor": 0.42237085876823566,
+   "max_drawdown_pct": 29.50401228854052,
+   "curva": [
+    {
+     "entrada": "2025-02-03T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 95983,
+     "saida": "2025-02-06T20:00:00.000Z",
+     "r": -0.903,
+     "pnlPct": -5.995
+    },
+    {
+     "entrada": "2025-02-06T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 97187.87987228375,
+     "saida": "2025-02-10T08:00:00.000Z",
+     "r": -0.264,
+     "pnlPct": -1.486
+    },
+    {
+     "entrada": "2025-03-03T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 86541.52436909436,
+     "saida": "2025-03-04T20:00:00.000Z",
+     "r": -0.14,
+     "pnlPct": -1.243
+    },
+    {
+     "entrada": "2025-03-09T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83782.5019817025,
+     "saida": "2025-03-10T12:00:00.000Z",
+     "r": -0.152,
+     "pnlPct": -0.996
+    },
+    {
+     "entrada": "2025-04-01T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 82516.29,
+     "saida": "2025-04-03T00:00:00.000Z",
+     "r": -1.025,
+     "pnlPct": -3.41
+    },
+    {
+     "entrada": "2025-04-02T20:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83713.05619440743,
+     "saida": "2025-04-06T04:00:00.000Z",
+     "r": -0.358,
+     "pnlPct": -1.671
+    },
+    {
+     "entrada": "2025-04-09T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83182.16263628223,
+     "saida": "2025-04-13T20:00:00.000Z",
+     "r": 0.096,
+     "pnlPct": 0.792
+    },
+    {
+     "entrada": "2025-05-07T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 102531.54512391261,
+     "saida": "2025-05-12T16:00:00.000Z",
+     "r": 1.752,
+     "pnlPct": 4.583
+    },
+    {
+     "entrada": "2025-06-23T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 107286.25432326815,
+     "saida": "2025-06-30T16:00:00.000Z",
+     "r": 0.979,
+     "pnlPct": 3.666
+    },
+    {
+     "entrada": "2025-07-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 120703.79312563747,
+     "saida": "2025-07-18T00:00:00.000Z",
+     "r": -1.07,
+     "pnlPct": -3.247
+    },
+    {
+     "entrada": "2025-08-14T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 116593.88901447275,
+     "saida": "2025-08-18T20:00:00.000Z",
+     "r": 0.372,
+     "pnlPct": 1.157
+    },
+    {
+     "entrada": "2025-08-22T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 114888.19,
+     "saida": "2025-08-24T12:00:00.000Z",
+     "r": -0.5,
+     "pnlPct": -1.453
+    },
+    {
+     "entrada": "2025-08-24T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111356.9841545416,
+     "saida": "2025-08-27T00:00:00.000Z",
+     "r": 0.347,
+     "pnlPct": 0.915
+    },
+    {
+     "entrada": "2025-09-28T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 113161.45524391258,
+     "saida": "2025-09-30T12:00:00.000Z",
+     "r": 0.411,
+     "pnlPct": 0.719
+    },
+    {
+     "entrada": "2025-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 109156.3282489451,
+     "saida": "2025-10-22T00:00:00.000Z",
+     "r": -1.037,
+     "pnlPct": -3.899
+    },
+    {
+     "entrada": "2025-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111986.7593044191,
+     "saida": "2025-10-24T16:00:00.000Z",
+     "r": -1.047,
+     "pnlPct": -4.313
+    },
+    {
+     "entrada": "2025-10-29T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111366.72,
+     "saida": "2025-10-30T12:00:00.000Z",
+     "r": -0.263,
+     "pnlPct": -0.797
+    },
+    {
+     "entrada": "2025-11-03T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 103728.3,
+     "saida": "2025-11-05T16:00:00.000Z",
+     "r": 0.999,
+     "pnlPct": 3.133
+    },
+    {
+     "entrada": "2025-11-26T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 90525.80259628683,
+     "saida": "2025-11-28T20:00:00.000Z",
+     "r": 0.085,
+     "pnlPct": 0.452
+    },
+    {
+     "entrada": "2025-12-02T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 91323.06771909706,
+     "saida": "2025-12-04T20:00:00.000Z",
+     "r": 0.081,
+     "pnlPct": 0.33
+    },
+    {
+     "entrada": "2025-12-07T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 89901.22463573677,
+     "saida": "2025-12-07T20:00:00.000Z",
+     "r": -0.34,
+     "pnlPct": -0.974
+    },
+    {
+     "entrada": "2026-01-07T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 91527.72016015253,
+     "saida": "2026-01-09T04:00:00.000Z",
+     "r": -0.125,
+     "pnlPct": -0.365
+    },
+    {
+     "entrada": "2026-01-29T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83926.54745078282,
+     "saida": "2026-01-30T20:00:00.000Z",
+     "r": 0.286,
+     "pnlPct": 1.027
+    },
+    {
+     "entrada": "2026-02-25T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67479.12403371106,
+     "saida": "2026-02-26T16:00:00.000Z",
+     "r": -0.012,
+     "pnlPct": -0.061
+    },
+    {
+     "entrada": "2026-02-28T04:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67551.73909524038,
+     "saida": "2026-03-01T00:00:00.000Z",
+     "r": -1.026,
+     "pnlPct": -5.991
+    },
+    {
+     "entrada": "2026-03-06T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67810.23881025788,
+     "saida": "2026-03-09T08:00:00.000Z",
+     "r": 0.125,
+     "pnlPct": 0.804
+    },
+    {
+     "entrada": "2026-03-10T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 69278.70740104091,
+     "saida": "2026-03-11T12:00:00.000Z",
+     "r": -0.335,
+     "pnlPct": -1.76
+    },
+    {
+     "entrada": "2026-03-18T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 71023.96276264478,
+     "saida": "2026-03-20T12:00:00.000Z",
+     "r": 0.108,
+     "pnlPct": 0.441
+    },
+    {
+     "entrada": "2026-03-27T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 66734.97816723191,
+     "saida": "2026-03-30T04:00:00.000Z",
+     "r": -0.049,
+     "pnlPct": -0.248
+    },
+    {
+     "entrada": "2026-04-13T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 74094.00193393657,
+     "saida": "2026-04-14T20:00:00.000Z",
+     "r": -0.179,
+     "pnlPct": -0.585
+    },
+    {
+     "entrada": "2026-09-03T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 78767.29943573216,
+     "saida": "2026-09-04T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -3.331
+    },
+    {
+     "entrada": "2026-10-02T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 85225.21505779357,
+     "saida": "2026-10-02T20:00:00.000Z",
+     "r": -0.418,
+     "pnlPct": -1.144
+    },
+    {
+     "entrada": "2026-10-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82418,
+     "saida": "2026-10-15T20:00:00.000Z",
+     "r": -0.699,
+     "pnlPct": -1.982
+    },
+    {
+     "entrada": "2026-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82490.76976323889,
+     "saida": "2026-10-22T08:00:00.000Z",
+     "r": -1.061,
+     "pnlPct": -2.573
+    },
+    {
+     "entrada": "2026-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 80782.55960555481,
+     "saida": "2026-10-25T00:00:00.000Z",
+     "r": 0.376,
+     "pnlPct": 0.984
+    },
+    {
+     "entrada": "2026-11-05T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 75042.61189553472,
+     "saida": "2026-11-09T04:00:00.000Z",
+     "r": 0.272,
+     "pnlPct": 1.069
+    }
+   ]
+  },
+  {
+   "rotulo": "dec-B_tp2cap",
+   "descricao": "modo Pine completo + teto de TP2 LIGADO",
+   "overrides_pine_config": {
+    "skip15mConfirmationEnabled": true,
+    "rfExitCloseOnlyEnabled": true,
+    "preTp1TrailEnabled": false,
+    "preTp1StopProtectionEnabled": false,
+    "useChopExit": false,
+    "useInvalidation": false,
+    "useTimeStop": true,
+    "disableTp2CapEnabled": false,
+    "arbInvalidateOnOppositeSameTf": true
+   },
+   "commit": "58ac92cb19192e6676ad9c53a2a4a10c2fcd908a",
+   "janela": {
+    "fromMs": 1738368000000,
+    "toMs": 1795521600000,
+    "from": "2025-02-01T00:00:00.000Z",
+    "to": "2026-11-24T12:00:00.000Z"
+   },
+   "operacoes": 33,
+   "expectancia_liquida_R": 0.1294,
+   "ic95_R": [
+    -0.309,
+    0.568
+   ],
+   "conclusivo": false,
+   "profit_factor": 1.1670302616606678,
+   "max_drawdown_pct": 22.27917962029738,
+   "curva": [
+    {
+     "entrada": "2025-02-03T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 95983,
+     "saida": "2025-02-06T20:00:00.000Z",
+     "r": -0.903,
+     "pnlPct": -5.995
+    },
+    {
+     "entrada": "2025-02-06T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 96639.99,
+     "saida": "2025-02-22T20:00:00.000Z",
+     "r": -0.229,
+     "pnlPct": -1.285
+    },
+    {
+     "entrada": "2025-03-03T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 85433.38,
+     "saida": "2025-03-19T20:00:00.000Z",
+     "r": -0.045,
+     "pnlPct": -0.398
+    },
+    {
+     "entrada": "2025-04-01T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 82516.29,
+     "saida": "2025-04-03T00:00:00.000Z",
+     "r": -1.025,
+     "pnlPct": -3.41
+    },
+    {
+     "entrada": "2025-04-02T20:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 78281.47301139453,
+     "saida": "2025-04-07T16:00:00.000Z",
+     "r": 1.244,
+     "pnlPct": 5.803
+    },
+    {
+     "entrada": "2025-04-09T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 92203.55,
+     "saida": "2025-04-24T08:00:00.000Z",
+     "r": 1.412,
+     "pnlPct": 11.623
+    },
+    {
+     "entrada": "2025-05-07T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 104605.97985696618,
+     "saida": "2025-05-11T00:00:00.000Z",
+     "r": 2.17,
+     "pnlPct": 5.677
+    },
+    {
+     "entrada": "2025-06-23T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 107870.89355445633,
+     "saida": "2025-07-04T16:00:00.000Z",
+     "r": 1.247,
+     "pnlPct": 4.668
+    },
+    {
+     "entrada": "2025-07-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 120703.79312563747,
+     "saida": "2025-07-18T00:00:00.000Z",
+     "r": -1.07,
+     "pnlPct": -3.247
+    },
+    {
+     "entrada": "2025-08-14T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 116370.75,
+     "saida": "2025-08-22T16:00:00.000Z",
+     "r": 0.901,
+     "pnlPct": 2.804
+    },
+    {
+     "entrada": "2025-08-22T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 112600,
+     "saida": "2025-08-24T20:00:00.000Z",
+     "r": -1.179,
+     "pnlPct": -3.428
+    },
+    {
+     "entrada": "2025-08-24T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 109605.92786231666,
+     "saida": "2025-09-01T12:00:00.000Z",
+     "r": 1.138,
+     "pnlPct": 2.995
+    },
+    {
+     "entrada": "2025-09-28T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 118053.55072828011,
+     "saida": "2025-10-01T20:00:00.000Z",
+     "r": 2.132,
+     "pnlPct": 3.731
+    },
+    {
+     "entrada": "2025-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 109156.3282489451,
+     "saida": "2025-10-22T00:00:00.000Z",
+     "r": -1.037,
+     "pnlPct": -3.899
+    },
+    {
+     "entrada": "2025-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111986.7593044191,
+     "saida": "2025-10-24T16:00:00.000Z",
+     "r": -1.047,
+     "pnlPct": -4.313
+    },
+    {
+     "entrada": "2025-10-29T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 100592.2060300275,
+     "saida": "2025-11-04T20:00:00.000Z",
+     "r": 2.157,
+     "pnlPct": 6.53
+    },
+    {
+     "entrada": "2025-11-26T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 85175.30126570699,
+     "saida": "2025-12-01T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -5.583
+    },
+    {
+     "entrada": "2025-12-02T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 89149.18,
+     "saida": "2025-12-07T12:00:00.000Z",
+     "r": -0.527,
+     "pnlPct": -2.141
+    },
+    {
+     "entrada": "2025-12-07T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 91704.05547110818,
+     "saida": "2025-12-07T20:00:00.000Z",
+     "r": -1.046,
+     "pnlPct": -2.998
+    },
+    {
+     "entrada": "2026-01-07T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 94022.45996940945,
+     "saida": "2026-01-13T20:00:00.000Z",
+     "r": -1.107,
+     "pnlPct": -3.237
+    },
+    {
+     "entrada": "2026-01-29T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 75782.52445837014,
+     "saida": "2026-01-31T21:00:00.000Z",
+     "r": 2.198,
+     "pnlPct": 7.896
+    },
+    {
+     "entrada": "2026-02-25T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 63826,
+     "saida": "2026-02-28T08:00:00.000Z",
+     "r": -1.06,
+     "pnlPct": -5.527
+    },
+    {
+     "entrada": "2026-02-28T04:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67551.73909524038,
+     "saida": "2026-03-01T00:00:00.000Z",
+     "r": -1.026,
+     "pnlPct": -5.991
+    },
+    {
+     "entrada": "2026-03-06T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 70406.01,
+     "saida": "2026-03-10T08:00:00.000Z",
+     "r": -0.468,
+     "pnlPct": -3.017
+    },
+    {
+     "entrada": "2026-03-10T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 72952.85,
+     "saida": "2026-03-18T12:00:00.000Z",
+     "r": 1.027,
+     "pnlPct": 5.4
+    },
+    {
+     "entrada": "2026-03-18T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 67745.9081672319,
+     "saida": "2026-03-30T08:00:00.000Z",
+     "r": 1.282,
+     "pnlPct": 5.232
+    },
+    {
+     "entrada": "2026-04-13T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 76039.05,
+     "saida": "2026-04-18T12:00:00.000Z",
+     "r": 1.006,
+     "pnlPct": 3.287
+    },
+    {
+     "entrada": "2026-09-03T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 78767.29943573216,
+     "saida": "2026-09-04T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -3.331
+    },
+    {
+     "entrada": "2026-10-02T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83735.04594171808,
+     "saida": "2026-10-07T04:00:00.000Z",
+     "r": -1.098,
+     "pnlPct": -3.003
+    },
+    {
+     "entrada": "2026-10-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83222.4432162502,
+     "saida": "2026-10-20T16:00:00.000Z",
+     "r": -1.103,
+     "pnlPct": -3.127
+    },
+    {
+     "entrada": "2026-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82490.76976323889,
+     "saida": "2026-10-22T08:00:00.000Z",
+     "r": -1.061,
+     "pnlPct": -2.573
+    },
+    {
+     "entrada": "2026-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 78634.01,
+     "saida": "2026-11-02T04:00:00.000Z",
+     "r": 1.328,
+     "pnlPct": 3.478
+    },
+    {
+     "entrada": "2026-11-05T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "TP2_HIT",
+     "tp1": true,
+     "preco_saida": 67069.60533069925,
+     "saida": "2026-11-14T04:00:00.000Z",
+     "r": 2.16,
+     "pnlPct": 8.484
+    }
+   ]
+  },
+  {
+   "rotulo": "dec-C_rfexit",
+   "descricao": "modo Pine completo + saída do RF \"normal\"",
+   "overrides_pine_config": {
+    "skip15mConfirmationEnabled": true,
+    "rfExitCloseOnlyEnabled": false,
+    "preTp1TrailEnabled": false,
+    "preTp1StopProtectionEnabled": false,
+    "useChopExit": false,
+    "useInvalidation": false,
+    "useTimeStop": true,
+    "disableTp2CapEnabled": true,
+    "arbInvalidateOnOppositeSameTf": true
+   },
+   "commit": "58ac92cb19192e6676ad9c53a2a4a10c2fcd908a",
+   "janela": {
+    "fromMs": 1738368000000,
+    "toMs": 1795521600000,
+    "from": "2025-02-01T00:00:00.000Z",
+    "to": "2026-11-24T12:00:00.000Z"
+   },
+   "operacoes": 33,
+   "expectancia_liquida_R": 0.2042,
+   "ic95_R": [
+    -0.295,
+    0.704
+   ],
+   "conclusivo": false,
+   "profit_factor": 1.2785961019929706,
+   "max_drawdown_pct": 18.885431767277566,
+   "curva": [
+    {
+     "entrada": "2025-02-03T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 95983,
+     "saida": "2025-02-06T20:00:00.000Z",
+     "r": -0.903,
+     "pnlPct": -5.995
+    },
+    {
+     "entrada": "2025-02-06T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 96639.99,
+     "saida": "2025-02-22T20:00:00.000Z",
+     "r": -0.229,
+     "pnlPct": -1.285
+    },
+    {
+     "entrada": "2025-03-03T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 85433.38,
+     "saida": "2025-03-19T20:00:00.000Z",
+     "r": -0.045,
+     "pnlPct": -0.398
+    },
+    {
+     "entrada": "2025-04-01T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 82516.29,
+     "saida": "2025-04-03T00:00:00.000Z",
+     "r": -1.025,
+     "pnlPct": -3.41
+    },
+    {
+     "entrada": "2025-04-02T20:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 78281.47301139453,
+     "saida": "2025-04-07T16:00:00.000Z",
+     "r": 1.244,
+     "pnlPct": 5.803
+    },
+    {
+     "entrada": "2025-04-09T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 91720.90034620397,
+     "saida": "2025-04-24T12:00:00.000Z",
+     "r": 1.376,
+     "pnlPct": 11.33
+    },
+    {
+     "entrada": "2025-05-07T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 102531.54512391261,
+     "saida": "2025-05-12T16:00:00.000Z",
+     "r": 1.752,
+     "pnlPct": 4.583
+    },
+    {
+     "entrada": "2025-06-23T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 107870.89355445633,
+     "saida": "2025-07-04T16:00:00.000Z",
+     "r": 1.247,
+     "pnlPct": 4.668
+    },
+    {
+     "entrada": "2025-07-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 120703.79312563747,
+     "saida": "2025-07-18T00:00:00.000Z",
+     "r": -1.07,
+     "pnlPct": -3.247
+    },
+    {
+     "entrada": "2025-08-14T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 116370.75,
+     "saida": "2025-08-22T16:00:00.000Z",
+     "r": 0.901,
+     "pnlPct": 2.804
+    },
+    {
+     "entrada": "2025-08-22T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 112600,
+     "saida": "2025-08-24T20:00:00.000Z",
+     "r": -1.179,
+     "pnlPct": -3.428
+    },
+    {
+     "entrada": "2025-08-24T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 109605.92786231666,
+     "saida": "2025-09-01T12:00:00.000Z",
+     "r": 1.138,
+     "pnlPct": 2.995
+    },
+    {
+     "entrada": "2025-09-28T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 122452.79376349565,
+     "saida": "2025-10-05T20:00:00.000Z",
+     "r": 3.217,
+     "pnlPct": 5.631
+    },
+    {
+     "entrada": "2025-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 109156.3282489451,
+     "saida": "2025-10-22T00:00:00.000Z",
+     "r": -1.037,
+     "pnlPct": -3.899
+    },
+    {
+     "entrada": "2025-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111986.7593044191,
+     "saida": "2025-10-24T16:00:00.000Z",
+     "r": -1.047,
+     "pnlPct": -4.313
+    },
+    {
+     "entrada": "2025-10-29T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 103884.93517721302,
+     "saida": "2025-11-05T20:00:00.000Z",
+     "r": 1.66,
+     "pnlPct": 5.026
+    },
+    {
+     "entrada": "2025-11-26T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 85175.30126570699,
+     "saida": "2025-12-01T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -5.583
+    },
+    {
+     "entrada": "2025-12-02T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 89149.18,
+     "saida": "2025-12-07T12:00:00.000Z",
+     "r": -0.527,
+     "pnlPct": -2.141
+    },
+    {
+     "entrada": "2025-12-07T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 91704.05547110818,
+     "saida": "2025-12-07T20:00:00.000Z",
+     "r": -1.046,
+     "pnlPct": -2.998
+    },
+    {
+     "entrada": "2026-01-07T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 94022.45996940945,
+     "saida": "2026-01-13T20:00:00.000Z",
+     "r": -1.107,
+     "pnlPct": -3.237
+    },
+    {
+     "entrada": "2026-01-29T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 67315.1339132638,
+     "saida": "2026-02-06T16:00:00.000Z",
+     "r": 3.562,
+     "pnlPct": 12.794
+    },
+    {
+     "entrada": "2026-02-25T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 63826,
+     "saida": "2026-02-28T08:00:00.000Z",
+     "r": -1.06,
+     "pnlPct": -5.527
+    },
+    {
+     "entrada": "2026-02-28T04:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67551.73909524038,
+     "saida": "2026-03-01T00:00:00.000Z",
+     "r": -1.026,
+     "pnlPct": -5.991
+    },
+    {
+     "entrada": "2026-03-06T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": false,
+     "preco_saida": 70406.01,
+     "saida": "2026-03-10T08:00:00.000Z",
+     "r": -0.468,
+     "pnlPct": -3.017
+    },
+    {
+     "entrada": "2026-03-10T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 71467.82,
+     "saida": "2026-03-18T16:00:00.000Z",
+     "r": 0.825,
+     "pnlPct": 4.341
+    },
+    {
+     "entrada": "2026-03-18T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 67745.9081672319,
+     "saida": "2026-03-30T08:00:00.000Z",
+     "r": 1.282,
+     "pnlPct": 5.232
+    },
+    {
+     "entrada": "2026-04-13T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 75199.23512325011,
+     "saida": "2026-04-19T08:00:00.000Z",
+     "r": 0.829,
+     "pnlPct": 2.708
+    },
+    {
+     "entrada": "2026-09-03T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 78767.29943573216,
+     "saida": "2026-09-04T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -3.331
+    },
+    {
+     "entrada": "2026-10-02T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83735.04594171808,
+     "saida": "2026-10-07T04:00:00.000Z",
+     "r": -1.098,
+     "pnlPct": -3.003
+    },
+    {
+     "entrada": "2026-10-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83222.4432162502,
+     "saida": "2026-10-20T16:00:00.000Z",
+     "r": -1.103,
+     "pnlPct": -3.127
+    },
+    {
+     "entrada": "2026-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82490.76976323889,
+     "saida": "2026-10-22T08:00:00.000Z",
+     "r": -1.061,
+     "pnlPct": -2.573
+    },
+    {
+     "entrada": "2026-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 78107.75638333205,
+     "saida": "2026-11-04T08:00:00.000Z",
+     "r": 1.437,
+     "pnlPct": 3.765
+    },
+    {
+     "entrada": "2026-11-05T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 59504.42764385759,
+     "saida": "2026-11-21T16:00:00.000Z",
+     "r": 3.398,
+     "pnlPct": 13.347
+    }
+   ]
+  },
+  {
+   "rotulo": "dec-D_arb",
+   "descricao": "modo Pine completo SEM a virada de sinal",
+   "overrides_pine_config": {
+    "skip15mConfirmationEnabled": true,
+    "rfExitCloseOnlyEnabled": true,
+    "preTp1TrailEnabled": false,
+    "preTp1StopProtectionEnabled": false,
+    "useChopExit": false,
+    "useInvalidation": false,
+    "useTimeStop": true,
+    "disableTp2CapEnabled": true,
+    "arbInvalidateOnOppositeSameTf": false
+   },
+   "commit": "58ac92cb19192e6676ad9c53a2a4a10c2fcd908a",
+   "janela": {
+    "fromMs": 1738368000000,
+    "toMs": 1795521600000,
+    "from": "2025-02-01T00:00:00.000Z",
+    "to": "2026-11-24T12:00:00.000Z"
+   },
+   "operacoes": 30,
+   "expectancia_liquida_R": 0.1823,
+   "ic95_R": [
+    -0.33,
+    0.694
+   ],
+   "conclusivo": false,
+   "profit_factor": 1.1552831063416584,
+   "max_drawdown_pct": 28.620185224559123,
+   "curva": [
+    {
+     "entrada": "2025-02-03T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 95114.06791460607,
+     "saida": "2025-02-10T00:00:00.000Z",
+     "r": -1.046,
+     "pnlPct": -6.947
+    },
+    {
+     "entrada": "2025-03-03T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 85433.38,
+     "saida": "2025-03-19T20:00:00.000Z",
+     "r": -0.045,
+     "pnlPct": -0.398
+    },
+    {
+     "entrada": "2025-04-01T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82444.90046342,
+     "saida": "2025-04-03T00:00:00.000Z",
+     "r": -1.051,
+     "pnlPct": -3.493
+    },
+    {
+     "entrada": "2025-04-02T20:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 78281.47301139453,
+     "saida": "2025-04-07T16:00:00.000Z",
+     "r": 1.244,
+     "pnlPct": 5.803
+    },
+    {
+     "entrada": "2025-04-09T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 92203.55,
+     "saida": "2025-04-24T08:00:00.000Z",
+     "r": 1.412,
+     "pnlPct": 11.623
+    },
+    {
+     "entrada": "2025-05-07T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 102531.54512391261,
+     "saida": "2025-05-12T16:00:00.000Z",
+     "r": 1.752,
+     "pnlPct": 4.583
+    },
+    {
+     "entrada": "2025-06-23T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 107870.89355445633,
+     "saida": "2025-07-04T16:00:00.000Z",
+     "r": 1.247,
+     "pnlPct": 4.668
+    },
+    {
+     "entrada": "2025-07-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 120703.79312563747,
+     "saida": "2025-07-18T00:00:00.000Z",
+     "r": -1.07,
+     "pnlPct": -3.247
+    },
+    {
+     "entrada": "2025-08-14T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 114291.20347505402,
+     "saida": "2025-08-22T16:00:00.000Z",
+     "r": 1.183,
+     "pnlPct": 3.684
+    },
+    {
+     "entrada": "2025-08-22T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 112986.98116900331,
+     "saida": "2025-08-24T20:00:00.000Z",
+     "r": -1.065,
+     "pnlPct": -3.096
+    },
+    {
+     "entrada": "2025-08-24T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 109605.92786231666,
+     "saida": "2025-09-01T12:00:00.000Z",
+     "r": 1.138,
+     "pnlPct": 2.995
+    },
+    {
+     "entrada": "2025-09-28T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 122803.17,
+     "saida": "2025-10-05T16:00:00.000Z",
+     "r": 3.306,
+     "pnlPct": 5.787
+    },
+    {
+     "entrada": "2025-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 109156.3282489451,
+     "saida": "2025-10-22T00:00:00.000Z",
+     "r": -1.037,
+     "pnlPct": -3.899
+    },
+    {
+     "entrada": "2025-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 111986.7593044191,
+     "saida": "2025-10-24T16:00:00.000Z",
+     "r": -1.047,
+     "pnlPct": -4.313
+    },
+    {
+     "entrada": "2025-10-29T16:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 103728.3,
+     "saida": "2025-11-05T16:00:00.000Z",
+     "r": 1.684,
+     "pnlPct": 5.097
+    },
+    {
+     "entrada": "2025-11-26T16:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 85175.30126570699,
+     "saida": "2025-12-01T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -5.583
+    },
+    {
+     "entrada": "2025-12-02T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "CLOSED/TIME_STOP",
+     "tp1": false,
+     "preco_saida": 90329.97,
+     "saida": "2025-12-13T08:00:00.000Z",
+     "r": -0.252,
+     "pnlPct": -1.022
+    },
+    {
+     "entrada": "2026-01-07T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 94022.45996940945,
+     "saida": "2026-01-13T20:00:00.000Z",
+     "r": -1.107,
+     "pnlPct": -3.237
+    },
+    {
+     "entrada": "2026-01-29T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 78850.06,
+     "saida": "2026-02-02T16:00:00.000Z",
+     "r": 1.687,
+     "pnlPct": 6.059
+    },
+    {
+     "entrada": "2026-02-25T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 63897.71682458908,
+     "saida": "2026-02-28T08:00:00.000Z",
+     "r": -1.04,
+     "pnlPct": -5.42
+    },
+    {
+     "entrada": "2026-02-28T04:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 67551.73909524038,
+     "saida": "2026-03-01T00:00:00.000Z",
+     "r": -1.026,
+     "pnlPct": -5.991
+    },
+    {
+     "entrada": "2026-03-06T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 72924.9496034266,
+     "saida": "2026-03-13T16:00:00.000Z",
+     "r": -1.053,
+     "pnlPct": -6.796
+    },
+    {
+     "entrada": "2026-03-18T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 67745.9081672319,
+     "saida": "2026-03-30T08:00:00.000Z",
+     "r": 1.282,
+     "pnlPct": 5.232
+    },
+    {
+     "entrada": "2026-04-13T20:00:00.000Z",
+     "lado": "BUY",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 76039.05,
+     "saida": "2026-04-18T12:00:00.000Z",
+     "r": 1.006,
+     "pnlPct": 3.287
+    },
+    {
+     "entrada": "2026-09-03T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 78767.29943573216,
+     "saida": "2026-09-04T16:00:00.000Z",
+     "r": -1.05,
+     "pnlPct": -3.331
+    },
+    {
+     "entrada": "2026-10-02T04:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83735.04594171808,
+     "saida": "2026-10-07T04:00:00.000Z",
+     "r": -1.098,
+     "pnlPct": -3.003
+    },
+    {
+     "entrada": "2026-10-15T00:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 83222.4432162502,
+     "saida": "2026-10-20T16:00:00.000Z",
+     "r": -1.103,
+     "pnlPct": -3.127
+    },
+    {
+     "entrada": "2026-10-21T12:00:00.000Z",
+     "lado": "BUY",
+     "status": "STOP_HIT",
+     "tp1": false,
+     "preco_saida": 82490.76976323889,
+     "saida": "2026-10-22T08:00:00.000Z",
+     "r": -1.061,
+     "pnlPct": -2.573
+    },
+    {
+     "entrada": "2026-10-22T08:00:00.000Z",
+     "lado": "SELL",
+     "status": "INVALIDATED/INVALIDATION",
+     "tp1": true,
+     "preco_saida": 78634.01,
+     "saida": "2026-11-02T04:00:00.000Z",
+     "r": 1.328,
+     "pnlPct": 3.478
+    },
+    {
+     "entrada": "2026-11-05T12:00:00.000Z",
+     "lado": "SELL",
+     "status": "STOP_HIT",
+     "tp1": true,
+     "preco_saida": 59504.42764385759,
+     "saida": "2026-11-21T16:00:00.000Z",
+     "r": 3.398,
+     "pnlPct": 13.347
+    }
+   ]
+  }
+ ]
+}
