@@ -55,7 +55,10 @@
     "lastChangedAt": "2026-10-31T16:19:52.086Z",
     "values": {
       "previous": "+0,5% m/m · +3,6% a/a",
+      "actual": "+0,3% m/m · +3,8% a/a",
+      "revised": "+0,5% m/m · +3,7% a/a",
       "core_previous": "+0,3% m/m · +3,1% a/a",
+      "core_actual": "+0,3% m/m · +3,3% a/a",
       "source": "BEA"
     }
   },
@@ -116,7 +119,11 @@
     "status": "oficial",
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
     "lastChangedAt": "2026-10-31T16:19:52.086Z",
-    "values": null
+    "values": {
+      "previous": "+0,3% m/m · +3,8% a/a",
+      "core_previous": "+0,3% m/m · +3,3% a/a",
+      "source": "BEA"
+    }
   },
   {
     "id": "NFP-2027-01-08",
