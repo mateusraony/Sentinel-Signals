@@ -70,6 +70,8 @@ Depois responda com um resumo curto do que entendeu e **espere o meu "pode segui
    números mostrarem necessidade.
 7. **Investigar os `warn` ruidosos do `system_logs`** (item 298): confirmar os números nos logs antes de citar.
 
+**URGENTE (25/11/2026):** o servidor da API no Render está SUSPENSO por "Free usage limit reached" (item 309): painel sem dados até o próximo período de cobrança; o scan/Telegram seguem. Decidir comigo: limitar ou remover o `keep-warm` e o aviso no Telegram quando ele falhar.
+
 **C. Depende de decisão minha (pergunte-me antes; não faça por conta própria):**
 0. **Visual do painel (roadmap, linha 9):** direção APROVADA em 21/11. Entregue em 2 PRs: **PR 1 (visual global: cores, painéis planos, fonte IBM Plex)** e **PR 2 (estrutura: régua no cartão, Resumo, alertas em cartões, Desempenho reorganizado)**.
    **Falta só decisão minha: EMOJIS** — o item 280 manda melhorar, não remover, e há testes protegendo o vocabulário (o Telegram usa o mesmo); os mockups aprovados mostravam a tela sem emojis, então pergunte-me se quero tirar do Dashboard.
