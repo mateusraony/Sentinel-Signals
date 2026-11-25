@@ -12,7 +12,8 @@
 // nunca fica de fora.
 //
 // Uso:
-//   node scripts/backtest-trial-registry.mjs --report <path> --family <nome>
+//   node scripts/backtest-trial-registry.mjs --report <path> --family <nome> [--expect-config <arquivo.json>]
+//     (--expect-config: recusa registrar se o relatório não usou exatamente essas chaves de pineConfig)
 //   node scripts/backtest-trial-registry.mjs --summarize-family <nome>
 //
 // O relatório (--report) é o backtest-report.json que sai de backtest.yml /
@@ -195,8 +196,29 @@ function assertNotDuplicate(registry, trialLabel, family) {
   }
 }
 
-export function appendTrial(reportPath, family, registryPath = REGISTRY_PATH) {
+/**
+ * Confere se a configuração que o relatório REALMENTE usou (`reproducibility.pineConfig`) tem os valores que o teste dizia usar.
+ * Existe porque o campo "Overrides do pineConfig" do workflow pode ficar vazio ou ser colado errado e o run ainda sai com um rótulo bonito:
+ * em 25/11/2026 o T-2026-004/W1/A rodou com os padrões do código, não com o "modo Pine" (item 308, addendum). Devolve a lista de divergências.
+ * @param {any} report
+ * @param {Record<string, unknown>} expected chave -> valor esperado
+ * @returns {Array<{ key: string, expected: unknown, actual: unknown }>}
+ */
+export function configMismatches(report, expected) {
+  const actualCfg = report?.reproducibility?.pineConfig ?? {};
+  return Object.entries(expected)
+    .filter(([k, v]) => JSON.stringify(actualCfg[k]) !== JSON.stringify(v))
+    .map(([key, v]) => ({ key, expected: v, actual: actualCfg[key] }));
+}
+
+export function appendTrial(reportPath, family, registryPath = REGISTRY_PATH, expectedConfig = null) {
   const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+  if (expectedConfig) {
+    const bad = configMismatches(report, expectedConfig);
+    if (bad.length) {
+      throw new Error(`o relatório NÃO usou a configuração esperada (${bad.length} chave(s) diferentes: ${bad.map((b) => `${b.key}: esperado ${JSON.stringify(b.expected)}, usou ${JSON.stringify(b.actual)}`).join('; ')}). Nada foi registrado.`);
+    }
+  }
   const record = recordFromReport(report, family);
   const registry = loadRegistry(registryPath);
   assertNotDuplicate(registry, record.trialLabel, family);
@@ -302,13 +324,14 @@ function main() {
     return;
   }
   if (args.report && args.family) {
-    const record = appendTrial(args.report, args.family);
+    const expected = args['expect-config'] ? JSON.parse(fs.readFileSync(args['expect-config'], 'utf8')) : null;
+    const record = appendTrial(args.report, args.family, REGISTRY_PATH, expected);
     console.log(`[registry] adicionado: família="${record.family}" label="${record.trialLabel}" n=${record.n} expectancyR=${record.expectancyR?.toFixed(4) ?? '—'}`);
     return;
   }
   console.error(
     'Uso:\n'
-    + '  node scripts/backtest-trial-registry.mjs --report <path> --family <nome>\n'
+    + '  node scripts/backtest-trial-registry.mjs --report <path> --family <nome> [--expect-config <arquivo.json>]\n'
     + '  node scripts/backtest-trial-registry.mjs --seed --family <nome> --label <trial_label> '
     + '--source <"known-risks.md item N"> --expectancy-r <R> [--n <N>] [--ci-lo <lo> --ci-hi <hi>] [--note <texto>]\n'
     + '  node scripts/backtest-trial-registry.mjs --summarize-family <nome>',

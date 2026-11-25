@@ -10,6 +10,7 @@ import {
   recordFromReport,
   createSeedRecord,
   appendTrial,
+  configMismatches,
   appendSeed,
   loadRegistry,
   summarizeFamily,
@@ -314,5 +315,28 @@ describe('appendTrial / loadRegistry / summarizeFamily (ledger em arquivo tempor
     expect(summary.n).toBe(3);
     expect(summary.z).toBeCloseTo(bonferroniZ(3), 8);
     expect(summary.z).toBeGreaterThan(bonferroniZ(1)); // mais conservador que tratar como N=1
+  });
+});
+
+
+describe('configMismatches / appendTrial com --expect-config (item 308, addendum: run com o campo de overrides vazio)', () => {
+  const report = (pineConfig) => ({ trialLabel: 'x', reproducibility: { pineConfig }, costs: { countedTrades: 1, netExpectancyR: 0.1 }, overall: { curve: [] } });
+  it('config igual: sem divergência', () => {
+    expect(configMismatches(report({ a: true, b: 2 }), { a: true, b: 2 })).toEqual([]);
+  });
+  it('chave com outro valor ou ausente: lista cada divergência', () => {
+    expect(configMismatches(report({ a: false }), { a: true, c: 1 })).toEqual([
+      { key: 'a', expected: true, actual: false },
+      { key: 'c', expected: 1, actual: undefined },
+    ]);
+  });
+  it('appendTrial recusa e NÃO grava quando a configuração usada difere da esperada', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trial-expect-'));
+    const reportPath = path.join(dir, 'r.json');
+    const registryPath = path.join(dir, 'registry.json');
+    fs.writeFileSync(reportPath, JSON.stringify(report({ preTp1TrailEnabled: true })));
+    fs.writeFileSync(registryPath, '[]');
+    expect(() => appendTrial(reportPath, 'fam', registryPath, { preTp1TrailEnabled: false })).toThrow(/NÃO usou a configuração esperada/);
+    expect(JSON.parse(fs.readFileSync(registryPath, 'utf8'))).toEqual([]);
   });
 });
