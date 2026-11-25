@@ -3,7 +3,7 @@
   "id": "T-2026-004",
   "item": "docs/known-risks.md item 308 (achado do trailing pré-TP1) · docs/registro-de-testes.md",
   "registeredAt": "2026-11-24",
-  "status": "EM ANDAMENTO — 1 de 4 rodadas recebida (25/11/2026), mas DESCARTADA como braço A: o campo dos overrides ficou vazio e rodou com os padrões do código (registrada como T-2026-005). Faltam as 4 rodadas válidas.",
+  "status": "PRONTO PARA RODAR — o usuário só precisa clicar em \"Run workflow\" (workflow t004-pine-vs-producao.yml, sem campos). 0 de 4 rodadas válidas até agora: a de 25/11 (pelo \"Backtest histórico\") saiu com o campo de overrides vazio e virou o T-2026-005.",
   "note": "Pré-registro escrito ANTES de qualquer rodada de 7 ativos. Não mude nenhum campo depois de ver resultado; se precisar mudar, registre um NOVO teste (T-2026-00N) explicando o porquê. Só a leitura é comparação PAREADA: mesmas moedas, mesmas janelas, mesmas datas; só muda a configuração.",
   "question": "Nas mesmas 7 moedas e janelas, o 'modo Pine' (sem trailing antes do TP1, sem teto de TP2, saída do runner pelo RF como no Pine, virada de sinal) rende mais R por operação do que a configuração padrão da produção?",
   "why": "Em BTC 4h, 21 meses, ~35 operações, ligar o trailing pré-TP1 sobre as mesmas entradas deu -0,160 R contra +0,160 R sem ele (item 308; inconclusivo: IC corrigido [-0,457; 0,137]). O item 132 (7 ativos, 12 meses) mediu o trailing como indistinguível. As duas medidas discordam: este teste decide com mais moedas e mais tempo.",
@@ -65,15 +65,10 @@
     "observacao": "Quem muda a produção é sempre o usuário (botão 'Aplicar ao scanner' ou painel Ajustes); operações abertas guardam o modo de proteção de quando nasceram."
   },
   "how_to_run_for_the_user": {
-    "onde": "GitHub → aba Actions → 'Backtest histórico (Sentinel Signals)' → Run workflow",
-    "campos_visiveis": {
-      "Símbolos": "deixar o que já vem preenchido (os 7)",
-      "Início / Fim": "as datas da janela (W1 e depois W2)",
-      "Timeframes a baixar": "15m,1h,4h,1d",
-      "Overrides do pineConfig em JSON": "o JSON do braço (A ou B)",
-      "Rótulo desta tentativa": "t004-W1-A-modo-pine, t004-W1-B-producao, t004-W2-A-modo-pine, t004-W2-B-producao"
-    }
+    "onde": "GitHub → aba Actions → à esquerda \"Teste T-2026-004 — modo Pine × produção (7 ativos)\" → botão \"Run workflow\" → \"Run workflow\" (verde). NÃO há campos para preencher: moedas, datas e chaves vêm DESTE arquivo.",
+    "o_que_acontece": "4 rodadas em paralelo (cada uma ~30-60 min). Cada rodada confere sozinha que usou as chaves do braço (senão fica vermelha). No fim, o job \"resumo\" publica a tabela e o veredito pela regra deste pré-registro no resumo da execução.",
+    "depois": "Avise o Claude; ele lê o resultado, registra o teste (registro-de-testes, backtest-trial-registry, runs/) e pede os 4 relatórios (artefatos t004-W1-A etc.) se precisar."
   },
-  "after_the_runs": "Registrar cada rodada com scripts/backtest-trial-registry.mjs (família 'pine-vs-producao-t004'), salvar o resultado compacto em docs/experiments/runs/ e atualizar docs/registro-de-testes.md no MESMO PR.",
+  "after_the_runs": "Registrar cada rodada com scripts/backtest-trial-registry.mjs --report R.json --family pine-vs-producao-t004 --expect-config ARQUIVO-DO-BRACO.json, salvar o resultado compacto em docs/experiments/runs/ e atualizar docs/registro-de-testes.md no MESMO PR.",
   "conferencia_obrigatoria": "Cada relatório é conferido ANTES de contar: scripts/backtest-trial-registry.mjs --report R.json --family pine-vs-producao-t004 --expect-config ARQUIVO-DO-BRACO.json recusa registrar se reproducibility.pineConfig não tiver exatamente as chaves do braço. O Job Summary do workflow agora avisa no topo quando nenhum override foi informado."
 }

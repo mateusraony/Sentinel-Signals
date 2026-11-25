@@ -294,6 +294,11 @@ paths:
     procedência `--target-arm`, Bonferroni m=6) e publica `resumo-targets-test`.
   - **Sem secret.**
 
+- `t004-pine-vs-producao.yml` — disparo **manual, SEM campos** (um clique): teste pré-registrado T-2026-004 "modo Pine × produção" (`docs/known-risks.md` item 308 addendum 2; `docs/experiments/pine-vs-producao-prereg.json`).
+  - **Fonte única:** moedas, datas e chaves de cada braço vêm do pré-registro (`scripts/t004-prepare.mjs`), nunca de digitação (a 1ª tentativa pelo "Backtest histórico" saiu com o campo de overrides vazio).
+  - **Etapas:** 4 rodadas em paralelo (W1/W2 × A/B), cada uma baixa os candles da Binance Spot e roda o replay; cada rodada CONFERE (`scripts/t004-verify-config.mjs`) que o relatório usou as chaves do braço; o job `resumo` baixa os 4 relatórios e `scripts/t004-summary.mjs` aplica a regra pré-registrada (diferença A−B com erro por cluster de mês).
+  - **Sem secret**, `contents: read`, sem banco/Telegram. Travado por `scripts/t004WorkflowTripwire.test.js` (11 variantes plantadas) e `scripts/t004Summary.test.js`.
+
 - `restore-postgres.yml` — disparo **manual** (`workflow_dispatch`, campo opcional "Arquivo do backup"): restaura um
   backup (branch `backups-postgres` do repo privado de backups, via `BACKUP_DEPLOY_KEY`) num banco NOVO
   (`docs/known-risks.md` itens 282/283). Campo vazio = o backup **diário** mais recente; ou o nome exato de um arquivo

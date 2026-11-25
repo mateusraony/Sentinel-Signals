@@ -1,0 +1,103 @@
+name: Teste T-2026-004 — modo Pine × produção (7 ativos)
+
+# Teste PRÉ-REGISTRADO (docs/experiments/pine-vs-producao-prereg.json, docs/registro-de-testes.md T-2026-004), em UM clique e SEM campos para preencher.
+# Existe porque a 1ª tentativa, pelo "Backtest histórico", saiu com o campo "Overrides do pineConfig em JSON" vazio e rodou com os padrões do código
+# (docs/known-risks.md item 308, addendum 2): aqui as moedas, as datas e as chaves de cada braço vêm do próprio pré-registro, nunca de digitação.
+#
+# O que roda: 4 rodadas em paralelo (janela W1 e W2 × braço A "modo Pine" e B "produção"), cada uma baixa os candles reais da Binance Spot e roda o MESMO motor
+# do scanner (backtest). Cada rodada CONFERE que o relatório usou as chaves do braço (senão o job falha, em vermelho). No fim, `scripts/t004-summary.mjs` aplica a
+# REGRA DE DECISÃO congelada no pré-registro e publica a tabela no resumo do job.
+#
+# Segurança: sem secret, `contents: read`, sem banco, sem Telegram, só leitura de dados públicos; disparo SÓ manual. O resultado fica nos artefatos
+# (`t004-W1-A`… e `t004-resumo`) por 30 dias; o registro no repositório é feito num PR depois (regra de `operating-principles.md`).
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t004-pine-vs-producao
+  cancel-in-progress: false
+
+jobs:
+  rodar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: W1-A, janela: W1, braco: A_modo_pine, rotulo: t004-W1-A-modo-pine }
+          - { id: W1-B, janela: W1, braco: B_producao, rotulo: t004-W1-B-producao }
+          - { id: W2-A, janela: W2, braco: A_modo_pine, rotulo: t004-W2-A-modo-pine }
+          - { id: W2-B, janela: W2, braco: B_producao, rotulo: t004-W2-B-producao }
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Preparar a rodada a partir do pré-registro
+        env:
+          JANELA: ${{ matrix.janela }}
+          BRACO: ${{ matrix.braco }}
+        run: node scripts/t004-prepare.mjs --janela "$JANELA" --braco "$BRACO"
+
+      - name: Baixar histórico real (Binance Spot)
+        run: |
+          node scripts/fetch-backtest-data.mjs \
+            --symbols "$SYMBOLS" \
+            --from "$FROM" --to "$TO" \
+            --timeframes "$TIMEFRAMES" \
+            --warmup-candles 500
+
+      - name: Rodar o replay
+        env:
+          ROTULO: ${{ matrix.rotulo }}
+        run: |
+          npm run backtest -- --symbols "$SYMBOLS" --from "$FROM" --to "$TO" --out backtest-report.json \
+            --allow-late-start --pine-config pine-config-overrides.json --trial-label "$ROTULO"
+
+      - name: Conferir que o relatório USOU a configuração do braço
+        run: node scripts/t004-verify-config.mjs --report backtest-report.json --expect pine-config-overrides.json
+
+      - name: Upload do relatório
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t004-${{ matrix.id }}
+          path: backtest-report.json
+          retention-days: 30
+          if-no-files-found: warn
+
+  resumo:
+    needs: rodar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Baixar os 4 relatórios
+        uses: actions/download-artifact@v4
+        with:
+          pattern: t004-*
+          path: reports
+
+      - name: Aplicar a regra pré-registrada
+        run: node scripts/t004-summary.mjs --dir reports --json t004-resumo.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload do resumo
+        uses: actions/upload-artifact@v4
+        with:
+          name: t004-resumo-final
+          path: t004-resumo.json
+          retention-days: 30
