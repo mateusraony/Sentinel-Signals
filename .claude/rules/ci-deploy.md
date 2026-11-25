@@ -299,6 +299,11 @@ paths:
   - **Etapas:** 4 rodadas em paralelo (W1/W2 × A/B), cada uma baixa os candles da Binance Spot e roda o replay; cada rodada CONFERE (`scripts/t004-verify-config.mjs`) que o relatório usou as chaves do braço; o job `resumo` baixa os 4 relatórios e `scripts/t004-summary.mjs` aplica a regra pré-registrada (diferença A−B com erro por cluster de mês).
   - **Sem secret**, `contents: read`, sem banco/Telegram. Travado por `scripts/t004WorkflowTripwire.test.js` (11 variantes plantadas) e `scripts/t004Summary.test.js`.
 
+- `t006-so-o-trailing.yml` — disparo **manual, SEM campos** (um clique): teste pré-registrado T-2026-006 "só o trailing" (`docs/known-risks.md` item 308 addendum 5; `docs/experiments/t006-trailing-prereg.json`).
+  - **O que isola:** só a proteção do stop antes do TP1 (`preTp1TrailEnabled` + `preTp1StopProtectionEnabled`), no contexto da produção (PRIMÁRIO) e no do modo Pine (ESPELHO). Mesma preparação, conferência de configuração e matriz do T-2026-004 (`scripts/t004-prepare.mjs --prereg …`, `scripts/t004-verify-config.mjs`).
+  - **Etapas:** 8 rodadas em paralelo (W1/W2 × 4 braços); o job `resumo` roda `scripts/t006-summary.mjs` (regra pré-registrada + confere que os braços repetidos do T-2026-004 reproduzem exatamente).
+  - **Sem secret**, `contents: read`, sem banco/Telegram. Travado por `scripts/t006WorkflowTripwire.test.js` (12 variantes plantadas; confere que SÓ a proteção muda entre os pares) e `scripts/t006Summary.test.js`.
+
 - `restore-postgres.yml` — disparo **manual** (`workflow_dispatch`, campo opcional "Arquivo do backup"): restaura um
   backup (branch `backups-postgres` do repo privado de backups, via `BACKUP_DEPLOY_KEY`) num banco NOVO
   (`docs/known-risks.md` itens 282/283). Campo vazio = o backup **diário** mais recente; ou o nome exato de um arquivo

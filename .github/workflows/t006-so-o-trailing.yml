@@ -1,0 +1,107 @@
+name: Teste T-2026-006 — só o trailing (7 ativos)
+
+# Teste PRÉ-REGISTRADO (docs/experiments/t006-trailing-prereg.json, docs/registro-de-testes.md T-2026-006), em UM clique e SEM campos para preencher.
+# Pergunta: desligar SÓ a proteção do stop antes do TP1 (o trailing de produção) melhora o R por operação? Isola a única mudança que o T-2026-004 (modo Pine ×
+# produção, inconclusivo) misturou com outras 4. Moedas, datas e chaves de cada braço vêm do pré-registro, nunca de digitação (docs/known-risks.md item 308).
+#
+# O que roda: 8 rodadas em paralelo (janela W1/W2 × 4 braços), cada uma com os candles reais da Binance Spot e o MESMO motor do scanner (backtest). Cada rodada CONFERE
+# que o relatório usou as chaves do braço (senão fica vermelha). No fim, `scripts/t006-summary.mjs` aplica a REGRA DE DECISÃO congelada no pré-registro e confere
+# que os braços repetidos do T-2026-004 REPRODUZEM exatamente.
+#
+# Segurança: sem secret, `contents: read`, sem banco, sem Telegram, só leitura de dados públicos; disparo SÓ manual. Custo contra os limites grátis: só GitHub Actions
+# (repositório público, sem limite de minutos; ~6 h somadas) e leitura pública da Binance; não toca Neon, Render, Firebase nem Telegram.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t006-so-o-trailing
+  cancel-in-progress: false
+
+jobs:
+  rodar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: W1-B_producao, janela: W1, braco: B_producao, rotulo: t006-W1-B_producao }
+          - { id: W1-B_sem_protecao, janela: W1, braco: B_sem_protecao, rotulo: t006-W1-B_sem_protecao }
+          - { id: W1-A_modo_pine, janela: W1, braco: A_modo_pine, rotulo: t006-W1-A_modo_pine }
+          - { id: W1-A_com_protecao, janela: W1, braco: A_com_protecao, rotulo: t006-W1-A_com_protecao }
+          - { id: W2-B_producao, janela: W2, braco: B_producao, rotulo: t006-W2-B_producao }
+          - { id: W2-B_sem_protecao, janela: W2, braco: B_sem_protecao, rotulo: t006-W2-B_sem_protecao }
+          - { id: W2-A_modo_pine, janela: W2, braco: A_modo_pine, rotulo: t006-W2-A_modo_pine }
+          - { id: W2-A_com_protecao, janela: W2, braco: A_com_protecao, rotulo: t006-W2-A_com_protecao }
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Preparar a rodada a partir do pré-registro
+        env:
+          JANELA: ${{ matrix.janela }}
+          BRACO: ${{ matrix.braco }}
+        run: node scripts/t004-prepare.mjs --prereg docs/experiments/t006-trailing-prereg.json --janela "$JANELA" --braco "$BRACO"
+
+      - name: Baixar histórico real (Binance Spot)
+        run: |
+          node scripts/fetch-backtest-data.mjs \
+            --symbols "$SYMBOLS" \
+            --from "$FROM" --to "$TO" \
+            --timeframes "$TIMEFRAMES" \
+            --warmup-candles 500
+
+      - name: Rodar o replay
+        env:
+          ROTULO: ${{ matrix.rotulo }}
+        run: |
+          npm run backtest -- --symbols "$SYMBOLS" --from "$FROM" --to "$TO" --out backtest-report.json \
+            --allow-late-start --pine-config pine-config-overrides.json --trial-label "$ROTULO"
+
+      - name: Conferir que o relatório USOU a configuração do braço
+        run: node scripts/t004-verify-config.mjs --report backtest-report.json --expect pine-config-overrides.json
+
+      - name: Upload do relatório
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t006-${{ matrix.id }}
+          path: backtest-report.json
+          retention-days: 30
+          if-no-files-found: warn
+
+  resumo:
+    needs: rodar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Baixar os 8 relatórios
+        uses: actions/download-artifact@v4
+        with:
+          pattern: t006-*
+          path: reports
+
+      - name: Aplicar a regra pré-registrada
+        run: node scripts/t006-summary.mjs --dir reports --json t006-resumo.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload do resumo
+        uses: actions/upload-artifact@v4
+        with:
+          name: t006-resumo-final
+          path: t006-resumo.json
+          retention-days: 30
