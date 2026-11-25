@@ -14,6 +14,12 @@ name: Keep sentinel-signals-api warm
 # O filtro do `if:` vale só para o gatilho do scan: o scan é deste repositório e veio do cron-job.org ou da
 # reserva (nunca de PR/push). Um ping a cada ~15 min ainda pode deixar o servidor dormir em intervalos
 # curtos (o Render dorme com 15 min sem tráfego); por isso o guia do cron-job.org traz um job GET opcional de 10 min.
+#
+# JANELA DO DIA (25/11/2026, item 309): o Render suspendeu o serviço ao esgotar as 750 horas grátis do mês (739 h usadas), e o ping 24 h por dia
+# mantinha o servidor ligado o tempo todo. Agora o ping só vale das 11:00 às 03:00 UTC (08h às 00h de Brasília = 16 h por dia, ~480 h por mês); fora
+# dela o passo do ping é PULADO e o servidor pode dormir (acorda em 30-50 s no primeiro acesso). O disparo manual (`workflow_dispatch`) pinga sempre.
+# Para mudar a janela, mexa nos dois números do passo "Janela do dia" (hora UTC = hora de Brasília + 3). Quem avisa no Telegram quando o servidor cai ou
+# volta é o `api-health-alert.yml` (este arquivo continua sem segredo, de propósito).
 on:
   schedule:
     - cron: "*/10 * * * *"
@@ -35,5 +41,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - name: Janela do dia
+        id: janela
+        run: |
+          h=$((10#$(date -u +%H)))
+          if [ "$h" -ge 11 ] || [ "$h" -lt 3 ]; then
+            echo "dentro=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dentro=false" >> "$GITHUB_OUTPUT"
+            echo "Fora da janela do dia (08h às 00h de Brasília): sem ping; o servidor pode dormir."
+          fi
       - name: Ping /health
+        if: steps.janela.outputs.dentro == 'true' || github.event_name == 'workflow_dispatch'
         run: curl -fsS --max-time 90 https://sentinel-signals-api.onrender.com/health

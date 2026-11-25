@@ -1,0 +1,59 @@
+name: API health alert
+
+# Avisa no Telegram quando o servidor da API (Render, sentinel-signals-api) CAI ou VOLTA (docs/known-risks.md item 309).
+# Em 25/11/2026 o Render suspendeu o serviço por limite grátis e o `keep-warm.yml` ficou vermelho por ~5 h sem que ninguém soubesse: o painel só mostrou
+# "Failed to fetch" quando o usuário o abriu. O `keep-warm.yml` continua sem segredo (travado por teste); este workflow é quem lê o resultado dele.
+#
+# Como decide (scripts/apiHealthStreak.mjs, puro e testado): olha o passo "Ping /health" das últimas 12 execuções do keep-warm. Ping pulado (fora da janela do
+# dia) não conta. AVISA UMA VEZ na 3ª falha seguida (~30-45 min de queda) e UMA VEZ no 1º sucesso depois de pelo menos 3 falhas. Queda longa não repete o aviso.
+#
+# Segurança: `contents: read` + `actions: read` (só lê as execuções deste repositório), nenhum banco/Firebase/escrita, só os 2 segredos do Telegram e só no passo
+# que envia. Gatilho: o fim do workflow "Keep sentinel-signals-api warm" (nunca PR/push/comentário). Melhor esforço: o envio nunca derruba o job.
+on:
+  workflow_run:
+    workflows: ["Keep sentinel-signals-api warm"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: api-health-alert
+  cancel-in-progress: false
+
+jobs:
+  avaliar:
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository
+      && (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Decidir (lê só as execuções do keep-warm)
+        id: decisao
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: node scripts/api-health-alert.mjs
+
+      - name: Avisar no Telegram
+        if: ${{ steps.decisao.outputs.action == 'down' || steps.decisao.outputs.action == 'up' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_ICON: ${{ steps.decisao.outputs.icon }}
+          ALERT_TITLE: ${{ steps.decisao.outputs.title }}
+          ALERT_HINT: ${{ steps.decisao.outputs.hint }}
+          ALERT_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: bash scripts/telegram-workflow-alert.sh

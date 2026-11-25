@@ -29,6 +29,10 @@ function problemas(yml) {
   }
   for (const trecho of FILTRO) if (!codigo.includes(trecho)) p.push(`filtro do gatilho do scan sem: ${trecho}`);
   if (/^\s*(pull_request|pull_request_target|push|issue_comment|repository_dispatch):/m.test(codigo)) p.push('gatilho que qualquer pessoa pode acionar');
+  // Janela do dia (item 309): o ping só vale das 11:00 às 03:00 UTC; o disparo manual pinga sempre.
+  for (const trecho of ['id: janela', '"$h" -ge 11', '"$h" -lt 3', "if: steps.janela.outputs.dentro == 'true' || github.event_name == 'workflow_dispatch'"]) {
+    if (!codigo.includes(trecho)) p.push(`janela do dia sem: ${trecho}`);
+  }
   const curls = codigo.split('\n').filter((l) => /\bcurl\b/.test(l)).map((l) => l.trim());
   if (curls.length !== 1 || !/^run: curl -fsS --max-time 90 https:\/\/sentinel-signals-api\.onrender\.com\/health$/.test(curls[0])) p.push(`o ping deve ser um único GET público em /health: ${curls.join(' || ')}`);
   return p;
@@ -54,6 +58,11 @@ describe('tripwire: o "manter acordado" tem o ping de 10 min E o gatilho do fim 
       real.replace('on:\n  schedule:', 'on:\n  pull_request:\n  schedule:'),
       real.replace('run: curl -fsS --max-time 90 https://sentinel-signals-api.onrender.com/health', 'run: curl -fsS --max-time 90 https://sentinel-signals-api.onrender.com/health -H "x: ${{ secrets.ALGO }}"'),
       real.replace('https://sentinel-signals-api.onrender.com/health', 'https://outro-servidor.example.com/health'),
+      real.replace("        if: steps.janela.outputs.dentro == 'true' || github.event_name == 'workflow_dispatch'\n", ''),
+      real.replace('"$h" -ge 11', '"$h" -ge 0'),
+      real.replace('"$h" -lt 3', '"$h" -lt 24'),
+      real.replace('        id: janela\n', ''),
+      real.replace("steps.janela.outputs.dentro == 'true' || github.event_name == 'workflow_dispatch'", "steps.janela.outputs.dentro == 'true'"),
       ...FILTRO.map((trecho) => real.replace(trecho, 'true')),
     ];
     plantados.forEach((yml, i) => {
