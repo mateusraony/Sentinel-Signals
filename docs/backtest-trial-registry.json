@@ -7997,5 +7997,89 @@
       0.049117043839600694
     ],
     "conclusiveAtN1": false
+  },
+  {
+    "family": "pine-vs-producao-t004",
+    "trialLabel": "t004-W1-A-modo-pine",
+    "recordedAt": "2026-11-25T20:07:33.806Z",
+    "source": "seed",
+    "seedSource": "T-2026-004, rodada do GitHub de 25/11/2026 (run 45683980682, commit 85a7988+; números lidos do log do job; relatório completo no artefato t004-*, 30 dias)",
+    "seedNote": "W1 braço A modo Pine: PF 0,90, acerto 41,5%, sd(R) 1,23, ganho médio 1,30R, perda média 1,04R",
+    "runStartedAt": null,
+    "commitSha": null,
+    "configHash": null,
+    "pineConfigOverride": null,
+    "n": 123,
+    "minTrades": null,
+    "expectancyR": -0.0724,
+    "expectancyRStdErr": 0.11046121342418756,
+    "expectancyRCI95": [
+      -0.289,
+      0.144
+    ],
+    "conclusiveAtN1": false
+  },
+  {
+    "family": "pine-vs-producao-t004",
+    "trialLabel": "t004-W1-B-producao",
+    "recordedAt": "2026-11-25T20:07:33.857Z",
+    "source": "seed",
+    "seedSource": "T-2026-004, rodada do GitHub de 25/11/2026 (run 45683980682, commit 85a7988+; números lidos do log do job; relatório completo no artefato t004-*, 30 dias)",
+    "seedNote": "W1 braço B produção: PF 0,82, acerto 40,3%, sd(R) 0,81, ganho médio 0,66R, perda média 0,65R",
+    "runStartedAt": null,
+    "commitSha": null,
+    "configHash": null,
+    "pineConfigOverride": null,
+    "n": 129,
+    "minTrades": null,
+    "expectancyR": -0.078,
+    "expectancyRStdErr": 0.07142988396945156,
+    "expectancyRCI95": [
+      -0.22,
+      0.06
+    ],
+    "conclusiveAtN1": false
+  },
+  {
+    "family": "pine-vs-producao-t004",
+    "trialLabel": "t004-W2-A-modo-pine",
+    "recordedAt": "2026-11-25T20:07:33.892Z",
+    "source": "seed",
+    "seedSource": "T-2026-004, rodada do GitHub de 25/11/2026 (run 45683980682, commit 85a7988+; números lidos do log do job; relatório completo no artefato t004-*, 30 dias)",
+    "seedNote": "W2 braço A modo Pine: PF 1,27, acerto 55,2%, sd(R) 1,17, ganho médio 1,26R, perda média 0,94R",
+    "runStartedAt": null,
+    "commitSha": null,
+    "configHash": null,
+    "pineConfigOverride": null,
+    "n": 125,
+    "minTrades": null,
+    "expectancyR": 0.281,
+    "expectancyRStdErr": 0.10459375866955406,
+    "expectancyRCI95": [
+      0.08,
+      0.49
+    ],
+    "conclusiveAtN1": true
+  },
+  {
+    "family": "pine-vs-producao-t004",
+    "trialLabel": "t004-W2-B-producao",
+    "recordedAt": "2026-11-25T20:07:33.931Z",
+    "source": "seed",
+    "seedSource": "T-2026-004, rodada do GitHub de 25/11/2026 (run 45683980682, commit 85a7988+; números lidos do log do job; relatório completo no artefato t004-*, 30 dias)",
+    "seedNote": "W2 braço B produção: PF 0,96, acerto 42,7%, sd(R) 0,79, ganho médio 0,77R, perda média 0,57R",
+    "runStartedAt": null,
+    "commitSha": null,
+    "configHash": null,
+    "pineConfigOverride": null,
+    "n": 131,
+    "minTrades": null,
+    "expectancyR": 0.048,
+    "expectancyRStdErr": 0.06887881668482829,
+    "expectancyRCI95": [
+      -0.09,
+      0.18
+    ],
+    "conclusiveAtN1": false
   }
 ]

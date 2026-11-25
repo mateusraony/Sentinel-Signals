@@ -10,7 +10,7 @@ Fonte dos números: telas do próprio serviço (marcadas "tela") ou a documenta�
 
 | Serviço | Limite grátis | Uso medido (25/11) | Risco | Quem avisa hoje | O que acontece se estourar |
 |---|---|---|---|---|---|
-| **Render — horas de instância** (workspace inteiro, mês de calendário) | **750 h/mês, dividido entre TODOS os serviços Web grátis do workspace** ([doc](https://render.com/docs/free); serviço dormindo não gasta) | **739,37 h (tela)** → **ESTOUROU** (suspenso até 01/12) | **ALTO — já aconteceu** | `api-health-alert` (Telegram, queda/volta) desde 25/11. **Não há aviso de "você está em 80%".** | Todos os serviços Web grátis do workspace ficam **suspensos** até o 1º dia do mês seguinte; o painel fica sem dados |
+| **Render — horas de instância** (workspace inteiro, mês de calendário) | **750 h/mês, dividido entre TODOS os serviços Web grátis do workspace** ([doc](https://render.com/docs/free); serviço dormindo não gasta) | **739,37 h (tela)** → **ESTOUROU** (suspenso até 01/12); causa: outros serviços ligados no workspace, agora suspensos | **Médio (era ALTO)** | `api-health-alert` (Telegram, queda/volta) desde 25/11. **Não há aviso de "você está em 80%".** | Todos os serviços Web grátis do workspace ficam **suspensos** até o 1º dia do mês seguinte; o painel fica sem dados |
 | **Neon — computação** | **100 CU-h/mês por projeto** ([doc](https://neon.com/faqs/free-plan-limits-and-quotas)) | **57,9 CU-h (58%)**, projeção do mês 72,3 (medidor, 25/11) | Médio | `neon-usage.yml` (Telegram, 2×/dia; avisa em 60% e 80%) | O banco para de responder: scan cego (aconteceu em outubro, item 282) |
 | **Neon — armazenamento** | 1 GB por projeto (doc, mudou de 0,5 GB; **conferir** no console) | ~70 MB em outubro (item 283); **conferir** hoje | Baixo | Nenhum automático | Escritas que aumentam o banco falham |
 | **GitHub Actions** (repositório **público**) | Sem limite de minutos para runners padrão em repositório público (**conferir** a política atual) | ~197 min/dia de execução (3,3 h); repositório 10 MB; artefatos 5 MB | Baixo | — | — |
@@ -29,10 +29,10 @@ Fonte dos números: telas do próprio serviço (marcadas "tela") ou a documenta�
 - **Fato (tela do Billing):** 739,37 de 750 h; banda, pipeline e serviços folgados. O limite é **do workspace inteiro** (a própria tela diz "applies to the entire workspace") e as horas **são compartilhadas por todos os serviços Web grátis** ([doc do Render](https://render.com/docs/free)).
 - **Fato (aritmética):** um serviço só ligado 24 h por dia soma no máximo 586 h até 25/11 (24 h × 24,4 dias). 739 h **não cabem em um serviço só**. Logo, **outro(s) serviço(s) Web grátis do mesmo workspace consumiu(ram) pelo menos ~150 h**.
 - **Hipótese que eu fiz antes e que NÃO se sustenta:** "cada deploy sobrepõe instâncias e gasta horas". O painel do Render mostra que o `sentinel-signals-api` só foi implantado de novo **há 1 mês** (21 deploys no total), então deploys não explicam as horas. Corrigido no item 309.
-- **Hipótese mais forte (não confirmada):** o workspace "Mateus's workspace" tem **outros serviços Web grátis ligados** (12 serviços no total; o workspace serve a outros projetos do usuário). Todos dividem as mesmas 750 h.
+- **CONFIRMADO pelo usuário (25/11):** havia **outros serviços Web grátis ligados no workspace** (inativos, mas rodando, então gastando horas do pool). Ele os **deixou suspensos: sobrou só o `sentinel-signals-api`**. Orçamento atual: um serviço; com o `keep-warm` em 16 h/dia (~480 h/mês) sobram ~270 h; ligado 24 h/dia (744 h em mês de 31 dias) sobrariam ~6 h, por isso a janela fica.
 - **Reset:** no início do mês de calendário (**01/12**), pelas docs do Render.
 
-**O que fazer (ordem):** (1) na lista de serviços do Render, ver quais são **Web Service** grátis e quais precisam ficar ligados; suspender ou apagar o resto; (2) só então decidir a janela do `keep-warm` (hoje 16 h/dia, ~480 h/mês): o orçamento do Sentinel é **750 − horas dos outros serviços**.
+**Feito:** (1) os outros serviços Web grátis foram suspensos pelo usuário; (2) a janela do `keep-warm` fica em 16 h/dia. **Regra daqui em diante:** nenhum outro serviço Web grátis fica ligado nesse workspace sem somar as horas (o pool é de todos).
 
 ## 3. As regras para não repetir (valem daqui em diante)
 

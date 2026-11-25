@@ -1,0 +1,113 @@
+{
+ "id": "T-2026-004",
+ "titulo": "Modo Pine (A) × produção (B), 7 ativos, 2 janelas de 12 meses",
+ "rodado_em": "2026-11-25",
+ "execucao": "GitHub Actions, workflow t004-pine-vs-producao.yml, run 45683980682 (4 rodadas válidas; cada uma conferiu a configuração do braço)",
+ "dados": "candles reais da Binance Spot baixados pelo próprio workflow; 7 moedas: BTC, ETH, FET, PENDLE, ZRO, DYDX, PAXG; timeframes 15m,1h,4h,1d",
+ "fonte_dos_numeros": "resumo do job 'resumo' + log de cada job 'rodar' (os relatórios completos ficam nos artefatos t004-W1-A etc., 30 dias; a sessão do Claude não consegue baixá-los)",
+ "braco_A": "modo Pine (9 chaves do pré-registro)",
+ "braco_B": "produção (padrões do código + confirmação de 15 min desligada)",
+ "rodadas": [
+  {
+   "id": "W1-A",
+   "janela": "2025-11-24 a 2026-11-24",
+   "n": 123,
+   "expectancia_R": -0.072,
+   "ic95_R": [
+    -0.29,
+    0.14
+   ],
+   "profit_factor": 0.9,
+   "acerto_pct": 41.5,
+   "sd_R": 1.23,
+   "ganho_medio_R": 1.3,
+   "perda_media_R": 1.04,
+   "custo_medio_R": 0.052
+  },
+  {
+   "id": "W1-B",
+   "janela": "2025-11-24 a 2026-11-24",
+   "n": 129,
+   "expectancia_R": -0.078,
+   "ic95_R": [
+    -0.22,
+    0.06
+   ],
+   "profit_factor": 0.82,
+   "acerto_pct": 40.3,
+   "sd_R": 0.81,
+   "ganho_medio_R": 0.66,
+   "perda_media_R": 0.65,
+   "custo_medio_R": 0.039
+  },
+  {
+   "id": "W2-A",
+   "janela": "2024-11-24 a 2025-11-24",
+   "n": 125,
+   "expectancia_R": 0.281,
+   "ic95_R": [
+    0.08,
+    0.49
+   ],
+   "profit_factor": 1.27,
+   "acerto_pct": 55.2,
+   "sd_R": 1.17,
+   "ganho_medio_R": 1.26,
+   "perda_media_R": 0.94,
+   "custo_medio_R": 0.056
+  },
+  {
+   "id": "W2-B",
+   "janela": "2024-11-24 a 2025-11-24",
+   "n": 131,
+   "expectancia_R": 0.048,
+   "ic95_R": [
+    -0.09,
+    0.18
+   ],
+   "profit_factor": 0.96,
+   "acerto_pct": 42.7,
+   "sd_R": 0.79,
+   "ganho_medio_R": 0.77,
+   "perda_media_R": 0.57,
+   "custo_medio_R": 0.039
+  }
+ ],
+ "diferenca_A_menos_B": [
+  {
+   "janela": "W1",
+   "diff_R_por_op": 0.006,
+   "ic95_por_mes": [
+    -0.204,
+    0.215
+   ],
+   "pares_iguais": 123,
+   "delta_R_nos_pares": -0.005
+  },
+  {
+   "janela": "W2",
+   "diff_R_por_op": 0.233,
+   "ic95_por_mes": [
+    -0.01,
+    0.476
+   ],
+   "pares_iguais": 124,
+   "delta_R_nos_pares": 0.246
+  }
+ ],
+ "juntando_as_duas_janelas": {
+  "nota": "média ponderada pela precisão (exploratório, NÃO é a regra pré-registrada; as janelas têm regimes diferentes)",
+  "diff_R_por_op": 0.103,
+  "ic95": [
+   -0.056,
+   0.261
+  ]
+ },
+ "veredito_regra_pre_registrada": "inconclusivo (W1 ≈ 0 e o IC de W2 encosta em zero: -0,010)",
+ "observacoes": [
+  "As entradas são as MESMAS nos dois braços (123 de 123 e 124 de 125 pares): a diferença vem só das saídas.",
+  "A variação de R por operação é ~50% MAIOR no modo Pine (sd 1,17–1,23 contra 0,79–0,81): coerente com o item 132 (o trailing reduz ~35% a variação).",
+  "W1 (últimos 12 meses): os dois braços perdem; W2 (ano anterior): o modo Pine ganha +0,28 R/op e a produção quase empata.",
+  "A chave rfExitCloseOnlyEnabled do braço A é SÓ DE BACKTEST (não existe na produção): o modo Pine completo não é reproduzível 100% na produção; as outras 8 chaves existem."
+ ]
+}
