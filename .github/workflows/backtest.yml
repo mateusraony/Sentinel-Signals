@@ -292,12 +292,23 @@ jobs:
       # completa de operações fechadas, só os agregados por cascata.
       - name: Publicar resumo
         if: always()
+        # A entrada só chega por env: (nunca interpolada no corpo do script), como nos demais passos.
+        env:
+          HAS_PINE_CONFIG: ${{ inputs.pine_config != '' }}
+          TRIAL_LABEL: ${{ inputs.trial_label }}
         # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
         run: |
           set -o pipefail
           if [ -f backtest-report.json ]; then
             {
               echo "## Backtest — resumo (${FROM} → ${TO})"
+              # Aviso ANTES de qualquer número: o campo "Overrides do pineConfig em JSON" vazio roda com os PADRÕES do código, e o rótulo
+              # digitado não muda isso (25/11/2026: o T-2026-004 / W1 / braço A rodou assim, com rótulo "modo-pine"; docs/known-risks.md item 308).
+              if [ "$HAS_PINE_CONFIG" != "true" ]; then
+                echo "> ### ⚠️ Nenhum override do pineConfig foi informado"
+                echo "> Este backtest rodou com os **PADRÕES do código**. Se o rótulo (\"${TRIAL_LABEL}\") promete outra configuração, o resultado NÃO é dela."
+                echo ""
+              fi
               # O VEREDITO vem primeiro, antes de qualquer win rate: um
               # relatório com amostra insuficiente (ou IC cruzando zero)
               # produz números de aparência perfeitamente normal, e é aí que
