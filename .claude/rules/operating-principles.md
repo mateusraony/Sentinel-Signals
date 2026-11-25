@@ -77,6 +77,10 @@ global do usuário (ver `docs/claude/global-CLAUDE.md.example`).
   conclusão, ponteiros), o backtest em `docs/backtest-trial-registry.json` (`scripts/backtest-trial-registry.mjs`, cada rodada conta como tentativa),
   o resultado compacto em `docs/experiments/runs/` e o texto completo no `docs/known-risks.md`. Teste que decide algo importante é pré-registrado
   ANTES em `docs/experiments/*-prereg.json`. Teste que ainda não rodou fica PENDENTE, dizendo o que falta e de quem. Sem o registro, o teste não está concluído.
+- **Limites grátis: conta antes de criar (pedido explícito do usuário, 2026-11-25: "mês passado Neon, este mês Render… será que teremos em outro lugar?").**
+  Antes de criar ou mudar qualquer rotina agendada, "ping", serviço sempre ligado, busca recorrente ou chamada a API externa, **calcule o custo mensal
+  contra cada limite de `docs/limites-gratis.md`** (cadência × 24 h × 30 dias é a conta que faltou em Firestore, Neon e Render) e escreva o resultado no PR.
+  Mexeu em um limite, uso ou aviso? Atualize esse arquivo no mesmo PR. Nada de upgrade pago: a saída é sempre reduzir uso.
 - **Fato × hipótese × recomendação.** Sempre separe o que você observou no
   código do que é plausível e do que é opinião. Sem "parece bom" — traga
   evidência (`arquivo:linha`).
