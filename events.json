@@ -120,8 +120,8 @@
     "firstSeenAt": "2026-10-31T16:19:52.086Z",
     "lastChangedAt": "2026-10-31T16:19:52.086Z",
     "values": {
-      "previous": "+0,3% m/m · +3,8% a/a",
-      "core_previous": "+0,3% m/m · +3,3% a/a",
+      "previous": "+0,3% m/m",
+      "core_previous": "+0,3% m/m",
       "source": "BEA"
     }
   },
