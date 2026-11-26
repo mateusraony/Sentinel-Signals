@@ -3,7 +3,7 @@
   "id": "T-2026-006",
   "item": "docs/known-risks.md item 308 (addendum 4) · docs/registro-de-testes.md",
   "registeredAt": "2026-11-25",
-  "status": "PRONTO PARA RODAR — o usuário só precisa clicar em \"Run workflow\" (workflow t006-so-o-trailing.yml, sem campos). Pré-registrado ANTES de qualquer rodada.",
+  "status": "RODADO em 26/11/2026 — INCONCLUSIVO pela regra congelada (resultado em docs/experiments/runs/2026-11-26-t006-so-o-trailing-resultado.json). Regra e braços não foram alterados depois de ver o resultado.",
   "note": "Pré-registro congelado ANTES de rodar. Não mude nenhum campo depois de ver o resultado; se precisar mudar, registre um NOVO teste (T-2026-00N) explicando o porquê.",
   "question": "Desligar SÓ a proteção do stop antes do TP1 (o trailing de produção, que roda sobre o interruptor mestre preTp1StopProtectionEnabled) melhora o R por operação? Mesmas moedas, mesmas janelas, mesmas datas; só essa proteção muda.",
   "why": "O T-2026-004 (modo Pine × produção) deu inconclusivo: A−B = +0,006 (W1) e +0,233 (W2, IC [−0,010; +0,476]). O braço A mudou 5 coisas de uma vez; o trailing antes do TP1 era o suspeito principal (no BTC pesou −0,32 R/op) mas não foi isolado nas 7 moedas. Este teste isola essa única mudança, que na produção é uma chave só (e reversível).",

@@ -1,0 +1,28 @@
+{
+  "id": "T-2026-006",
+  "titulo": "Só o trailing (proteção do stop antes do TP1): desligada × ligada, 7 ativos, 2 janelas de 12 meses",
+  "rodado_em": "2026-11-26",
+  "execucao": "GitHub Actions, workflow t006-so-o-trailing.yml (8 rodadas; cada uma conferiu a configuração do braço), commit daa9d5c",
+  "dados": "candles reais da Binance Spot baixados pelo próprio workflow; 7 moedas: BTC, ETH, FET, PENDLE, ZRO, DYDX, PAXG; timeframes 15m,1h,4h,1d",
+  "fonte_dos_numeros": "resumo do job 'resumo' colado pelo usuário (os relatórios completos ficam nos artefatos t006-*, 30 dias; a sessão do Claude não consegue baixá-los). IC por rodada individual não veio no resumo; só o IC da diferença.",
+  "o_que_muda_entre_os_pares": "preTp1TrailEnabled e preTp1StopProtectionEnabled (as duas juntas); desligadas = stop no inicial até o TP1",
+  "primario_producao_desligada_menos_ligada": [
+    { "janela": "W1", "n_desligada": 113, "r_op_desligada": 0.003, "n_ligada": 129, "r_op_ligada": -0.078, "diff": 0.082, "ic95_por_mes": [-0.112, 0.275], "pares_iguais": 113, "sd_R_desligada_x_ligada": [1.23, 0.81] },
+    { "janela": "W2", "n_desligada": 113, "r_op_desligada": 0.302, "n_ligada": 131, "r_op_ligada": 0.048, "diff": 0.254, "ic95_por_mes": [0.026, 0.482], "pares_iguais": 113, "sd_R_desligada_x_ligada": [1.20, 0.79] }
+  ],
+  "espelho_modo_pine_desligada_menos_ligada": [
+    { "janela": "W1", "n_desligada": 123, "r_op_desligada": -0.072, "n_ligada": 129, "r_op_ligada": -0.100, "diff": 0.028, "ic95_por_mes": [-0.182, 0.238], "sd_R_desligada_x_ligada": [1.23, 0.81] },
+    { "janela": "W2", "n_desligada": 125, "r_op_desligada": 0.281, "n_ligada": 132, "r_op_ligada": 0.029, "diff": 0.252, "ic95_por_mes": [0.015, 0.489], "sd_R_desligada_x_ligada": [1.17, 0.79] }
+  ],
+  "reproducao_do_t004": "REPRODUZIU exatamente (A_modo_pine e B_producao deram o mesmo N e o mesmo R/op do T-2026-004): motor e dados não mudaram.",
+  "veredito_regra_pre_registrada": "INCONCLUSIVO: o PRIMÁRIO deu diferença positiva nas duas janelas (+0,082 e +0,254) e passou do corte de +0,05 nas duas, mas o IC95 de W1 inclui zero (-0,112).",
+  "observacoes": [
+    "As 4 comparações (2 PRIMÁRIO + 2 ESPELHO) têm sinal positivo: desligar a proteção nunca piorou o R/op.",
+    "O ganho é estatisticamente firme só em W2 (IC de W2: +0,026 no PRIMÁRIO e +0,015 no ESPELHO, ambos encostando em zero). Com 8 rodadas contadas no registro, esse limite não sobreviveria a uma correção de comparações múltiplas.",
+    "Em W1 (últimos 12 meses) a produção sem a proteção fica em +0,003 R/op: ~zero, não lucro. O ganho é perder menos, não passar a ganhar.",
+    "A oscilação de R por operação sobe de ~0,80 para ~1,20 (+50%) ao desligar: é o custo que o item 132 já descrevia.",
+    "O N cai de 129-132 para 113 no PRIMÁRIO: sem a proteção o stop não sobe, então as operações duram mais e bloqueiam novas entradas no mesmo ativo (hipótese a conferir, não medida).",
+    "NÃO testado: trailing desligado com a proteção de breakeven ligada (o meio-termo)."
+  ],
+  "decisao": "Escolha de PRODUTO, do usuário (mudança de preTp1TrailEnabled/preTp1StopProtectionEnabled na produção só com pedido explícito). Nada foi alterado na produção."
+}
